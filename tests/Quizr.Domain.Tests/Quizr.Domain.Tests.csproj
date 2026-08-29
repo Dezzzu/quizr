@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+    </PropertyGroup>
+
+    <!--
+    No NSubstitute here on purpose. Domain logic is pure functions, so these
+    tests need no database, no Telegram and no fakes. If a mock ever seems
+    necessary, something has leaked into Quizr.Domain that shouldn't be there.
+  -->
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\src\Quizr.Domain\Quizr.Domain.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="xunit.v3" />
+        <PackageReference Include="xunit.runner.visualstudio" />
+        <PackageReference Include="Microsoft.NET.Test.Sdk" />
+        <PackageReference Include="AwesomeAssertions" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+        <Using Include="Xunit" />
+    </ItemGroup>
+</Project>

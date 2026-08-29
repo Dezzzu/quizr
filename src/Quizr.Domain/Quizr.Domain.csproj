@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+    This project references nothing on purpose. No EF Core, no Telegram.Bot.
+    Roster logic is pure functions over an ordered list (CLAUDE.md, invariant 2),
+    and an empty reference list is what keeps it that way.
+  -->
+</Project>

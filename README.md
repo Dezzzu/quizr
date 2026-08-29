@@ -28,6 +28,8 @@ and who has to wait for a seat — and rewrites its own messages whenever any of
 ## Documentation
 
 - **[VISION.md](VISION.md)** — the idea, how it works, the roadmap, and the decision log.
+- **[STACK.md](STACK.md)** — the tools and versions, what is built here rather than taken
+  from a library, and what was considered and rejected.
 - **[CLAUDE.md](CLAUDE.md)** — working context for agent-assisted development: vocabulary,
   invariants, and the Telegram constraints worth designing around.
 
@@ -37,6 +39,7 @@ and who has to wait for a seat — and rewrites its own messages whenever any of
 EF Core 10 + PostgreSQL 18 · SmartFormat.NET.
 
 Tested with xUnit v3, AwesomeAssertions, NSubstitute and Testcontainers.
+Full set, and what was rejected, in **[STACK.md](STACK.md)**.
 
 Because the bot long-polls, nothing ever connects to it — no domain, no TLS, no open ports.
 It dials out to Telegram and talks to its database.

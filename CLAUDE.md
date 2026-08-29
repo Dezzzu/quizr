@@ -3,37 +3,33 @@
 A Telegram bot that runs game sign-ups for a pub quiz team, replacing message reactions
 with a roster the bot owns.
 
-`VISION.md` holds the product description, roadmap and decision log. **This file is the
-working context**: vocabulary, the rules that must hold, the stack, and conventions. Read it
-before designing anything — most of what follows was decided deliberately and is not worth
-re-deriving.
+**This file is the working context**: vocabulary, the rules that must hold, and conventions.
+Read it before designing anything — most of what follows was decided deliberately and is not
+worth re-deriving.
+
+- **`STACK.md`** — the chosen tools and versions, what is built here rather than taken from a
+  library, and what was considered and rejected.
+- **`VISION.md`** — the product description, roadmap and decision log.
 
 ## Status
 
-No application code yet. The product description and the stack are settled; nothing is
-implemented.
+Project layout and tooling are in place; no domain code yet. The product description and the
+stack are settled.
 
-## Stack
+## Commands
 
-| | | |
-| --- | --- | --- |
-| Runtime | **.NET 10 LTS**, C# 14 | supported to Nov 2028 |
-| Database | **PostgreSQL 18** | |
-| Telegram | **Telegram.Bot** 22.10.x | long polling |
-| Data access | **EF Core 10** + `Npgsql.EntityFrameworkCore.PostgreSQL` 10.x | migrations applied at startup |
-| Resilience | `Microsoft.Extensions.Http.Resilience` 9.x | Polly 8; retries honouring `retry_after` |
-| Localization | **SmartFormat.NET** 3.6.x | JSON string files |
-| Hosting | Generic host (`Host.CreateApplicationBuilder`) | no web server in phase 1 |
-| Packaging | Docker | |
-| Tests | **xUnit v3**, **AwesomeAssertions**, **NSubstitute**, **Testcontainers** | real Postgres per run |
+```bash
+dotnet tool restore                              # first checkout
+dotnet build
+dotnet run --project tests/Quizr.Domain.Tests    # fast: pure domain, no Docker
+dotnet run --project tests/Quizr.App.Tests       # slower: Testcontainers needs Docker
+dotnet csharpier format .                        # or: dotnet csharpier check .
+```
 
-Long polling means **the bot needs no inbound connectivity**: no domain, no TLS, no open
-ports. Nothing ever connects *to* it — it dials out to Telegram and talks to its database.
-Don't add a dependency that breaks that without flagging it.
-
-Phase 2 (the mini app) will need ASP.NET Core. Switching from the generic host to
-`WebApplication` is a few lines and the hosted services carry over unchanged, so build for
-the generic host now.
+**Don't use `dotnet test`.** It reports "Zero tests ran" with xUnit v3 on SDK 10.0.111 — an
+untouched `dotnet new xunit3` template fails identically, so it's an SDK issue rather than
+anything in this repository. The assemblies discover and run their tests correctly when
+executed directly, which is what `dotnet run --project` does. See `STACK.md`.
 
 ## The rule everything else follows
 
@@ -187,54 +183,6 @@ Native BCL types throughout.
   this system** — if you find yourself wanting one, the derived-state rule is being broken
   somewhere.
 - Bot handle: **@quizr_team_bot**. Display name: **Quizr**.
-
-## Built here on purpose
-
-Each of these is small, specific to this app, and avoids a dependency sitting somewhere
-structural. Don't replace them with a library without a real reason.
-
-- **Update dispatch** — switch on update type, match callback-data prefixes to DI-resolved
-  handlers. ~200 lines.
-- **Dialog state** for the game-creation flow, persisted in Postgres so it survives restarts.
-- **The scheduler** — see below.
-- **The edit debouncer** — coalesce a burst of signups into one message edit, respecting the
-  per-group rate limit.
-- **Message rendering** — interpolated strings and a function per message type. No templating
-  engine.
-- **The alert path** — unhandled exception to a private channel.
-
-### The scheduler, specifically
-
-Reminders, auto-finish and pin verification are a `BackgroundService` ticking every 30–60
-seconds and **asking what is due now**:
-
-```sql
-WHERE reminder_due_at <= now() AND reminder_sent_at IS NULL
-```
-
-This is deliberately not a job queue. A query is idempotent, gives restart catch-up for
-free, and needs no reconciliation when a captain moves a game to a different evening —
-the next tick simply asks again. A queue would require finding and cancelling scheduled
-jobs on every edit, which is pure bug surface.
-
-**On start, catch up**: send reminders that came due while the process was down and are still
-relevant, and finish games whose 4-hour window elapsed. Uptime is then not a correctness
-requirement.
-
-## Don't reach for these
-
-Considered and rejected. If one seems necessary, raise it rather than adding it.
-
-| Not this | Because |
-| --- | --- |
-| MediatR, or any mediator/pipeline | Hard to navigate, and manual dispatch is cheap when no middleware behaviour is wanted. Also commercially licensed now. |
-| Hangfire, Quartz, TickerQ | They model "run this job at this time". Scheduling here is a query, not a queue. |
-| `IStringLocalizer` / `.resx` | Resolves language from ambient `CurrentUICulture`, which is the wrong model for a bot that renders for other people. No plural support. |
-| FluentAssertions | Commercially licensed since v8. Use AwesomeAssertions. |
-| Moq | Use NSubstitute. |
-| Serilog | Built-in `ILogger` with a JSON console is enough. Add OpenTelemetry if aggregation is ever wanted. |
-| Telegram bot frameworks (Deployf.Botf and similar) | Small, often stale, and they sit structurally in the middle of the app. |
-| MarkdownV2 | Escaping hazard. Use HTML parse mode. |
 
 ## Out of scope — do not build
 
