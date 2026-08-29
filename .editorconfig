@@ -17,6 +17,8 @@ trim_trailing_whitespace = false
 
 [*.cs]
 indent_size = 4
+# Must match "printWidth" in .csharpierrc.json — csharpier owns layout,
+# this entry only tells the IDE where to draw the guide.
 max_line_length = 120
 
 # Namespaces and usings
@@ -41,6 +43,19 @@ csharp_style_prefer_switch_expression = true:suggestion
 csharp_style_throw_expression = true:suggestion
 csharp_prefer_braces = true:warning
 csharp_style_prefer_range_operator = true:suggestion
+csharp_style_prefer_collection_expression = true:suggestion
+csharp_style_implicit_object_creation_when_type_is_apparent = true:suggestion
+
+# Never primary constructors: their captured parameters cannot be readonly,
+# which defeats the rule below. See STYLE.md.
+csharp_style_prefer_primary_constructors = false:suggestion
+
+# Fields that never change must say so. Warnings are errors, so the compiler
+# finds these instead of a reviewer.
+dotnet_style_readonly_field = true:warning
+
+# Seal what isn't designed for inheritance.
+dotnet_diagnostic.CA1852.severity = suggestion
 
 # Nullability is not optional here — the roster is full of "maybe" values
 dotnet_diagnostic.CS8600.severity = warning

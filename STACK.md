@@ -20,6 +20,7 @@ in the repo today.
 | Resilience | `Microsoft.Extensions.Http.Resilience` **10.9.0** | Polly 8; retries honouring `retry_after` |
 | Localization | `SmartFormat.NET` **3.6.1** | JSON string files |
 | Tests | `xunit.v3` **4.0.0**, `AwesomeAssertions` **9.6.0**, `NSubstitute` **6.2.0**, `Testcontainers.PostgreSql` **4.14.0**, `Microsoft.Extensions.TimeProvider.Testing` **10.9.0** | |
+| Test discovery | `xunit.runner.visualstudio` **4.0.0**, `Microsoft.NET.Test.Sdk` **18.9.0** | IDE runner only — see below |
 | Formatter | `csharpier` **1.3.0** | local tool; print width 120 |
 | Migrations CLI | `dotnet-ef` **10.0.5** | local tool |
 | Packaging | Docker | `tzdata` must be present in the image |
@@ -66,6 +67,56 @@ can be run on every save; app tests start a real Postgres container and take sec
 `Infrastructure` is deliberately *not* a separate project. With one host and one consumer it
 would buy ceremony and no isolation.
 
+## Phase 2: what the mini app changes
+
+Recorded so it doesn't have to be re-derived. Nothing here needs doing until the app is real.
+
+**The structure barely moves.** `Quizr.App` swaps `Host.CreateApplicationBuilder` for
+`WebApplication.CreateBuilder` and gains endpoints; the bot stays a hosted service and carries
+over unchanged. Four new pieces live inside it, none needing a project of their own:
+
+- **initData validation** — HMAC-SHA256 over the payload using the bot token. No dependency,
+  and it is the entire auth story: a mini app has no login.
+- **A JSON API** for games, rosters and franchises.
+- **The iCal feed** — a per-user secret URL, rotatable. `Ical.Net`, or hand-rolled VEVENT.
+- **Static file serving** for the built frontend.
+
+`Quizr.App.Tests` gains `WebApplicationFactory` integration tests. Same project — it is
+already the slow, container-using one.
+
+**The frontend needs a home, and it is not a `.csproj`:**
+
+```
+web/          Vite + TypeScript, its own package.json
+  └── dist/ → copied into Quizr.App/wwwroot at publish
+```
+
+Two decisions come with it: whether an MSBuild target runs the frontend build during publish
+or CI builds them separately, and whether to generate TypeScript types from the API. .NET 10
+emits OpenAPI documents natively, so `openapi-typescript` or NSwag gives a typed client.
+
+**Don't split into `Quizr.Bot` / `Quizr.Web` / `Quizr.Infrastructure`.** It is the instinct,
+and it buys compile-time dependency enforcement — but the only boundary worth enforcing is
+`Quizr.Domain`, which already exists. Folders inside `Quizr.App` (`Telegram/`, `Web/`,
+`Data/`) do the organising without four more project files and a host-ownership question.
+
+**Both front doors call the same application services.** "Sign up for game 142" is one method
+that the Telegram handler and the HTTP endpoint both invoke, never reimplemented per surface.
+Get this wrong and the invariants in `CLAUDE.md` hold on one path but not the other — a class
+of bug that stays invisible until someone's queue position is wrong.
+
+### What actually gets harder
+
+**The bot stops being outbound-only.** Today "nothing ever connects to it" buys no domain, no
+TLS, no open ports and effectively no attack surface. The mini app requires all of them —
+a domain, certificates, a reverse proxy, and a public endpoint that has to be correct about
+auth. That is a larger cost than any project reshuffle, and it should be weighed before
+starting rather than discovered during.
+
+**Stay single-process.** Bot and web in one host keeps startup migrations and the in-process
+edit debouncer valid. Two processes breaks both — see the revisit table — and "just deploy the
+API separately" is an easy way to drift into it without noticing.
+
 ## Repository tooling
 
 | File | Purpose |
@@ -97,6 +148,10 @@ directly.
 
 Run tests with `dotnet run --project` until this is fixed upstream.
 
+`xunit.runner.visualstudio` and `Microsoft.NET.Test.Sdk` are referenced **only** so Rider can
+discover and run tests from the gutter. Neither is needed by `dotnet run`, and `dotnet test`
+doesn't work regardless — if Rider discovers tests without them, they can go.
+
 ## Built here on purpose
 
 Each of these is small, specific to this app, and avoids a dependency sitting somewhere
@@ -111,6 +166,9 @@ structural. Don't replace one with a library without a real reason.
 - **Message rendering** — interpolated strings and a function per message type. No templating
   engine.
 - **The alert path** — unhandled exception to a private channel.
+- **`Result<T>` and the `BusinessError` hierarchy** — about twenty lines. See below for why no
+  library fits.
+- **Strongly-typed IDs** — `readonly record struct` per id, with EF Core value converters.
 
 ### The scheduler, specifically
 
@@ -145,6 +203,8 @@ Considered and rejected. If one seems necessary, raise it rather than adding it.
 | Serilog | Built-in `ILogger` with a JSON console is enough. Add OpenTelemetry if aggregation is ever wanted. |
 | Telegram bot frameworks (Deployf.Botf and similar) | Small, often stale, and they sit structurally in the middle of the app. |
 | MarkdownV2 | Escaping hazard. Use HTML parse mode. |
+| OneOf | Per-operation unions by construction, so cross-cutting failures like "not a captain" get repeated in every signature. |
+| ErrorOr, FluentResults | Stringly-typed errors (code plus description), which kills exhaustive switching and turns the message-key mapping into a string lookup. |
 
 ## When to revisit
 

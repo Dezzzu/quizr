@@ -9,6 +9,8 @@ worth re-deriving.
 
 - **`STACK.md`** — the chosen tools and versions, what is built here rather than taken from a
   library, and what was considered and rejected.
+- **`STYLE.md`** — how code here is written: error handling, interfaces, async, comments,
+  tests, and the conventions agents most often diverge on.
 - **`VISION.md`** — the product description, roadmap and decision log.
 
 ## Status

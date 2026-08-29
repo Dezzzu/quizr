@@ -15,6 +15,7 @@
         <File Path="LICENSE" />
         <File Path="README.md" />
         <File Path="STACK.md" />
+    <File Path="STYLE.md" />
         <File Path="VISION.md" />
     </Folder>
 

@@ -30,6 +30,8 @@ and who has to wait for a seat — and rewrites its own messages whenever any of
 - **[VISION.md](VISION.md)** — the idea, how it works, the roadmap, and the decision log.
 - **[STACK.md](STACK.md)** — the tools and versions, what is built here rather than taken
   from a library, and what was considered and rejected.
+- **[STYLE.md](STYLE.md)** — how code here is written: error handling, interfaces, async,
+  comments and tests.
 - **[CLAUDE.md](CLAUDE.md)** — working context for agent-assisted development: vocabulary,
   invariants, and the Telegram constraints worth designing around.
 
