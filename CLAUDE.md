@@ -4,24 +4,36 @@ A Telegram bot that runs game sign-ups for a pub quiz team, replacing message re
 with a roster the bot owns.
 
 `VISION.md` holds the product description, roadmap and decision log. **This file is the
-working context**: vocabulary, the rules that must hold, and conventions. Read it before
-designing anything — most of the decisions below were made deliberately and are not
-worth re-deriving.
+working context**: vocabulary, the rules that must hold, the stack, and conventions. Read it
+before designing anything — most of what follows was decided deliberately and is not worth
+re-deriving.
 
 ## Status
 
-No application code yet. The product description is settled; nothing is implemented.
+No application code yet. The product description and the stack are settled; nothing is
+implemented.
 
 ## Stack
 
-- .NET 8, C#
-- [Telegram.Bot](https://github.com/TelegramBots/Telegram.Bot), long polling
-- EF Core + PostgreSQL (Npgsql)
-- A hosted `BackgroundService` for reminders, auto-finish and pin maintenance
+| | | |
+| --- | --- | --- |
+| Runtime | **.NET 10 LTS**, C# 14 | supported to Nov 2028 |
+| Database | **PostgreSQL 18** | |
+| Telegram | **Telegram.Bot** 22.10.x | long polling |
+| Data access | **EF Core 10** + `Npgsql.EntityFrameworkCore.PostgreSQL` 10.x | migrations applied at startup |
+| Resilience | `Microsoft.Extensions.Http.Resilience` 9.x | Polly 8; retries honouring `retry_after` |
+| Localization | **SmartFormat.NET** 3.6.x | JSON string files |
+| Hosting | Generic host (`Host.CreateApplicationBuilder`) | no web server in phase 1 |
+| Packaging | Docker | |
+| Tests | **xUnit v3**, **AwesomeAssertions**, **NSubstitute**, **Testcontainers** | real Postgres per run |
 
 Long polling means **the bot needs no inbound connectivity**: no domain, no TLS, no open
 ports. Nothing ever connects *to* it — it dials out to Telegram and talks to its database.
 Don't add a dependency that breaks that without flagging it.
+
+Phase 2 (the mini app) will need ASP.NET Core. Switching from the generic host to
+`WebApplication` is a few lines and the hosted services carry over unchanged, so build for
+the generic host now.
 
 ## The rule everything else follows
 
@@ -38,9 +50,10 @@ actually talks about quiz nights.
 
 | Term | Meaning |
 | --- | --- |
-| **Team** | One Telegram chat is one team. Owns its games, franchises, captains and timezone. A person may belong to several teams; calendars stay separate. |
+| **Team** | One Telegram chat is one team. Owns its games, franchises, captains, timezone and language. A person may belong to several teams; calendars stay separate. |
 | **Captain** | Chat admins by default, plus explicit grant/revoke. Can do anything a player can do, **on that player's behalf**. |
-| **Franchise** | A recurring quiz brand (Квиз, плиз!, Мозгобойня). Carries default venue, capacity and price. Games are created by cloning the last one. |
+| **Franchise** | A recurring quiz brand (Квиз, плиз!, Мозгобойня). Carries default venue, capacity, price, and a **schedule**. |
+| **Schedule** | A franchise's map from day of week to start time, e.g. `{ Mon–Fri: 19:00, Sat: 16:00, Sun: 16:00 }`. An absent day is one the franchise doesn't run. |
 | **Game** | One quiz night: franchise, number or title, venue, start time, capacity, price, tags, notes. |
 | **Announcement** | The bot's message for a single game, carrying the sign-up buttons. Rewritten on every change. |
 | **Board** | The one pinned message per chat, listing upcoming games sorted by date. The *only* pinned message. |
@@ -96,10 +109,58 @@ Breaking one of these is a bug, not a preference.
 - The bot **must be a chat admin** to pin and to see messages that aren't commands.
 - **~20 messages per minute per group.** Debounce message edits; batch reminders into one
   message rather than one per person.
+- **Callback data is capped at 64 bytes.** Use a compact scheme (`j:142`, `g:142`, `d:142`),
+  never serialized JSON.
+- **Send with HTML parse mode, not MarkdownV2.** MarkdownV2 requires escaping
+  ``_*[]()~`>#+-=|{}.!`` and it will eventually break on somebody's name. HTML needs three
+  escapes.
 - `web_app` inline buttons are **private-chat only**. In groups, use a direct app link
   (`t.me/quizr_team_bot/<app>?startapp=<id>`) as a normal URL button. Phase 2 concern.
 - Deep-link payloads are ≤64 chars from `A-Za-z0-9_-` and are **user-editable**. They carry an
   id, never data, and permission is always checked server-side.
+
+## Time
+
+Native BCL types throughout.
+
+| Concept | Type | Postgres |
+| --- | --- | --- |
+| A game's actual start | `DateTimeOffset` | `timestamptz` |
+| Franchise schedule times | `TimeOnly` | `time` |
+| The date a captain picks | `DateOnly` | `date` |
+| Team timezone | IANA id string + `TimeZoneInfo` | `text` |
+| Clock | `TimeProvider` / `FakeTimeProvider` in tests | — |
+
+- **All conversions live behind a `TeamTime` service.** `ConvertTime`, `GetUtcOffset` and
+  local-date arithmetic appear in exactly one file, with tests. Nowhere else.
+- **A game's start is computed fresh** from picked date + schedule time + team zone, never
+  derived from another game's instant. There is no date arithmetic in this domain, which is
+  what makes native types safe here.
+- **Store the computed instant**, not the local date and time. The scheduler needs an instant.
+- **Store the team's IANA id, never an offset.** An offset isn't a timezone, and Postgres
+  discards it anyway.
+- `tzdata` must be present in the container image, and the image rebuilt periodically.
+  `TimeZoneInfo` reads the operating system's timezone database, so a stale image produces
+  wrong offsets after a country changes its DST rules — silently, with no error.
+
+## Localization
+
+**First-class from v1: English, Russian, German.** Translations may be AI-generated.
+
+- **Locale is a parameter, never ambient.** Resolve it at the boundary, then bind it:
+  `IStrings.For(locale)` returns an `IStringsFor`, and render functions take `IStringsFor`.
+  A single operation routinely renders in two locales — rewriting a group post in the team's
+  language while DMing a promoted player in theirs — so an ambient "current culture" is the
+  wrong model and would produce silent, hard-to-see bugs.
+- **Group messages use the team's language; DMs and the app use the person's own.**
+- **Resolution order:** explicit user choice → Telegram `language_code` → team default →
+  English.
+- **Never concatenate user-visible text.** One template per sentence, with placeholders, or
+  Russian word order will break in ways English never reveals.
+- **Test key parity** — every key present in every locale file.
+- **Snapshot-test plural templates** at 1, 2, 5, 21 and 111. SmartFormat's plural forms are
+  positional, so a wrong form order is otherwise undetectable — this is the check that
+  catches a bad machine translation.
 
 ## Conventions
 
@@ -107,11 +168,13 @@ Breaking one of these is a bug, not a preference.
   log level. No hardcoded paths, no per-environment `appsettings` files to edit.
 - **The bot token never enters the repo.** Use .NET user secrets locally, `QUIZR_BOT_TOKEN`
   and `QUIZR_DB` in deployment.
-- **Log to stdout**, not to files.
-- **Store timestamps in UTC**; render in the team's configured timezone. Never infer a
-  timezone from a device. Npgsql is strict about this: a `DateTime` mapped to `timestamptz`
-  must have `DateTimeKind.Utc` or it throws at runtime. Pick `DateTimeOffset` or UTC
-  `DateTime` for the whole domain and stay consistent.
+- **Log to stdout**, and **always with structured message templates**:
+  `LogInformation("Promoted {UserId} to game {GameId}", userId, gameId)` — never an
+  interpolated string. Adding an aggregator later is then a composition-root change instead
+  of a rewrite of every call site.
+- **Open a logging scope per update** carrying update id, chat id and user id.
+- **On an unhandled exception, message a private channel.** Logs say what happened; this
+  says it now.
 - **Store enums as `int` or `text` through an EF conversion**, not as native Postgres enums.
   Native enums need `ALTER TYPE` to gain a value and EF's migration support for them is
   awkward. Game states will gain members.
@@ -123,10 +186,55 @@ Breaking one of these is a bug, not a preference.
   duplicate becomes a rejected insert rather than a second message. **There are no locks in
   this system** — if you find yourself wanting one, the derived-state rule is being broken
   somewhere.
-- **Keep user-facing strings localizable from the start**, even though one language ships
-  first. Group messages use the team's language; private messages and the app follow the
-  person's own.
 - Bot handle: **@quizr_team_bot**. Display name: **Quizr**.
+
+## Built here on purpose
+
+Each of these is small, specific to this app, and avoids a dependency sitting somewhere
+structural. Don't replace them with a library without a real reason.
+
+- **Update dispatch** — switch on update type, match callback-data prefixes to DI-resolved
+  handlers. ~200 lines.
+- **Dialog state** for the game-creation flow, persisted in Postgres so it survives restarts.
+- **The scheduler** — see below.
+- **The edit debouncer** — coalesce a burst of signups into one message edit, respecting the
+  per-group rate limit.
+- **Message rendering** — interpolated strings and a function per message type. No templating
+  engine.
+- **The alert path** — unhandled exception to a private channel.
+
+### The scheduler, specifically
+
+Reminders, auto-finish and pin verification are a `BackgroundService` ticking every 30–60
+seconds and **asking what is due now**:
+
+```sql
+WHERE reminder_due_at <= now() AND reminder_sent_at IS NULL
+```
+
+This is deliberately not a job queue. A query is idempotent, gives restart catch-up for
+free, and needs no reconciliation when a captain moves a game to a different evening —
+the next tick simply asks again. A queue would require finding and cancelling scheduled
+jobs on every edit, which is pure bug surface.
+
+**On start, catch up**: send reminders that came due while the process was down and are still
+relevant, and finish games whose 4-hour window elapsed. Uptime is then not a correctness
+requirement.
+
+## Don't reach for these
+
+Considered and rejected. If one seems necessary, raise it rather than adding it.
+
+| Not this | Because |
+| --- | --- |
+| MediatR, or any mediator/pipeline | Hard to navigate, and manual dispatch is cheap when no middleware behaviour is wanted. Also commercially licensed now. |
+| Hangfire, Quartz, TickerQ | They model "run this job at this time". Scheduling here is a query, not a queue. |
+| `IStringLocalizer` / `.resx` | Resolves language from ambient `CurrentUICulture`, which is the wrong model for a bot that renders for other people. No plural support. |
+| FluentAssertions | Commercially licensed since v8. Use AwesomeAssertions. |
+| Moq | Use NSubstitute. |
+| Serilog | Built-in `ILogger` with a JSON console is enough. Add OpenTelemetry if aggregation is ever wanted. |
+| Telegram bot frameworks (Deployf.Botf and similar) | Small, often stale, and they sit structurally in the middle of the app. |
+| MarkdownV2 | Escaping hazard. Use HTML parse mode. |
 
 ## Out of scope — do not build
 

@@ -102,8 +102,17 @@ A captain can do anything a player can do, on that player's behalf: register the
 name their guest, correct their attendance. That one rule removes a whole category of edge cases.
 
 **Franchise.** A real entity, not a text label: name, default venue, default capacity, default
-price. Games are created by cloning the last one — pick the franchise, fix the date, type the
-number. It also answers "who turns up for which franchise" for free.
+price, and a **schedule** — a map from day of week to start time, like `Mon–Fri 19:00,
+Sat–Sun 16:00`. A day that isn't in the map is a day that franchise doesn't run.
+
+That one map does three jobs. It prefills the time once a date is picked, it suggests the
+next sensible date, and it lets the bot say "that's a Monday, this one usually runs
+Thursdays" — advisory, never blocking, because public holidays and one-off events happen.
+Everything it fills in stays editable before the game is posted.
+
+So creating a game is: pick the franchise, pick a date, confirm. No dependency on a previous
+game existing, so the first game of a new franchise works exactly like the hundredth. The
+franchise also answers "who turns up for which brand" for free.
 
 **Game.** Franchise, number or title, venue, date and time, capacity, price, optional tags,
 free-text notes. Every field stays editable after posting. Money is displayed, never tracked —
@@ -190,8 +199,8 @@ database, and that is the whole surface it needs.
 ### Phase 2 — the mini app
 
 A second view onto the same data, added once the bot has been used in anger. The captain's
-game-creation UI moves first, because that is where the friction is — seven fields through a
-chat conversation is tedious and it's the most frequent organiser task. Then the calendar,
+game-creation UI moves first, because that is where the friction is — even a short dialogue
+is clumsy compared to a form, and it's the most frequent organiser task. Then the calendar,
 the phone-calendar subscription feed, personal history.
 
 ### Phase 3 — open the app up
@@ -216,7 +225,7 @@ only ever taps one button in the group chat stays a first-class member of the te
 - Captains act on anyone's behalf
 - Announcement post, rewritten on every change
 - Pinned Board, date-ordered, self-repinning
-- Franchises with defaults, and clone-to-create
+- Franchises with defaults and a per-weekday schedule; create a game by picking a date
 - Per-team timezone, set by the captain
 - Multiple teams, one per chat — in the data model from day one, UI later
 - Auto-finish four hours after kickoff, plus an explicit Finish button
@@ -226,11 +235,14 @@ only ever taps one button in the group chat stays a first-class member of the te
 - Archive, browsable by everyone
 - Reminders before a game
 - Reserve promotion ping
+- **English, Russian and German** — group posts in the team's language, private messages in
+  each person's own
 
 **Later** — wanted, not yet.
 
 - Game tags (music, detective, …)
-- Interface language following each person's Telegram
+- Captain-authored announcement templates — a team's own wording, from a fixed set of
+  placeholders, validated when saved
 - Results — score and placement
 - Statistics, captains only at first, opened up once it's clear which numbers are corrosive
 - Nudge a chosen subset, tagged in the team chat
@@ -276,6 +288,8 @@ Recorded so they don't get re-argued.
 | Captains are chat admins, plus grants | Zero setup for a new team, and it matches how the chat is already organised. |
 | One chat is one team | A person can be in several teams; calendars stay separate. Other teams can use the same bot. |
 | Timezone is set per team by the captain | Not inferred from anyone's device. |
+| Localization is first-class from v1 | English, Russian and German from the first release rather than retrofitted. Group messages use the team's language; private messages use each person's own. |
+| A franchise carries a per-weekday schedule | One map from day to start time replaces separate "default time" and "typical days" fields, so the two can't drift apart. Creating a game becomes: pick the franchise, pick a date. |
 | Playing vs reserve is derived, not stored | A signup is who, which game and when; the split falls out of the ordering. Two people tapping for the last seat at the same moment simply get two timestamps. The invariant becomes a property of the data instead of something the code maintains. |
 
 ## Still open

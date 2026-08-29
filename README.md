@@ -22,6 +22,8 @@ and who has to wait for a seat — and rewrites its own messages whenever any of
 - **Reminders** that fire themselves.
 - **An archive** of everything the team has ever played, with attendance assumed rather than
   collected.
+- **English, Russian and German**, with group posts in the team's language and private
+  messages in each person's own.
 
 ## Documentation
 
@@ -31,8 +33,10 @@ and who has to wait for a seat — and rewrites its own messages whenever any of
 
 ## Stack
 
-.NET 8 · [Telegram.Bot](https://github.com/TelegramBots/Telegram.Bot) (long polling) ·
-EF Core + PostgreSQL.
+.NET 10 · [Telegram.Bot](https://github.com/TelegramBots/Telegram.Bot) (long polling) ·
+EF Core 10 + PostgreSQL 18 · SmartFormat.NET.
+
+Tested with xUnit v3, AwesomeAssertions, NSubstitute and Testcontainers.
 
 Because the bot long-polls, nothing ever connects to it — no domain, no TLS, no open ports.
 It dials out to Telegram and talks to its database.
