@@ -32,10 +32,10 @@ and who has to wait for a seat — and rewrites its own messages whenever any of
 ## Stack
 
 .NET 8 · [Telegram.Bot](https://github.com/TelegramBots/Telegram.Bot) (long polling) ·
-EF Core + SQLite.
+EF Core + PostgreSQL.
 
-Phase 1 deliberately needs no hosting — no domain, no TLS, no inbound ports. It runs on
-anything left switched on.
+Because the bot long-polls, nothing ever connects to it — no domain, no TLS, no open ports.
+It dials out to Telegram and talks to its database.
 
 ## Setup
 
@@ -44,6 +44,7 @@ Not yet. When there is something to run, it will want a bot token from
 
 ```bash
 export QUIZR_BOT_TOKEN="..."
+export QUIZR_DB="Host=localhost;Database=quizr;Username=quizr;Password=..."
 ```
 
 Never commit the token — leaked bot tokens are scraped off GitHub within minutes.

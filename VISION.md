@@ -183,9 +183,9 @@ keeps its roster editable by captains forever.
 ### Phase 1 — the bot
 
 Everything runs in the team chat. Announcement posts with buttons, the pinned Board, the
-queue, guests, reminders, the archive. **No infrastructure at all**: no domain, no TLS, no
-inbound ports. The bot polls Telegram and keeps a local database, and runs on anything left
-switched on.
+queue, guests, reminders, the archive. Because the bot long-polls, **nothing ever connects
+to it**: no domain, no TLS, no open ports. It dials out to Telegram and talks to its
+database, and that is the whole surface it needs.
 
 ### Phase 2 — the mini app
 
@@ -276,6 +276,7 @@ Recorded so they don't get re-argued.
 | Captains are chat admins, plus grants | Zero setup for a new team, and it matches how the chat is already organised. |
 | One chat is one team | A person can be in several teams; calendars stay separate. Other teams can use the same bot. |
 | Timezone is set per team by the captain | Not inferred from anyone's device. |
+| Playing vs reserve is derived, not stored | A signup is who, which game and when; the split falls out of the ordering. Two people tapping for the last seat at the same moment simply get two timestamps. The invariant becomes a property of the data instead of something the code maintains. |
 
 ## Still open
 
