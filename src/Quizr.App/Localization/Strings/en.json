@@ -10,7 +10,7 @@
   "Error.Generic": "Something went wrong on my end. It's been logged — please try again.",
 
   "Announcement.Venue": "📍 {Venue}",
-  "Announcement.When": "🕓 {When}",
+  "Announcement.When": "🕓 {When:ddd, d MMM, HH\\:mm}",
   "Announcement.Price": "💵 {Price}",
   "Announcement.PlayingHeader": "Playing ({Count}/{Capacity}):",
   "Announcement.ReserveHeader": "Reserve ({Count}):",

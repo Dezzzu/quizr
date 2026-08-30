@@ -29,6 +29,24 @@ public class AnnouncementRendererTests
     }
 
     [Fact]
+    public void TheStartTimeIsFormattedInTheTeamsLocalZone()
+    {
+        var game = GameWithCapacity(1);
+        game.StartsAt = new DateTimeOffset(2026, 3, 6, 18, 5, 0, TimeSpan.Zero); // 19:05 in Berlin
+        var roster = new RosterSplit([], []);
+
+        var text = AnnouncementRenderer.RenderText(
+            game,
+            roster,
+            new Dictionary<PlayerId, Player>(),
+            "Europe/Berlin",
+            Strings
+        );
+
+        text.Should().Contain("Fri, 6 Mar, 19:05");
+    }
+
+    [Fact]
     public void ShowsTheReserveSectionOnlyWhenSomeoneIsWaiting()
     {
         var alice = Player(1, "Alice");

@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Net;
 using System.Text;
 using Quizr.App.Localization;
@@ -27,13 +26,12 @@ internal static class AnnouncementRenderer
 
         text.Append("<b>").Append(WebUtility.HtmlEncode(game.Title)).Append("</b>\n");
         text.Append(strings.Text("Announcement.Venue", new { Venue = WebUtility.HtmlEncode(game.Venue) })).Append('\n');
-        text.Append(
-                strings.Text(
-                    "Announcement.When",
-                    new { When = local.ToString("ddd, d MMM, HH:mm", CultureInfo.InvariantCulture) }
-                )
-            )
-            .Append('\n');
+        // The format spec lives in the template, not here — SmartFormat applies it through
+        // IFormattable with the team's locale, so day and month names come out localized
+        // (e.g. "Fri"/"пт"/"Fr") instead of fixed to one culture. A literal ':' in a .NET
+        // format string has to be escaped as '\:', since SmartFormat also uses ':' as its
+        // own placeholder-to-format delimiter.
+        text.Append(strings.Text("Announcement.When", new { When = local })).Append('\n');
 
         if (game.Price is { } price)
         {
