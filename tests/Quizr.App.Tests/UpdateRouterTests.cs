@@ -10,6 +10,7 @@ using Quizr.Domain;
 using Quizr.Domain.Entities;
 using Telegram.Bot;
 using Telegram.Bot.Types;
+using Telegram.Bot.Types.Enums;
 
 namespace Quizr.App.Tests;
 
@@ -223,12 +224,75 @@ public class UpdateRouterTests
         await SeedTeamAsync(db, chatId: 4006, ct);
         var (router, bot) = CreateRouter(db);
 
-        await router.RouteAsync(MessageUpdate(4006, 42, "/start"), ct);
+        await router.RouteAsync(MessageUpdate(4006, 42, "/start", ChatType.Private), ct);
 
         bot.SentTexts().Should().ContainSingle();
         (await db.Players.SingleOrDefaultAsync(p => p.TelegramUserId == new TelegramUserId(42), ct))
             .Should()
             .NotBeNull();
+    }
+
+    [Test]
+    public async Task HelpListsTheCommandsInTheGroupsLanguage()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 4007, ct);
+        team.Locale = "ru";
+        await db.SaveChangesAsync(ct);
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(MessageUpdate(4007, 43, "/help"), ct);
+
+        bot.SentTexts().Should().ContainSingle(text => text.Contains("/newgame", StringComparison.Ordinal));
+        bot.SentTexts().Should().ContainSingle(text => text.Contains("Капитанам", StringComparison.Ordinal));
+    }
+
+    [Test]
+    public async Task HelpWorksWithNoTeamAtAll()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(MessageUpdate(4008, 44, "/help", ChatType.Private), ct);
+
+        bot.SentTexts().Should().ContainSingle(text => text.Contains("/managecaptains", StringComparison.Ordinal));
+    }
+
+    // The actual bug this guards against: a captain who set their own DM language to German
+    // running /help in the team's Russian-language group must still see it in Russian —
+    // CLAUDE.md's "group messages use the team's language" is not a preference the captain's
+    // own /mylanguage choice can override.
+    [Test]
+    public async Task HelpInAGroupUsesTheTeamsLanguageEvenWhenThePlayerSetADifferentPersonalLanguage()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 4009, ct);
+        team.Locale = "ru";
+        await db.SaveChangesAsync(ct);
+        var (router, bot) = CreateRouter(db);
+        await router.RouteAsync(MessageUpdate(4009, 45, "/mylanguage de"), ct);
+
+        await router.RouteAsync(MessageUpdate(4009, 45, "/help"), ct);
+
+        bot.SentTexts().Should().ContainSingle(text => text.Contains("Капитанам", StringComparison.Ordinal));
+    }
+
+    // The DM side of the same split: with no group to defer to, the player's own choice
+    // still wins, exactly as before this behavior was split by chat type.
+    [Test]
+    public async Task HelpInADmStillUsesThePlayersOwnLanguage()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var (router, bot) = CreateRouter(db);
+        await router.RouteAsync(MessageUpdate(4010, 46, "/mylanguage de", ChatType.Private), ct);
+
+        await router.RouteAsync(MessageUpdate(4010, 46, "/help", ChatType.Private), ct);
+
+        bot.SentTexts().Should().ContainSingle(text => text.Contains("Für Captains", StringComparison.Ordinal));
     }
 
     private static (UpdateRouter Router, ITelegramBotClient Bot) CreateRouter(QuizrDb db)
@@ -317,14 +381,19 @@ public class UpdateRouterTests
         return team;
     }
 
-    private static Update MessageUpdate(long chatId, long telegramUserId, string text) =>
+    private static Update MessageUpdate(
+        long chatId,
+        long telegramUserId,
+        string text,
+        ChatType chatType = ChatType.Supergroup
+    ) =>
         new()
         {
             Id = 1,
             Message = new Message
             {
                 Id = 1,
-                Chat = new Chat { Id = chatId },
+                Chat = new Chat { Id = chatId, Type = chatType },
                 From = new User { Id = telegramUserId, FirstName = "Test" },
                 Text = text,
                 Date = DateTime.UtcNow,

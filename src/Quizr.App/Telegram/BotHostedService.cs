@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Quizr.App.Localization;
 using Telegram.Bot;
 using Telegram.Bot.Polling;
 using Telegram.Bot.Types.Enums;
@@ -17,12 +18,19 @@ public sealed class BotHostedService : BackgroundService
 
     private readonly ITelegramBotClient _bot;
     private readonly UpdateDispatcher _dispatcher;
+    private readonly IStrings _strings;
     private readonly ILogger<BotHostedService> _logger;
 
-    public BotHostedService(ITelegramBotClient bot, UpdateDispatcher dispatcher, ILogger<BotHostedService> logger)
+    public BotHostedService(
+        ITelegramBotClient bot,
+        UpdateDispatcher dispatcher,
+        IStrings strings,
+        ILogger<BotHostedService> logger
+    )
     {
         _bot = bot;
         _dispatcher = dispatcher;
+        _strings = strings;
         _logger = logger;
     }
 
@@ -30,6 +38,10 @@ public sealed class BotHostedService : BackgroundService
     {
         var me = await _bot.GetMe(stoppingToken);
         _logger.LogInformation("Quizr started as @{Username}", me.Username);
+
+        // The "/" suggestion menu — re-registered on every startup so a code change to the
+        // command list takes effect on the next deploy with nothing else to remember.
+        await CommandMenu.RegisterAsync(_bot, _strings, stoppingToken);
 
         await _bot.ReceiveAsync(_dispatcher, ReceiverOptions, stoppingToken);
     }

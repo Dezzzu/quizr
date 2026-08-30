@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -137,8 +138,23 @@ public sealed class UpdateRouter
         switch (command)
         {
             case "/start":
-                var locale = LocaleResolver.Resolve(player?.Locale, message.From?.LanguageCode, team?.Locale ?? "en");
-                await _sender.SendAsync(chatId, _strings.For(locale).Text("Start.Greeting"), null, ct);
+                var startLocale = LocaleResolver.Resolve(
+                    message.Chat.Type,
+                    player?.Locale,
+                    message.From?.LanguageCode,
+                    team?.Locale ?? "en"
+                );
+                await _sender.SendAsync(chatId, _strings.For(startLocale).Text("Start.Greeting"), null, ct);
+                break;
+
+            case "/help":
+                var helpLocale = LocaleResolver.Resolve(
+                    message.Chat.Type,
+                    player?.Locale,
+                    message.From?.LanguageCode,
+                    team?.Locale ?? "en"
+                );
+                await _sender.SendAsync(chatId, BuildHelpText(_strings.For(helpLocale)), null, ct);
                 break;
 
             case "/settimezone" when team is not null && player is not null && message.From is not null:
@@ -3014,6 +3030,41 @@ public sealed class UpdateRouter
             .ToList();
 
         return (strings.Text("Captains.Header"), new InlineKeyboardMarkup(rows));
+    }
+
+    // Built from the same two lists CommandMenu.RegisterAsync uses for Telegram's own "/"
+    // suggestion menu, so there's exactly one place a new command gets named and described —
+    // nowhere for this view and that one to drift apart. Argument syntax isn't repeated here;
+    // each command that takes one already explains it in its own validation message (e.g.
+    // Setup.RemindersUsage) when run without it.
+    private static string BuildHelpText(IStringsFor strings)
+    {
+        var text = new StringBuilder();
+        text.Append(strings.Text("Help.Intro")).Append("\n\n");
+
+        text.Append("<b>").Append(strings.Text("Help.EveryoneHeader")).Append("</b>\n");
+        AppendCommandList(text, CommandMenu.EveryoneCommands, strings);
+
+        text.Append("\n<b>").Append(strings.Text("Help.CaptainsHeader")).Append("</b>\n");
+        AppendCommandList(text, CommandMenu.CaptainOnlyCommands, strings);
+
+        return text.ToString().TrimEnd();
+    }
+
+    private static void AppendCommandList(
+        StringBuilder text,
+        IEnumerable<(string Command, string DescriptionKey)> commands,
+        IStringsFor strings
+    )
+    {
+        foreach (var (command, descriptionKey) in commands)
+        {
+            text.Append("<code>/")
+                .Append(command)
+                .Append("</code> — ")
+                .Append(strings.Text(descriptionKey))
+                .Append('\n');
+        }
     }
 
     private async Task AnswerAlertAsync(CallbackQuery callbackQuery, string text, CancellationToken ct) =>

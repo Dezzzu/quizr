@@ -1,35 +1,60 @@
 using AwesomeAssertions;
 using Quizr.App.Localization;
+using Telegram.Bot.Types.Enums;
 
 namespace Quizr.App.Tests;
 
 public class LocaleResolverTests
 {
     [Test]
-    public void ExplicitChoiceWinsOverEverythingElse()
+    public void InADmExplicitChoiceWinsOverEverythingElse()
     {
-        LocaleResolver.Resolve(explicitChoice: "de", telegramLanguageCode: "ru", teamDefault: "en").Should().Be("de");
+        LocaleResolver
+            .Resolve(ChatType.Private, explicitChoice: "de", telegramLanguageCode: "ru", teamDefault: "en")
+            .Should()
+            .Be("de");
     }
 
     [Test]
-    public void FallsBackToTelegramLanguageWhenNoExplicitChoice()
+    public void InADmFallsBackToTelegramLanguageWhenNoExplicitChoice()
     {
         LocaleResolver
-            .Resolve(explicitChoice: null, telegramLanguageCode: "ru-RU", teamDefault: "en")
+            .Resolve(ChatType.Private, explicitChoice: null, telegramLanguageCode: "ru-RU", teamDefault: "en")
             .Should()
             .Be("ru");
     }
 
     [Test]
-    public void FallsBackToTeamDefaultWhenTelegramLanguageIsUnsupported()
+    public void InADmFallsBackToTeamDefaultWhenTelegramLanguageIsUnsupported()
     {
-        LocaleResolver.Resolve(explicitChoice: null, telegramLanguageCode: "fr", teamDefault: "de").Should().Be("de");
+        LocaleResolver
+            .Resolve(ChatType.Private, explicitChoice: null, telegramLanguageCode: "fr", teamDefault: "de")
+            .Should()
+            .Be("de");
     }
 
     [Test]
-    public void FallsBackToTeamDefaultWhenTelegramLanguageIsMissing()
+    public void InADmFallsBackToTeamDefaultWhenTelegramLanguageIsMissing()
     {
-        LocaleResolver.Resolve(explicitChoice: null, telegramLanguageCode: null, teamDefault: "de").Should().Be("de");
+        LocaleResolver
+            .Resolve(ChatType.Private, explicitChoice: null, telegramLanguageCode: null, teamDefault: "de")
+            .Should()
+            .Be("de");
+    }
+
+    // CLAUDE.md: "Group messages use the team's language" — full stop. A player's own
+    // /mylanguage choice, and Telegram's own client language, both apply to DMs only; a
+    // message read by the whole team can't honour one person's preference over what the
+    // team chose.
+    [Test]
+    [Arguments(ChatType.Group)]
+    [Arguments(ChatType.Supergroup)]
+    public void InAGroupTheTeamsLanguageAlwaysWinsRegardlessOfPersonalOrTelegramLanguage(ChatType chatType)
+    {
+        LocaleResolver
+            .Resolve(chatType, explicitChoice: "de", telegramLanguageCode: "fr", teamDefault: "ru")
+            .Should()
+            .Be("ru");
     }
 
     [Test]

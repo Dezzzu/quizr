@@ -1,13 +1,26 @@
+using Telegram.Bot.Types.Enums;
+
 namespace Quizr.App.Localization;
 
-// CLAUDE.md's resolution order: explicit user choice -> Telegram language_code ->
-// team default -> English. One place so it can't drift between call sites.
+// CLAUDE.md: "Group messages use the team's language; DMs and the app use the person's own."
+// A command like /start or /help is reachable from either, so the resolution order itself
+// depends on where it ran — in a DM there's no team to defer to as a shared default, and a
+// group message read by everyone can't honour one person's own preference over what the team
+// chose. One place so the split can't drift between call sites, or silently vanish back into
+// a single order that happens to look right in a DM and wrong for everyone else in a group.
 internal static class LocaleResolver
 {
     private static readonly HashSet<string> Supported = ["en", "ru", "de"];
 
-    public static string Resolve(string? explicitChoice, string? telegramLanguageCode, string teamDefault) =>
-        explicitChoice ?? MapToSupported(telegramLanguageCode) ?? teamDefault;
+    public static string Resolve(
+        ChatType chatType,
+        string? explicitChoice,
+        string? telegramLanguageCode,
+        string teamDefault
+    ) =>
+        chatType == ChatType.Private
+            ? explicitChoice ?? MapToSupported(telegramLanguageCode) ?? teamDefault
+            : teamDefault;
 
     // For validating a captain's /setlanguage or a person's /mylanguage argument — exact
     // match only, unlike MapToSupported's "ru-RU" -> "ru" leniency for Telegram's own codes.
