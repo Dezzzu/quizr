@@ -16,6 +16,7 @@ internal static class DialogKinds
     public const string Nudge = "Nudge";
     public const string AddVenuePlayer = "AddVenuePlayer";
     public const string ManagePlayers = "ManagePlayers";
+    public const string AddTeamGuest = "AddTeamGuest";
 }
 
 internal sealed record GuestNameDialogData(SignupId SignupId);
@@ -27,3 +28,8 @@ internal sealed record AddVenuePlayerDialogData(GameId GameId);
 // Acting on behalf of a player (design decision #2 of M9): remembers which game the member
 // list belongs to between taps — mirrors NudgeDialogData. No Step; there's only one screen.
 internal sealed record ManagePlayersDialogData(GameId GameId);
+
+// A captain adding a guest who isn't signed up for themselves — the name is collected up
+// front rather than anonymous-then-named, since a team guest is always named (invariant 5)
+// and there's no owner for an anonymous one to fall back to identifying by.
+internal sealed record AddTeamGuestDialogData(GameId GameId);

@@ -13,6 +13,7 @@ using Quizr.Domain;
 using Quizr.Domain.Entities;
 using Quizr.Domain.Extensions;
 using Telegram.Bot;
+using Telegram.Bot.Requests;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
@@ -656,6 +657,10 @@ public sealed class UpdateRouter
                 await HandleAddVenuePlayerReplyAsync(dialog, message, ct);
                 break;
 
+            case DialogKinds.AddTeamGuest:
+                await HandleAddTeamGuestReplyAsync(dialog, message, ct);
+                break;
+
             // Callback-only dialogs — no text-reply step exists for either, so a reply while
             // one is active is discarded exactly like a genuinely unrecognised kind.
             case DialogKinds.Nudge:
@@ -1177,6 +1182,50 @@ public sealed class UpdateRouter
         await SendRosterViewAsync(game, chatId, strings, ct);
     }
 
+    private async Task HandleAddTeamGuestReplyAsync(DialogState dialog, Message message, CancellationToken ct)
+    {
+        var data = JsonSerializer.Deserialize<AddTeamGuestDialogData>(dialog.Data)!;
+        var chatId = new TelegramChatId(message.Chat.Id);
+        var team = await _db.Teams.SingleAsync(t => t.Id == dialog.TeamId, ct);
+        var strings = _strings.For(team.Locale);
+
+        // A team guest is always named (invariant 5) — TryParseText, not TryParseOptionalText,
+        // since there's no owner for an anonymous one to fall back to identifying by.
+        if (!FieldParsing.TryParseText(message.Text!, out var name, out var errorKey))
+        {
+            await _sender.SendAsync(chatId, strings.Text(errorKey!), null, ct);
+            return;
+        }
+
+        var game = await _db.Games.SingleAsync(g => g.Id == data.GameId, ct);
+        var result = await _signups.AddTeamGuestAsync(game, name, ct);
+
+        _db.DialogStates.Remove(dialog);
+
+        if (!result.IsSuccess)
+        {
+            await _db.SaveChangesAsync(ct);
+            await _sender.SendAsync(chatId, strings.Text(ErrorKey(result.Error)), null, ct);
+            return;
+        }
+
+        AuditRecorder.Record(
+            _db,
+            team.Id,
+            game.Id,
+            dialog.PlayerId,
+            AuditActions.TeamGuestAdded,
+            new { Name = name },
+            _clock
+        );
+        await _db.SaveChangesAsync(ct);
+        await _announcements.RefreshAsync(game, team, ct);
+
+        var guests = await _signups.LoadAllLiveGuestsAsync(game, ct);
+        var (text, keyboard) = BuildManageGuestsView(game, guests, strings);
+        await _sender.SendAsync(chatId, text, keyboard, ct);
+    }
+
     private async Task HandleGuestNameReplyAsync(DialogState dialog, Message message, CancellationToken ct)
     {
         var data = JsonSerializer.Deserialize<GuestNameDialogData>(dialog.Data)!;
@@ -1227,6 +1276,7 @@ public sealed class UpdateRouter
             case CallbackData.Nudge:
             case CallbackData.ManageRoster:
             case CallbackData.ManagePlayers:
+            case CallbackData.ManageGuests:
             case CallbackData.DeclineGame:
             case CallbackData.ConfirmDecline:
             case CallbackData.CancelDecline:
@@ -1267,6 +1317,11 @@ public sealed class UpdateRouter
                 await HandleManagePlayersCallbackAsync(callbackQuery, ct);
                 break;
 
+            case CallbackData.AddTeamGuest:
+            case CallbackData.RemoveGuestOnBehalf:
+                await HandleManageGuestsCallbackAsync(verb, callbackQuery, ct);
+                break;
+
             case CallbackData.CycleReminderChannel:
             case CallbackData.ToggleReserveReminder:
                 await HandleReminderSettingsCallbackAsync(verb, callbackQuery, ct);
@@ -1274,6 +1329,10 @@ public sealed class UpdateRouter
 
             case CallbackData.ToggleCaptain:
                 await HandleManageCaptainsCallbackAsync(callbackQuery, ct);
+                break;
+
+            case CallbackData.CloseView:
+                await HandleCloseViewAsync(callbackQuery, ct);
                 break;
 
             default:
@@ -1335,6 +1394,10 @@ public sealed class UpdateRouter
 
             case CallbackData.ManagePlayers:
                 await HandleManagePlayersButtonAsync(game, team, player, callbackQuery, strings, ct);
+                break;
+
+            case CallbackData.ManageGuests:
+                await HandleManageGuestsButtonAsync(game, team, player, callbackQuery, strings, ct);
                 break;
 
             case CallbackData.DeclineGame:
@@ -1585,6 +1648,12 @@ public sealed class UpdateRouter
             InlineKeyboardButton.WithCallbackData(
                 strings.Text("MyGuests.AddAnotherButton"),
                 CallbackData.Format(CallbackData.Guest, game.Id)
+            ),
+        ]);
+        rows.Add([
+            InlineKeyboardButton.WithCallbackData(
+                strings.Text("MyGuests.DoneButton"),
+                CallbackData.Format(CallbackData.CloseView, 0L)
             ),
         ]);
 
@@ -2400,14 +2469,20 @@ public sealed class UpdateRouter
             return;
         }
 
-        var missing = await _games.LoadMissingMembersAsync(game, ct);
-        if (missing.Count == 0)
+        // The captain doing the nudging is presumably at the venue themselves — that's why
+        // they're the one noticing who's late — so they're never a nudge target even if
+        // they're also signed up to play.
+        var playing = (await _games.LoadPlayingMembersAsync(game, ct)).Where(m => m.PlayerId != player.Id).ToList();
+        if (playing.Count == 0)
         {
-            await AnswerAlertAsync(callbackQuery, strings.Text("Nudge.NoneMissing"), ct);
+            await AnswerAlertAsync(callbackQuery, strings.Text("Nudge.NobodyToNudge"), ct);
             return;
         }
 
-        var selected = missing.Select(m => m.PlayerId.Value).ToList();
+        // Starts fully selected — the bot has no notion of who has actually arrived (no
+        // check-in feature), so the captain's job is to uncheck whoever they can already see
+        // is there, leaving the late arrivals checked before sending.
+        var selected = playing.Select(m => m.PlayerId.Value).ToList();
         await StartDialogAsync(
             team.Id,
             player.Id,
@@ -2417,14 +2492,14 @@ public sealed class UpdateRouter
             ct
         );
 
-        var (text, keyboard) = BuildNudgeView(game, missing, selected, strings);
+        var (text, keyboard) = BuildNudgeView(game, playing, selected, strings);
         await _sender.SendAsync(chatId, text, keyboard, ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
     private static (string Text, InlineKeyboardMarkup Keyboard) BuildNudgeView(
         Game game,
-        IReadOnlyList<Membership> missing,
+        IReadOnlyList<Membership> playing,
         List<long> selectedPlayerIds,
         IStringsFor strings
     )
@@ -2432,7 +2507,7 @@ public sealed class UpdateRouter
         var text = strings.Text("Nudge.Header", new { Title = WebUtility.HtmlEncode(game.Title) });
 
         var rows = new List<IEnumerable<InlineKeyboardButton>>();
-        foreach (var membership in missing)
+        foreach (var membership in playing)
         {
             var isSelected = selectedPlayerIds.Contains(membership.PlayerId.Value);
             var label = strings.Text(
@@ -2491,7 +2566,17 @@ public sealed class UpdateRouter
 
         if (verb == CallbackData.ToggleNudgeTarget)
         {
-            await HandleToggleNudgeTargetAsync(dialog, data, game, value, chatId, callbackQuery, strings, ct);
+            await HandleToggleNudgeTargetAsync(
+                dialog,
+                data,
+                game,
+                player.Id,
+                value,
+                chatId,
+                callbackQuery,
+                strings,
+                ct
+            );
             return;
         }
 
@@ -2502,7 +2587,8 @@ public sealed class UpdateRouter
         DialogState dialog,
         NudgeDialogData data,
         Game game,
-        long playerId,
+        PlayerId actorId,
+        long targetPlayerId,
         TelegramChatId chatId,
         CallbackQuery callbackQuery,
         IStringsFor strings,
@@ -2510,15 +2596,15 @@ public sealed class UpdateRouter
     )
     {
         var selected = new List<long>(data.SelectedPlayerIds);
-        if (!selected.Remove(playerId))
+        if (!selected.Remove(targetPlayerId))
         {
-            selected.Add(playerId);
+            selected.Add(targetPlayerId);
         }
 
         await SaveDialogDataAsync(dialog, data with { SelectedPlayerIds = selected }, ct);
 
-        var missing = await _games.LoadMissingMembersAsync(game, ct);
-        var (text, keyboard) = BuildNudgeView(game, missing, selected, strings);
+        var playing = (await _games.LoadPlayingMembersAsync(game, ct)).Where(m => m.PlayerId != actorId).ToList();
+        var (text, keyboard) = BuildNudgeView(game, playing, selected, strings);
         await _sender.EditAsync(chatId, new TelegramMessageId(callbackQuery.Message!.MessageId), text, keyboard, ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
@@ -2846,6 +2932,155 @@ public sealed class UpdateRouter
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
+    // --- Manage guests (captain-only): every live guest for the game, including ones a
+    // captain isn't signed up for themselves — the one guest self-service RemoveGuest can
+    // never reach, since a team guest has no owner to check against. No dialog for the list
+    // itself: RemoveGuestOnBehalf carries the guest's own SignupId and AddTeamGuest carries
+    // the GameId, so nothing needs remembering between taps — only naming a new team guest
+    // does, since that's the one step needing a text reply. ---
+
+    private async Task HandleManageGuestsButtonAsync(
+        Game game,
+        Team team,
+        Player player,
+        CallbackQuery callbackQuery,
+        IStringsFor strings,
+        CancellationToken ct
+    )
+    {
+        var chatId = new TelegramChatId(callbackQuery.Message!.Chat.Id);
+        var telegramUserId = new TelegramUserId(callbackQuery.From.Id);
+        if (!await _teamGuard.IsCaptainAsync(team.Id, player.Id, chatId, telegramUserId, ct))
+        {
+            await AnswerAlertAsync(callbackQuery, strings.Text("NewGame.NotCaptain"), ct);
+            return;
+        }
+
+        var guests = await _signups.LoadAllLiveGuestsAsync(game, ct);
+        var (text, keyboard) = BuildManageGuestsView(game, guests, strings);
+        await _sender.SendAsync(chatId, text, keyboard, ct);
+        await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
+    }
+
+    private static (string Text, InlineKeyboardMarkup Keyboard) BuildManageGuestsView(
+        Game game,
+        IReadOnlyList<Signup> guests,
+        IStringsFor strings
+    )
+    {
+        var encodedTitle = WebUtility.HtmlEncode(game.Title);
+        var text =
+            guests.Count == 0
+                ? strings.Text("ManageGuests.Empty", new { Title = encodedTitle })
+                : strings.Text("ManageGuests.Header", new { Title = encodedTitle });
+
+        var rows = new List<IEnumerable<InlineKeyboardButton>>();
+        for (var i = 0; i < guests.Count; i++)
+        {
+            var guest = guests[i];
+            string label;
+            if (guest.GuestName is { } name)
+            {
+                label = guest.HasInviter
+                    ? strings.Text(
+                        "ManageGuests.RemoveNamedButton",
+                        new { Name = name, Inviter = guest.InvitedByPlayer!.DisplayName }
+                    )
+                    : strings.Text("ManageGuests.RemoveTeamGuestButton", new { Name = name });
+            }
+            else
+            {
+                label = strings.Text(
+                    "ManageGuests.RemoveAnonymousButton",
+                    new { Index = i + 1, Inviter = guest.InvitedByPlayer!.DisplayName }
+                );
+            }
+
+            rows.Add([
+                InlineKeyboardButton.WithCallbackData(
+                    label,
+                    CallbackData.Format(CallbackData.RemoveGuestOnBehalf, guest.Id)
+                ),
+            ]);
+        }
+
+        rows.Add([
+            InlineKeyboardButton.WithCallbackData(
+                strings.Text("ManageGuests.AddTeamGuestButton"),
+                CallbackData.Format(CallbackData.AddTeamGuest, game.Id)
+            ),
+        ]);
+        rows.Add([
+            InlineKeyboardButton.WithCallbackData(
+                strings.Text("ManageGuests.DoneButton"),
+                CallbackData.Format(CallbackData.CloseView, 0L)
+            ),
+        ]);
+
+        return (text, new InlineKeyboardMarkup(rows));
+    }
+
+    private async Task HandleManageGuestsCallbackAsync(char verb, CallbackQuery callbackQuery, CancellationToken ct)
+    {
+        var chatId = new TelegramChatId(callbackQuery.Message!.Chat.Id);
+        var team = await _db.Teams.SingleAsync(t => t.ChatId == chatId, ct);
+        var strings = _strings.For(team.Locale);
+        var actor = await _playerBootstrap.GetOrCreateAsync(callbackQuery.From, ct);
+        var telegramUserId = new TelegramUserId(callbackQuery.From.Id);
+
+        if (!await _teamGuard.IsCaptainAsync(team.Id, actor.Id, chatId, telegramUserId, ct))
+        {
+            await AnswerAlertAsync(callbackQuery, strings.Text("NewGame.NotCaptain"), ct);
+            return;
+        }
+
+        if (verb == CallbackData.AddTeamGuest)
+        {
+            _ = CallbackData.TryParse(callbackQuery.Data!, out _, out GameId gameId);
+            await StartDialogAsync(
+                team.Id,
+                actor.Id,
+                chatId,
+                DialogKinds.AddTeamGuest,
+                new AddTeamGuestDialogData(gameId),
+                ct
+            );
+            await _sender.SendAsync(chatId, strings.Text("ManageGuests.AskName"), null, ct);
+            await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
+            return;
+        }
+
+        _ = CallbackData.TryParse(callbackQuery.Data!, out _, out SignupId guestSignupId);
+        var result = await _signups.RemoveGuestOnBehalfAsync(guestSignupId, actor.Id, ct);
+        if (!result.IsSuccess)
+        {
+            await AnswerAlertAsync(callbackQuery, strings.Text(ErrorKey(result.Error)), ct);
+            return;
+        }
+
+        var outcome = result.Value;
+        var game = await _db.Games.SingleAsync(g => g.Id == outcome.Guest.GameId, ct);
+
+        AuditRecorder.Record(
+            _db,
+            team.Id,
+            game.Id,
+            actor.Id,
+            AuditActions.GuestRemovedOnBehalf,
+            new { GuestSignupId = guestSignupId.Value },
+            _clock
+        );
+        await _db.SaveChangesAsync(ct);
+        await _announcements.RefreshAsync(game, team, ct);
+
+        var remaining = await _signups.LoadAllLiveGuestsAsync(game, ct);
+        var (text, keyboard) = BuildManageGuestsView(game, remaining, strings);
+        await _sender.EditAsync(chatId, new TelegramMessageId(callbackQuery.Message!.MessageId), text, keyboard, ct);
+        await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
+
+        await SendPromotionMessagesAsync(chatId, outcome.NewlyPromoted, strings, ct);
+    }
+
     // --- Reminder settings (/myreminders) — self-service, no captain check, no dialog. ---
 
     private async Task HandleMyRemindersCommandAsync(
@@ -3091,6 +3326,39 @@ public sealed class UpdateRouter
 
     private async Task AnswerAlertAsync(CallbackQuery callbackQuery, string text, CancellationToken ct) =>
         await _bot.AnswerCallbackQuery(callbackQuery.Id, text, showAlert: true, cancellationToken: ct);
+
+    // Shared "Done" for every open-ended view (Manage guests, Manage players): strips the
+    // keyboard via editMessageReplyMarkup rather than editMessageText, so whatever the view
+    // last showed — who your guests are, who's on the roster — stays visible as a record
+    // instead of being replaced by a generic confirmation. Clears any dialog behind the view
+    // too, since a captain-only one (Manage players) would otherwise sit there forever with
+    // no text-reply step to ever end it.
+    private async Task HandleCloseViewAsync(CallbackQuery callbackQuery, CancellationToken ct)
+    {
+        var chatId = new TelegramChatId(callbackQuery.Message!.Chat.Id);
+        var player = await _playerBootstrap.GetOrCreateAsync(callbackQuery.From, ct);
+
+        var dialog = await _db.DialogStates.SingleOrDefaultAsync(
+            d => d.ChatId == chatId && d.PlayerId == player.Id,
+            ct
+        );
+        if (dialog is not null)
+        {
+            _db.DialogStates.Remove(dialog);
+            await _db.SaveChangesAsync(ct);
+        }
+
+        await _bot.SendRequest(
+            new EditMessageReplyMarkupRequest
+            {
+                ChatId = chatId.Value,
+                MessageId = callbackQuery.Message.MessageId,
+                ReplyMarkup = null,
+            },
+            ct
+        );
+        await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
+    }
 
     private static string ErrorKey(BusinessError error) =>
         error switch

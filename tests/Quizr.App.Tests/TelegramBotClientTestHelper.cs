@@ -74,4 +74,11 @@ internal static class TelegramBotClientTestHelper
 
     public static int PinCallCount(this ITelegramBotClient bot) =>
         bot.ReceivedCalls().Select(call => call.GetArguments()[0]).OfType<PinChatMessageRequest>().Count();
+
+    public static IReadOnlyList<EditMessageReplyMarkupRequest> ClearedKeyboards(this ITelegramBotClient bot) =>
+        bot.ReceivedCalls()
+            .Select(call => call.GetArguments()[0])
+            .OfType<EditMessageReplyMarkupRequest>()
+            .Where(request => request.ReplyMarkup == null)
+            .ToList();
 }

@@ -59,7 +59,10 @@ public interface IGameService
 
     Task SetStartTimeAsync(Game game, TimeOnly time, string timeZoneId, CancellationToken ct);
 
-    Task<IReadOnlyList<Membership>> LoadMissingMembersAsync(Game game, CancellationToken ct);
+    // Nudge's target list — CLAUDE.md/VISION.md: "ping the players who haven't arrived yet,"
+    // meaning people who signed up and are late, not people who never signed up at all.
+    // Guests are excluded: a guest signup has no PlayerId, so there's nobody to @mention.
+    Task<IReadOnlyList<Membership>> LoadPlayingMembersAsync(Game game, CancellationToken ct);
 
     Task<IReadOnlyList<MemberSignupStatus>> LoadMemberStatusesAsync(Game game, CancellationToken ct);
 
@@ -254,18 +257,25 @@ public sealed class GameService : IGameService
         await _db.SaveChangesAsync(ct);
     }
 
-    public async Task<IReadOnlyList<Membership>> LoadMissingMembersAsync(Game game, CancellationToken ct)
+    public async Task<IReadOnlyList<Membership>> LoadPlayingMembersAsync(Game game, CancellationToken ct)
     {
-        var signedUpPlayerIds = await _db
+        var liveSignups = await _db
             .Signups.AsNoTracking()
-            .Where(s => s.GameId == game.Id && s.CancelledAt == null && s.PlayerId != null)
-            .Select(s => s.PlayerId!.Value)
+            .Where(s => s.GameId == game.Id && s.CancelledAt == null)
             .ToListAsync(ct);
+
+        // Playing, not the whole roster — invariant 2's derived split, same as everywhere
+        // else. Someone on the reserve isn't "late," they're not confirmed to play yet.
+        var playingPlayerIds = Roster
+            .Split(liveSignups, game.Capacity)
+            .Playing.Where(s => s.PlayerId is not null)
+            .Select(s => s.PlayerId!.Value)
+            .ToHashSet();
 
         return await _db
             .Memberships.AsNoTracking()
             .Include(m => m.Player)
-            .Where(m => m.TeamId == game.TeamId && !signedUpPlayerIds.Contains(m.PlayerId))
+            .Where(m => m.TeamId == game.TeamId && playingPlayerIds.Contains(m.PlayerId))
             .ToListAsync(ct);
     }
 

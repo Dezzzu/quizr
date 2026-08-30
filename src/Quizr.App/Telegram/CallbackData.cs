@@ -62,6 +62,18 @@ internal static class CallbackData
     public const char CancelDecline = 'C';
     public const char FinishGame = 'E';
 
+    // Ends an open-ended view (Manage guests, Manage players) with no further action —
+    // dummy id. Shared across every such view rather than one verb per view, since the
+    // action is identical: strip the keyboard, clear any dialog behind it.
+    public const char CloseView = 'F';
+
+    // Captain-only: manage any guest for a game, including ones a captain isn't signed up
+    // for themselves. Mirrors ManagePlayers/managecaptains' member-list-with-toggle shape,
+    // one more instance of the same pattern.
+    public const char ManageGuests = 'G'; // carries GameId
+    public const char AddTeamGuest = 'H'; // carries GameId
+    public const char RemoveGuestOnBehalf = 'I'; // carries SignupId
+
     public static string Format(char verb, GameId gameId) => Format(verb, gameId.Value);
 
     public static string Format(char verb, SignupId signupId) => Format(verb, signupId.Value);

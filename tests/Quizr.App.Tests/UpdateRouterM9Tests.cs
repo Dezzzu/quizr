@@ -152,6 +152,29 @@ public class UpdateRouterM9Tests
         (await db.DialogStates.CountAsync(d => d.ChatId == new TelegramChatId(8004), ct)).Should().Be(0);
     }
 
+    // Manage players previously had no way to end the interaction either — every toggle just
+    // re-rendered the same never-ending roster menu.
+    [Test]
+    public async Task DoneClearsTheManagePlayersKeyboardAndTheDialogBehindIt()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 8012, capacity: 5, ct);
+        var captain = await SeedCaptainAsync(db, game.TeamId, telegramUserId: 80121, ct);
+        var (router, bot) = CreateRouter(db);
+        await router.RouteAsync(
+            CallbackUpdate(8012, 80121, CallbackData.Format(CallbackData.ManagePlayers, game.Id)),
+            ct
+        );
+
+        await router.RouteAsync(CallbackUpdate(8012, 80121, CallbackData.Format(CallbackData.CloseView, 0L)), ct);
+
+        bot.ClearedKeyboards().Should().ContainSingle();
+        (await db.DialogStates.CountAsync(d => d.ChatId == new TelegramChatId(8012) && d.PlayerId == captain.Id, ct))
+            .Should()
+            .Be(0);
+    }
+
     [Test]
     public async Task DeclineRequiresConfirmationAndRecordsAnAuditEntry()
     {
@@ -311,6 +334,149 @@ public class UpdateRouterM9Tests
             ct
         );
         entry.ActorPlayerId.Should().Be(captain.Id);
+    }
+
+    // Manage guests (captain-only): a captain can add a team guest and remove anyone's guest —
+    // including a guest they don't own themselves — even while not signed up for the game.
+    [Test]
+    public async Task CaptainAddsATeamGuestAndRemovesAnyGuestWithoutBeingSignedUpThemself()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 8013, capacity: 5, ct);
+        var captain = await SeedCaptainAsync(db, game.TeamId, telegramUserId: 80131, ct);
+        var member = await SeedMemberAsync(db, game.TeamId, telegramUserId: 80132, ct);
+        var (router, _) = CreateRouter(db);
+
+        await router.RouteAsync(CallbackUpdate(8013, 80132, CallbackData.Format(CallbackData.Join, game.Id)), ct);
+        await router.RouteAsync(CallbackUpdate(8013, 80132, CallbackData.Format(CallbackData.Guest, game.Id)), ct);
+        var memberGuest = await db
+            .Signups.AsNoTracking()
+            .SingleAsync(s => s.GameId == game.Id && s.InvitedByPlayerId == member.Id, ct);
+
+        // The captain isn't signed up for the game themselves — Manage guests works anyway.
+        await router.RouteAsync(
+            CallbackUpdate(8013, 80131, CallbackData.Format(CallbackData.ManageGuests, game.Id)),
+            ct
+        );
+        await router.RouteAsync(
+            CallbackUpdate(8013, 80131, CallbackData.Format(CallbackData.AddTeamGuest, game.Id)),
+            ct
+        );
+        await router.RouteAsync(MessageUpdate(8013, 80131, "Walk-in Wendy"), ct);
+
+        var teamGuest = await db
+            .Signups.AsNoTracking()
+            .SingleAsync(s => s.GameId == game.Id && s.GuestName == "Walk-in Wendy", ct);
+        teamGuest.PlayerId.Should().BeNull();
+        teamGuest.InvitedByPlayerId.Should().BeNull();
+        var addEntry = await db.AuditEntries.SingleAsync(
+            e => e.GameId == game.Id && e.Action == AuditActions.TeamGuestAdded,
+            ct
+        );
+        addEntry.ActorPlayerId.Should().Be(captain.Id);
+
+        // Removing the member's own guest on their behalf is the one path self-service can
+        // never reach.
+        await router.RouteAsync(
+            CallbackUpdate(8013, 80131, CallbackData.Format(CallbackData.RemoveGuestOnBehalf, memberGuest.Id)),
+            ct
+        );
+
+        (await db.Signups.AsNoTracking().SingleAsync(s => s.Id == memberGuest.Id, ct)).CancelledAt.Should().NotBeNull();
+        var removeEntry = await db.AuditEntries.SingleAsync(
+            e => e.GameId == game.Id && e.Action == AuditActions.GuestRemovedOnBehalf,
+            ct
+        );
+        removeEntry.ActorPlayerId.Should().Be(captain.Id);
+    }
+
+    [Test]
+    public async Task NonCaptainsCannotManageGuests()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 8014, capacity: 5, ct);
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(
+            CallbackUpdate(8014, 80141, CallbackData.Format(CallbackData.ManageGuests, game.Id)),
+            ct
+        );
+
+        bot.AnsweredCallbackAlerts().Should().ContainSingle();
+        (await db.DialogStates.CountAsync(d => d.ChatId == new TelegramChatId(8014), ct)).Should().Be(0);
+    }
+
+    // --- Nudge (issue #5): pings only the still-selected players who signed up and are late —
+    // never the captain themselves, since they're the one at the venue noticing who's missing. ---
+
+    [Test]
+    public async Task NudgeExcludesTheCaptainAndOnlySendsToPlayersStillSelected()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 8015, capacity: 5, ct);
+        var captain = await SeedCaptainAsync(db, game.TeamId, telegramUserId: 80151, ct);
+        var alice = await SeedMemberAsync(db, game.TeamId, telegramUserId: 80152, ct);
+        var bob = await SeedMemberAsync(db, game.TeamId, telegramUserId: 80153, ct);
+        var (router, bot) = CreateRouter(db);
+
+        // The captain is playing too, but presumably already at the venue — never a target.
+        await router.RouteAsync(CallbackUpdate(8015, 80151, CallbackData.Format(CallbackData.Join, game.Id)), ct);
+        await router.RouteAsync(CallbackUpdate(8015, 80152, CallbackData.Format(CallbackData.Join, game.Id)), ct);
+        await router.RouteAsync(CallbackUpdate(8015, 80153, CallbackData.Format(CallbackData.Join, game.Id)), ct);
+
+        await router.RouteAsync(CallbackUpdate(8015, 80151, CallbackData.Format(CallbackData.Nudge, game.Id)), ct);
+        // Uncheck Bob — only Alice should get pinged.
+        await router.RouteAsync(
+            CallbackUpdate(8015, 80151, CallbackData.Format(CallbackData.ToggleNudgeTarget, bob.Id)),
+            ct
+        );
+        await router.RouteAsync(CallbackUpdate(8015, 80151, CallbackData.Format(CallbackData.SendNudge, game.Id)), ct);
+
+        var sent = bot.SentTexts(8015)
+            .Should()
+            .ContainSingle(text => text.Contains("waiting for you", StringComparison.Ordinal))
+            .Subject;
+        sent.Should().Contain(alice.DisplayName);
+        sent.Should().NotContain(bob.DisplayName);
+        sent.Should().NotContain(captain.DisplayName);
+        (await db.DialogStates.CountAsync(d => d.ChatId == new TelegramChatId(8015) && d.PlayerId == captain.Id, ct))
+            .Should()
+            .Be(0);
+    }
+
+    [Test]
+    public async Task NudgeAnswersAnAlertWhenOnlyTheCaptainIsPlaying()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 8016, capacity: 5, ct);
+        var captain = await SeedCaptainAsync(db, game.TeamId, telegramUserId: 80161, ct);
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(CallbackUpdate(8016, 80161, CallbackData.Format(CallbackData.Join, game.Id)), ct);
+        await router.RouteAsync(CallbackUpdate(8016, 80161, CallbackData.Format(CallbackData.Nudge, game.Id)), ct);
+
+        bot.AnsweredCallbackAlerts().Should().ContainSingle();
+        (await db.DialogStates.CountAsync(d => d.ChatId == new TelegramChatId(8016) && d.PlayerId == captain.Id, ct))
+            .Should()
+            .Be(0);
+    }
+
+    [Test]
+    public async Task NonCaptainsCannotOpenNudge()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 8017, capacity: 5, ct);
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(CallbackUpdate(8017, 80171, CallbackData.Format(CallbackData.Nudge, game.Id)), ct);
+
+        bot.AnsweredCallbackAlerts().Should().ContainSingle();
+        (await db.DialogStates.CountAsync(d => d.ChatId == new TelegramChatId(8017), ct)).Should().Be(0);
     }
 
     private static (UpdateRouter Router, ITelegramBotClient Bot) CreateRouter(QuizrDb db)

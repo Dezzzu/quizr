@@ -13,7 +13,15 @@ public interface ISignupService
 {
     Task<Result<Signup>> JoinAsync(Game game, PlayerId playerId, CancellationToken ct);
 
+    // Requires a live signup of the inviter's own — a guest is always brought along by
+    // someone actually playing, never by someone who isn't in the game themselves.
     Task<Result<Signup>> BringGuestAsync(Game game, PlayerId inviterId, CancellationToken ct);
+
+    // Captain-only (checked by the caller, not here): adds an already-named, ownerless guest
+    // directly, for a captain who wants to add someone without being signed up themselves.
+    // Named up front rather than anonymous-then-named — invariant 5 means a team guest is
+    // always named, there's no owner for an anonymous one to fall back to identifying by.
+    Task<Result<Signup>> AddTeamGuestAsync(Game game, string name, CancellationToken ct);
 
     Task<Result<Signup>> NameGuestAsync(
         SignupId guestSignupId,
@@ -39,7 +47,19 @@ public interface ISignupService
         CancellationToken ct
     );
 
+    // Captain-only (checked by the caller): removes any live guest regardless of who invited
+    // them, or a team guest nobody owns — the one case RemoveGuestAsync's ownership check can
+    // never let anyone reach, self-service or not. captainId is recorded as CancelledByPlayerId
+    // since there's no "self" to attribute this to the way a member's own drop has one.
+    Task<Result<GuestRemovalOutcome>> RemoveGuestOnBehalfAsync(
+        SignupId guestSignupId,
+        PlayerId captainId,
+        CancellationToken ct
+    );
+
     Task<IReadOnlyList<Signup>> LoadLiveGuestsAsync(Game game, PlayerId inviterId, CancellationToken ct);
+
+    Task<IReadOnlyList<Signup>> LoadAllLiveGuestsAsync(Game game, CancellationToken ct);
 }
 
 // Invariant 5's cascade: unnamed guests cancel automatically with the inviter; named ones
@@ -103,12 +123,41 @@ public sealed class SignupService : ISignupService
             return open.Error;
         }
 
+        var inviterIsPlaying = await _db.Signups.AnyAsync(
+            s => s.GameId == game.Id && s.PlayerId == inviterId && s.CancelledAt == null,
+            ct
+        );
+        if (!inviterIsPlaying)
+        {
+            return new BusinessError.NotSignedUp();
+        }
+
         // Anonymous by default (CLAUDE.md) — naming is a follow-up, not a precondition for
         // holding the seat, so the guest's queue position is secured immediately.
         var signup = new Signup
         {
             GameId = game.Id,
             InvitedByPlayerId = inviterId,
+            CreatedAt = _clock.GetUtcNow(),
+        };
+        _db.Signups.Add(signup);
+        await _db.SaveChangesAsync(ct);
+
+        return signup;
+    }
+
+    public async Task<Result<Signup>> AddTeamGuestAsync(Game game, string name, CancellationToken ct)
+    {
+        var open = RegistrationGuard(game);
+        if (!open.IsSuccess)
+        {
+            return open.Error;
+        }
+
+        var signup = new Signup
+        {
+            GameId = game.Id,
+            GuestName = name,
             CreatedAt = _clock.GetUtcNow(),
         };
         _db.Signups.Add(signup);
@@ -230,6 +279,30 @@ public sealed class SignupService : ISignupService
             return new BusinessError.NotYourGuest();
         }
 
+        return await CancelGuestAsync(guest, requestingPlayerId, ct);
+    }
+
+    public async Task<Result<GuestRemovalOutcome>> RemoveGuestOnBehalfAsync(
+        SignupId guestSignupId,
+        PlayerId captainId,
+        CancellationToken ct
+    )
+    {
+        var guest = await _db.Signups.SingleOrDefaultAsync(s => s.Id == guestSignupId && s.PlayerId == null, ct);
+        if (guest is null)
+        {
+            return new BusinessError.NotYourGuest();
+        }
+
+        return await CancelGuestAsync(guest, captainId, ct);
+    }
+
+    private async Task<Result<GuestRemovalOutcome>> CancelGuestAsync(
+        Signup guest,
+        PlayerId cancelledBy,
+        CancellationToken ct
+    )
+    {
         if (guest.IsCancelled)
         {
             return new BusinessError.GuestAlreadyResolved();
@@ -239,7 +312,7 @@ public sealed class SignupService : ISignupService
         var before = await LoadRosterAsync(game, ct);
 
         guest.CancelledAt = _clock.GetUtcNow();
-        guest.CancelledByPlayerId = requestingPlayerId;
+        guest.CancelledByPlayerId = cancelledBy;
         await _db.SaveChangesAsync(ct);
 
         var after = await LoadRosterAsync(game, ct);
@@ -253,6 +326,15 @@ public sealed class SignupService : ISignupService
             .Signups.AsNoTracking()
             .Where(s => s.GameId == game.Id && s.InvitedByPlayerId == inviterId && s.CancelledAt == null)
             // Id breaks ties on identical CreatedAt — same reasoning as Roster.Split.
+            .OrderBy(s => s.CreatedAt)
+            .ThenBy(s => s.Id)
+            .ToListAsync(ct);
+
+    public async Task<IReadOnlyList<Signup>> LoadAllLiveGuestsAsync(Game game, CancellationToken ct) =>
+        await _db
+            .Signups.AsNoTracking()
+            .Include(s => s.InvitedByPlayer)
+            .Where(s => s.GameId == game.Id && s.PlayerId == null && s.CancelledAt == null)
             .OrderBy(s => s.CreatedAt)
             .ThenBy(s => s.Id)
             .ToListAsync(ct);

@@ -72,6 +72,7 @@ public class SignupServiceTests
         var game = await SeedGameAsync(db, chatId: 5004, capacity: 5, ct);
         var inviter = await SeedPlayerAsync(db, telegramUserId: 5004, ct);
         var service = new SignupService(db, new FakeTimeProvider());
+        await service.JoinAsync(game, inviter.Id, ct);
 
         var result = await service.BringGuestAsync(game, inviter.Id, ct);
 
@@ -89,6 +90,7 @@ public class SignupServiceTests
         var game = await SeedGameAsync(db, chatId: 5005, capacity: 5, ct);
         var inviter = await SeedPlayerAsync(db, telegramUserId: 5005, ct);
         var service = new SignupService(db, new FakeTimeProvider());
+        await service.JoinAsync(game, inviter.Id, ct);
         var guest = (await service.BringGuestAsync(game, inviter.Id, ct)).Value;
 
         var result = await service.NameGuestAsync(guest.Id, inviter.Id, "Sasha", ct);
@@ -106,6 +108,7 @@ public class SignupServiceTests
         var inviter = await SeedPlayerAsync(db, telegramUserId: 5006, ct);
         var stranger = await SeedPlayerAsync(db, telegramUserId: 50060, ct);
         var service = new SignupService(db, new FakeTimeProvider());
+        await service.JoinAsync(game, inviter.Id, ct);
         var guest = (await service.BringGuestAsync(game, inviter.Id, ct)).Value;
 
         var result = await service.NameGuestAsync(guest.Id, stranger.Id, "Sasha", ct);
@@ -223,6 +226,7 @@ public class SignupServiceTests
         var game = await SeedGameAsync(db, chatId: 5012, capacity: 5, ct);
         var inviter = await SeedPlayerAsync(db, telegramUserId: 5012, ct);
         var service = new SignupService(db, new FakeTimeProvider());
+        await service.JoinAsync(game, inviter.Id, ct);
         var guest = (await service.BringGuestAsync(game, inviter.Id, ct)).Value;
         await service.NameGuestAsync(guest.Id, inviter.Id, "Sasha", ct);
 
@@ -240,11 +244,15 @@ public class SignupServiceTests
     {
         var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
-        var game = await SeedGameAsync(db, chatId: 5013, capacity: 1, ct);
+        // Capacity 2: one seat for the inviter (a guest now requires the inviter to already
+        // be playing), one for the guest — still tight enough that removing the guest is what
+        // frees the seat the reserve gets promoted into.
+        var game = await SeedGameAsync(db, chatId: 5013, capacity: 2, ct);
         var inviter = await SeedPlayerAsync(db, telegramUserId: 5013, ct);
         var reserve = await SeedPlayerAsync(db, telegramUserId: 50130, ct);
         var service = new SignupService(db, new FakeTimeProvider());
-        var guest = (await service.BringGuestAsync(game, inviter.Id, ct)).Value; // takes the one seat
+        await service.JoinAsync(game, inviter.Id, ct);
+        var guest = (await service.BringGuestAsync(game, inviter.Id, ct)).Value; // takes the second seat
         await service.NameGuestAsync(guest.Id, inviter.Id, "Sasha", ct);
         await service.JoinAsync(game, reserve.Id, ct); // lands in reserve
 
@@ -265,6 +273,7 @@ public class SignupServiceTests
         var inviter = await SeedPlayerAsync(db, telegramUserId: 5014, ct);
         var stranger = await SeedPlayerAsync(db, telegramUserId: 50140, ct);
         var service = new SignupService(db, new FakeTimeProvider());
+        await service.JoinAsync(game, inviter.Id, ct);
         var guest = (await service.BringGuestAsync(game, inviter.Id, ct)).Value;
         await service.NameGuestAsync(guest.Id, inviter.Id, "Sasha", ct);
 
@@ -297,11 +306,12 @@ public class SignupServiceTests
     {
         var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
-        var game = await SeedGameAsync(db, chatId: 5016, capacity: 1, ct);
+        var game = await SeedGameAsync(db, chatId: 5016, capacity: 2, ct);
         var inviter = await SeedPlayerAsync(db, telegramUserId: 5016, ct);
         var reserve = await SeedPlayerAsync(db, telegramUserId: 50160, ct);
         var service = new SignupService(db, new FakeTimeProvider());
-        var guest = (await service.BringGuestAsync(game, inviter.Id, ct)).Value; // takes the one seat
+        await service.JoinAsync(game, inviter.Id, ct);
+        var guest = (await service.BringGuestAsync(game, inviter.Id, ct)).Value; // takes the second seat
         await service.JoinAsync(game, reserve.Id, ct); // lands in reserve
 
         var result = await service.RemoveGuestAsync(guest.Id, inviter.Id, ct);
@@ -319,6 +329,7 @@ public class SignupServiceTests
         var inviter = await SeedPlayerAsync(db, telegramUserId: 5017, ct);
         var stranger = await SeedPlayerAsync(db, telegramUserId: 50170, ct);
         var service = new SignupService(db, new FakeTimeProvider());
+        await service.JoinAsync(game, inviter.Id, ct);
         var guest = (await service.BringGuestAsync(game, inviter.Id, ct)).Value;
 
         var result = await service.RemoveGuestAsync(guest.Id, stranger.Id, ct);
@@ -335,6 +346,7 @@ public class SignupServiceTests
         var game = await SeedGameAsync(db, chatId: 5018, capacity: 5, ct);
         var inviter = await SeedPlayerAsync(db, telegramUserId: 5018, ct);
         var service = new SignupService(db, new FakeTimeProvider());
+        await service.JoinAsync(game, inviter.Id, ct);
         var guest = (await service.BringGuestAsync(game, inviter.Id, ct)).Value;
         await service.RemoveGuestAsync(guest.Id, inviter.Id, ct);
 
@@ -353,10 +365,12 @@ public class SignupServiceTests
         var inviter = await SeedPlayerAsync(db, telegramUserId: 5019, ct);
         var someoneElse = await SeedPlayerAsync(db, telegramUserId: 50190, ct);
         var service = new SignupService(db, new FakeTimeProvider());
+        await service.JoinAsync(game, inviter.Id, ct);
         var first = (await service.BringGuestAsync(game, inviter.Id, ct)).Value;
         var second = (await service.BringGuestAsync(game, inviter.Id, ct)).Value;
         var cancelled = (await service.BringGuestAsync(game, inviter.Id, ct)).Value;
         await service.RemoveGuestAsync(cancelled.Id, inviter.Id, ct);
+        await service.JoinAsync(game, someoneElse.Id, ct);
         await service.BringGuestAsync(game, someoneElse.Id, ct);
 
         var guests = await service.LoadLiveGuestsAsync(game, inviter.Id, ct);

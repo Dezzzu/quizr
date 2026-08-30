@@ -152,8 +152,12 @@ public class GameServiceTests
         (await db.Notifications.CountAsync(n => n.SignupId == reserveSignup.Id, ct)).Should().Be(1);
     }
 
+    // Nudge's target list: CLAUDE.md/VISION.md says it pings people who signed up and are
+    // late, not people who never signed up — so a member with no signup at all must never
+    // appear, and neither should someone bumped to the reserve (invariant 2's derived split):
+    // they aren't confirmed to play, so "late" doesn't apply to them either.
     [Test]
-    public async Task LoadMissingMembersAsyncExcludesEveryoneAlreadySignedUp()
+    public async Task LoadPlayingMembersAsyncIncludesOnlyThePlayingRoster()
     {
         var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
@@ -166,21 +170,25 @@ public class GameServiceTests
             "The Pub",
             new DateOnly(2026, 9, 12),
             new TimeOnly(19, 0),
-            10,
+            1,
             null,
             creator.Id,
             team.TimeZoneId!,
             ct
         );
 
-        var signedUp = await SeedMemberAsync(db, team.Id, telegramUserId: 61051, ct);
-        var missing = await SeedMemberAsync(db, team.Id, telegramUserId: 61052, ct);
+        var playing = await SeedMemberAsync(db, team.Id, telegramUserId: 61051, ct);
+        var reserve = await SeedMemberAsync(db, team.Id, telegramUserId: 61052, ct);
+        var neverSignedUp = await SeedMemberAsync(db, team.Id, telegramUserId: 61053, ct);
         var signups = new SignupService(db, new FakeTimeProvider());
-        await signups.JoinAsync(game, signedUp.Id, ct);
+        await signups.JoinAsync(game, playing.Id, ct);
+        await signups.JoinAsync(game, reserve.Id, ct);
 
-        var missingMembers = await gameService.LoadMissingMembersAsync(game, ct);
+        var playingMembers = await gameService.LoadPlayingMembersAsync(game, ct);
 
-        missingMembers.Select(m => m.PlayerId).Should().Equal(missing.Id);
+        playingMembers.Select(m => m.PlayerId).Should().Equal(playing.Id);
+        playingMembers.Select(m => m.PlayerId).Should().NotContain(reserve.Id);
+        playingMembers.Select(m => m.PlayerId).Should().NotContain(neverSignedUp.Id);
     }
 
     [Test]

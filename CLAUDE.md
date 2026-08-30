@@ -64,7 +64,7 @@ actually talks about quiz nights.
 | **Participation** | Written when a game finishes: one row per person, recording whether they played and whether they attended. Statistics read these; captains edit these. |
 | **Member** | A person in the chat. |
 | **Guest** | Brought by a member. Anonymous by default, optionally named. Occupies a seat and holds its own queue position. |
-| **Team guest** | A guest who stays after their inviter drops out. Has no owner. Must be named. |
+| **Team guest** | A guest with no owner. Must be named. Either a guest who stayed after their inviter dropped out, or one a captain added directly for someone not signed up themselves. |
 | **Venue-assigned** | A stranger the organisers add to the team on the night. Recorded after the fact. |
 
 ## Invariants
@@ -106,9 +106,10 @@ Breaking one of these is a bug, not a preference.
 13. **Captain actions that change another player's state are recorded in `AuditEntry`** —
     registering or dropping someone on their behalf, declining or finishing a game, granting
     or revoking captaincy, editing a finished game's participation (played/attended, or adding
-    a venue-assigned player). `ActorPlayerId` is the captain; null means the system did it (the
-    scheduler's auto-finish). Ordinary self-service already carries its own actor via a
-    signup's own fields; this is for the actions that don't.
+    a venue-assigned player), adding a team guest or removing any guest on someone's behalf.
+    `ActorPlayerId` is the captain; null means the system did it (the scheduler's auto-finish).
+    Ordinary self-service already carries its own actor via a signup's own fields; this is for
+    the actions that don't.
 
 ## Telegram constraints to design around
 

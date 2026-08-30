@@ -82,6 +82,16 @@ public class UpdateRouterSignupLoopTests
                 7003,
                 7003,
                 "Alice",
+                CallbackData.Format(CallbackData.Join, game.Id),
+                announcementMessageId: 1
+            ),
+            ct
+        );
+        await router.RouteAsync(
+            CallbackUpdate(
+                7003,
+                7003,
+                "Alice",
                 CallbackData.Format(CallbackData.Guest, game.Id),
                 announcementMessageId: 1
             ),
@@ -114,6 +124,16 @@ public class UpdateRouterSignupLoopTests
         var game = await SeedGameAsync(db, chatId: 7004, capacity: 5, ct);
         var (router, _, _) = CreateRouter(db);
 
+        await router.RouteAsync(
+            CallbackUpdate(
+                7004,
+                7004,
+                "Alice",
+                CallbackData.Format(CallbackData.Join, game.Id),
+                announcementMessageId: 1
+            ),
+            ct
+        );
         await router.RouteAsync(
             CallbackUpdate(
                 7004,
@@ -357,7 +377,9 @@ public class UpdateRouterSignupLoopTests
     {
         var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
-        var game = await SeedGameAsync(db, chatId: 7051, capacity: 1, ct);
+        // Capacity 2: Alice and Bob both play, so Bob's guest lands in reserve — when Alice
+        // drops, the guest is next in queue order ahead of Bob, who's already playing.
+        var game = await SeedGameAsync(db, chatId: 7051, capacity: 2, ct);
         var (router, bot, _) = CreateRouter(db);
 
         await router.RouteAsync(
@@ -365,6 +387,16 @@ public class UpdateRouterSignupLoopTests
                 7051,
                 70511,
                 "Alice",
+                CallbackData.Format(CallbackData.Join, game.Id),
+                announcementMessageId: 1
+            ),
+            ct
+        );
+        await router.RouteAsync(
+            CallbackUpdate(
+                7051,
+                70512,
+                "Bob",
                 CallbackData.Format(CallbackData.Join, game.Id),
                 announcementMessageId: 1
             ),
@@ -526,6 +558,41 @@ public class UpdateRouterSignupLoopTests
             .BeNull();
     }
 
+    // The Manage guests view previously had no way to end the interaction — removing a guest
+    // just re-rendered the same "remove one, or add another" menu forever.
+    [Test]
+    public async Task DoneClearsTheMyGuestsKeyboardWithoutTouchingTheMessageText()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 7052, capacity: 5, ct);
+        var (router, bot, _) = CreateRouter(db);
+        await router.RouteAsync(
+            CallbackUpdate(
+                7052,
+                7052,
+                "Alice",
+                CallbackData.Format(CallbackData.MyGuests, game.Id),
+                announcementMessageId: 1
+            ),
+            ct
+        );
+
+        await router.RouteAsync(
+            CallbackUpdate(
+                7052,
+                7052,
+                "Alice",
+                CallbackData.Format(CallbackData.CloseView, 0L),
+                announcementMessageId: 2
+            ),
+            ct
+        );
+
+        bot.ClearedKeyboards().Should().ContainSingle(r => r.MessageId == 2);
+        (await db.DialogStates.CountAsync(d => d.ChatId == new TelegramChatId(7052), ct)).Should().Be(0);
+    }
+
     [Test]
     public async Task AddingASecondGuestFromTheMyGuestsViewWorksJustLikeTheAnnouncementButton()
     {
@@ -533,6 +600,16 @@ public class UpdateRouterSignupLoopTests
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 7011, capacity: 5, ct);
         var (router, _, _) = CreateRouter(db);
+        await router.RouteAsync(
+            CallbackUpdate(
+                7011,
+                7011,
+                "Alice",
+                CallbackData.Format(CallbackData.Join, game.Id),
+                announcementMessageId: 1
+            ),
+            ct
+        );
         await router.RouteAsync(
             CallbackUpdate(
                 7011,

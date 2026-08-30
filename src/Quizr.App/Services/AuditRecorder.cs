@@ -47,4 +47,6 @@ internal static class AuditActions
     public const string ParticipationAttendedToggled = "ParticipationAttendedToggled";
     public const string ParticipationPlayedToggled = "ParticipationPlayedToggled";
     public const string VenuePlayerAdded = "VenuePlayerAdded";
+    public const string TeamGuestAdded = "TeamGuestAdded";
+    public const string GuestRemovedOnBehalf = "GuestRemovedOnBehalf";
 }

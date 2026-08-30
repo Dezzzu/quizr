@@ -128,6 +128,10 @@ internal static class AnnouncementRenderer
                     strings.Text("Announcement.ManagePlayersButton"),
                     CallbackData.Format(CallbackData.ManagePlayers, gameId)
                 ),
+                InlineKeyboardButton.WithCallbackData(
+                    strings.Text("Announcement.ManageGuestsButton"),
+                    CallbackData.Format(CallbackData.ManageGuests, gameId)
+                ),
             ],
             [
                 InlineKeyboardButton.WithCallbackData(
