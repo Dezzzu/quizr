@@ -3161,6 +3161,12 @@ public sealed class UpdateRouter
                     CallbackData.Format(CallbackData.ToggleReserveReminder, 0L)
                 ),
             ],
+            [
+                InlineKeyboardButton.WithCallbackData(
+                    strings.Text("Reminders.DoneButton"),
+                    CallbackData.Format(CallbackData.CloseView, 0L)
+                ),
+            ],
         ]);
 
         return (strings.Text("Reminders.Header"), keyboard);

@@ -84,6 +84,23 @@ public class UpdateRouterM9Tests
             .BeTrue();
     }
 
+    // Reminder settings previously had no way to end the interaction either — same
+    // never-ending-menu bug as Manage players/guests, just missed in that pass.
+    [Test]
+    public async Task DoneClearsTheReminderSettingsKeyboard()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 8018, ct);
+        await SeedMemberAsync(db, team.Id, telegramUserId: 8018, ct);
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(MessageUpdate(8018, 8018, "/myreminders"), ct);
+        await router.RouteAsync(CallbackUpdate(8018, 8018, CallbackData.Format(CallbackData.CloseView, 0L)), ct);
+
+        bot.ClearedKeyboards().Should().ContainSingle();
+    }
+
     [Test]
     public async Task ManagePlayersRegistersAndThenDropsAMemberOnTheirBehalfWithAnAuditTrail()
     {

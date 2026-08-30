@@ -216,6 +216,7 @@
   "Reminders.ChannelDm": "Direktnachricht",
   "Reminders.ReserveOn": "🔔 Erinnere mich, solange ich in der Reserve bin",
   "Reminders.ReserveOff": "🔕 Erinnere mich nicht, solange ich in der Reserve bin",
+  "Reminders.DoneButton": "✅ Fertig",
 
   "Captains.Header": "<b>Captains</b>\nTippe auf einen Namen, um Captain-Rechte zu vergeben oder zu entziehen.",
   "Captains.GrantButton": "➕ {Name} zum Captain machen",

@@ -216,6 +216,7 @@
   "Reminders.ChannelDm": "DM",
   "Reminders.ReserveOn": "🔔 Remind me while on the reserve",
   "Reminders.ReserveOff": "🔕 Don't remind me while on the reserve",
+  "Reminders.DoneButton": "✅ Done",
 
   "Captains.Header": "<b>Captains</b>\nTap a name to grant or revoke captaincy.",
   "Captains.GrantButton": "➕ Make {Name} captain",

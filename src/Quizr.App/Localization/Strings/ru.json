@@ -216,6 +216,7 @@
   "Reminders.ChannelDm": "в личных сообщениях",
   "Reminders.ReserveOn": "🔔 Напоминать мне, пока я в резерве",
   "Reminders.ReserveOff": "🔕 Не напоминать мне, пока я в резерве",
+  "Reminders.DoneButton": "✅ Готово",
 
   "Captains.Header": "<b>Капитаны</b>\nНажмите на имя, чтобы назначить или снять капитанство.",
   "Captains.GrantButton": "➕ Сделать {Name} капитаном",
