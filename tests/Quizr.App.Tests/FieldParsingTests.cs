@@ -146,7 +146,7 @@ public class FieldParsingTests
     public void TryParseScheduleExpandsADayRangeAndSingleDays()
     {
         FieldParsing
-            .TryParseSchedule("Mon-Fri: 19:00, Sat: 16:00, Sun: 16:00", out var value, out var errorKey)
+            .TryParseSchedule("Mon-Fri: 19:00, Sat: 16:00, Sun: 16:00", "en", out var value, out var errorKey)
             .Should()
             .BeTrue();
 
@@ -162,7 +162,7 @@ public class FieldParsingTests
     [Test]
     public void TryParseScheduleWrapsARangeAcrossTheWeekBoundary()
     {
-        FieldParsing.TryParseSchedule("Fri-Mon: 20:00", out var value, out _).Should().BeTrue();
+        FieldParsing.TryParseSchedule("Fri-Mon: 20:00", "en", out var value, out _).Should().BeTrue();
 
         value
             .Keys.Should()
@@ -177,7 +177,55 @@ public class FieldParsingTests
     [Arguments("Mon: 25:99")]
     public void TryParseScheduleRejectsInvalidInput(string? input)
     {
-        FieldParsing.TryParseSchedule(input, out var value, out var errorKey).Should().BeFalse();
+        FieldParsing.TryParseSchedule(input, "en", out var value, out var errorKey).Should().BeFalse();
+        value.Should().BeEmpty();
+        errorKey.Should().Be("Validation.ScheduleInvalid");
+    }
+
+    [Test]
+    public void TryParseScheduleReadsRussianDayNames()
+    {
+        FieldParsing
+            .TryParseSchedule("Пн-Пт: 19:00, Сб: 16:00, Вс: 16:00", "ru", out var value, out _)
+            .Should()
+            .BeTrue();
+
+        value.Should().HaveCount(7);
+        value[DayOfWeek.Monday].Should().Be(new TimeOnly(19, 0));
+        value[DayOfWeek.Saturday].Should().Be(new TimeOnly(16, 0));
+    }
+
+    [Test]
+    public void TryParseScheduleReadsGermanDayNames()
+    {
+        FieldParsing
+            .TryParseSchedule("Mo-Fr: 19:00, Sa: 16:00, So: 16:00", "de", out var value, out _)
+            .Should()
+            .BeTrue();
+
+        value.Should().HaveCount(7);
+        value[DayOfWeek.Monday].Should().Be(new TimeOnly(19, 0));
+        value[DayOfWeek.Saturday].Should().Be(new TimeOnly(16, 0));
+    }
+
+    [Test]
+    [Arguments("ru")]
+    [Arguments("de")]
+    public void TryParseScheduleFallsBackToEnglishDayNamesInAnyLocale(string locale)
+    {
+        FieldParsing.TryParseSchedule("Mon-Fri: 19:00", locale, out var value, out var errorKey).Should().BeTrue();
+
+        value.Should().HaveCount(5);
+        errorKey.Should().BeNull();
+    }
+
+    [Test]
+    public void TryParseScheduleDoesNotAcceptAnotherLocalesDayNames()
+    {
+        // German day names aren't understood in a Russian-language team, and vice versa —
+        // only the team's own language and English are accepted.
+        FieldParsing.TryParseSchedule("Mo-Fr: 19:00", "ru", out var value, out var errorKey).Should().BeFalse();
+
         value.Should().BeEmpty();
         errorKey.Should().Be("Validation.ScheduleInvalid");
     }

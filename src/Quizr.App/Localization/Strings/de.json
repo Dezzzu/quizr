@@ -79,7 +79,7 @@
   "Franchise.AskVenue": "Wo findet sie normalerweise statt?",
   "Franchise.AskCapacity": "Wie viele Spieler passen rein?",
   "Franchise.AskPrice": "Was ist der übliche Preis? Antworte mit einer Zahl, oder \"skip\" für keinen Preis.",
-  "Franchise.AskSchedule": "Wann findet sie statt? Liste Tage und Uhrzeiten auf, z. B. \"Mon-Fri: 19:00, Sat: 16:00, Sun: 16:00\".",
+  "Franchise.AskSchedule": "Wann findet sie statt? Liste Tage und Uhrzeiten auf, z. B. \"Mo-Fr: 19:00, Sa: 16:00, So: 16:00\".",
   "Franchise.Created": "Franchise erstellt!",
   "Franchise.Updated": "Aktualisiert.",
   "Franchise.NoneYet": "Noch keine Franchises — erstelle eine mit /newfranchise.",
@@ -173,5 +173,5 @@
   "Validation.PriceInvalid": "Das sieht nicht nach einem gültigen Preis aus. Antworte mit einer Zahl, oder \"skip\" für keinen Preis.",
   "Validation.DateInvalid": "Das sieht nicht nach einem gültigen Datum aus. Format yyyy-MM-dd, z. B. 2026-09-12.",
   "Validation.TimeInvalid": "Das sieht nicht nach einer gültigen Uhrzeit aus. Format HH:mm, z. B. 19:00.",
-  "Validation.ScheduleInvalid": "Das sieht nicht nach einem gültigen Zeitplan aus. Liste Tage und Uhrzeiten auf, z. B. \"Mon-Fri: 19:00, Sat: 16:00, Sun: 16:00\"."
+  "Validation.ScheduleInvalid": "Das sieht nicht nach einem gültigen Zeitplan aus. Liste Tage und Uhrzeiten auf, z. B. \"Mo-Fr: 19:00, Sa: 16:00, So: 16:00\"."
 }

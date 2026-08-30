@@ -700,7 +700,7 @@ public sealed class UpdateRouter
                 break;
 
             case NewFranchiseDialogData.AskSchedule:
-                if (!FieldParsing.TryParseSchedule(input, out var schedule, out var scheduleError))
+                if (!FieldParsing.TryParseSchedule(input, team.Locale, out var schedule, out var scheduleError))
                 {
                     await _sender.SendAsync(chatId, strings.Text(scheduleError!), null, ct);
                     return;
@@ -777,7 +777,7 @@ public sealed class UpdateRouter
                 break;
 
             default: // EditFranchiseDialogData.Schedule
-                if (FieldParsing.TryParseSchedule(input, out var schedule, out errorKey))
+                if (FieldParsing.TryParseSchedule(input, team.Locale, out var schedule, out errorKey))
                 {
                     await _franchises.SetScheduleAsync(franchise, schedule, ct);
                 }

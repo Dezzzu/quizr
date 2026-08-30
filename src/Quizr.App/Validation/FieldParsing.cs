@@ -8,7 +8,7 @@ namespace Quizr.App.Validation;
 // strings.Text(errorKey), same as everywhere else user-visible text is rendered.
 internal static class FieldParsing
 {
-    private static readonly Dictionary<string, DayOfWeek> DayNames = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly Dictionary<string, DayOfWeek> EnglishDayNames = new(StringComparer.OrdinalIgnoreCase)
     {
         ["Mon"] = DayOfWeek.Monday,
         ["Tue"] = DayOfWeek.Tuesday,
@@ -17,6 +17,39 @@ internal static class FieldParsing
         ["Fri"] = DayOfWeek.Friday,
         ["Sat"] = DayOfWeek.Saturday,
         ["Sun"] = DayOfWeek.Sunday,
+    };
+
+    private static readonly Dictionary<string, DayOfWeek> RussianDayNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Пн"] = DayOfWeek.Monday,
+        ["Вт"] = DayOfWeek.Tuesday,
+        ["Ср"] = DayOfWeek.Wednesday,
+        ["Чт"] = DayOfWeek.Thursday,
+        ["Пт"] = DayOfWeek.Friday,
+        ["Сб"] = DayOfWeek.Saturday,
+        ["Вс"] = DayOfWeek.Sunday,
+    };
+
+    private static readonly Dictionary<string, DayOfWeek> GermanDayNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Mo"] = DayOfWeek.Monday,
+        ["Di"] = DayOfWeek.Tuesday,
+        ["Mi"] = DayOfWeek.Wednesday,
+        ["Do"] = DayOfWeek.Thursday,
+        ["Fr"] = DayOfWeek.Friday,
+        ["Sa"] = DayOfWeek.Saturday,
+        ["So"] = DayOfWeek.Sunday,
+    };
+
+    // English always works, regardless of the team's language — a captain who's used to
+    // typing "Mon-Fri" shouldn't have that break the day they switch the group to Russian.
+    private static readonly Dictionary<string, Dictionary<string, DayOfWeek>> DayNamesByLocale = new(
+        StringComparer.OrdinalIgnoreCase
+    )
+    {
+        ["en"] = EnglishDayNames,
+        ["ru"] = RussianDayNames,
+        ["de"] = GermanDayNames,
     };
 
     private static readonly DayOfWeek[] WeekOrder =
@@ -157,8 +190,14 @@ internal static class FieldParsing
     }
 
     // "Mon-Fri:19:00, Sat:16:00, Sun:16:00" — comma-separated day-or-range:time pairs. An
-    // absent day is one the franchise doesn't run (Franchise.Schedule's own doc comment).
-    public static bool TryParseSchedule(string? input, out Dictionary<DayOfWeek, TimeOnly> value, out string? errorKey)
+    // absent day is one the franchise doesn't run (Franchise.Schedule's own doc comment). Day
+    // names are read in the team's own language first, falling back to English.
+    public static bool TryParseSchedule(
+        string? input,
+        string locale,
+        out Dictionary<DayOfWeek, TimeOnly> value,
+        out string? errorKey
+    )
     {
         value = [];
         var trimmed = input?.Trim();
@@ -182,7 +221,7 @@ internal static class FieldParsing
                     DateTimeStyles.None,
                     out var time
                 )
-                || !TryParseDayRange(parts[0].Trim(), out var days)
+                || !TryParseDayRange(parts[0].Trim(), locale, out var days)
             )
             {
                 value = [];
@@ -207,14 +246,14 @@ internal static class FieldParsing
         return true;
     }
 
-    private static bool TryParseDayRange(string token, out List<DayOfWeek> days)
+    private static bool TryParseDayRange(string token, string locale, out List<DayOfWeek> days)
     {
         days = [];
         var range = token.Split('-', 2, StringSplitOptions.TrimEntries);
 
         if (range.Length == 1)
         {
-            if (!DayNames.TryGetValue(range[0], out var single))
+            if (!TryResolveDayName(range[0], locale, out var single))
             {
                 return false;
             }
@@ -223,7 +262,7 @@ internal static class FieldParsing
             return true;
         }
 
-        if (!DayNames.TryGetValue(range[0], out var start) || !DayNames.TryGetValue(range[1], out var end))
+        if (!TryResolveDayName(range[0], locale, out var start) || !TryResolveDayName(range[1], locale, out var end))
         {
             return false;
         }
@@ -240,5 +279,12 @@ internal static class FieldParsing
 
             index = (index + 1) % WeekOrder.Length;
         }
+    }
+
+    private static bool TryResolveDayName(string token, string locale, out DayOfWeek day)
+    {
+        var localeNames = DayNamesByLocale.TryGetValue(locale, out var found) ? found : EnglishDayNames;
+
+        return localeNames.TryGetValue(token, out day) || EnglishDayNames.TryGetValue(token, out day);
     }
 }
