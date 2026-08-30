@@ -166,6 +166,17 @@ public sealed class UpdateRouter
                 await HandleSetMyLanguageAsync(player, chatId, argument, ct);
                 break;
 
+            case "/setreminders" when team is not null && player is not null && message.From is not null:
+                await HandleSetRemindersAsync(
+                    team,
+                    player.Id,
+                    chatId,
+                    new TelegramUserId(message.From.Id),
+                    argument,
+                    ct
+                );
+                break;
+
             case "/newgame" when team is not null && player is not null && message.From is not null:
                 await HandleNewGameCommandAsync(team, player.Id, chatId, new TelegramUserId(message.From.Id), ct);
                 break;
@@ -292,6 +303,59 @@ public sealed class UpdateRouter
         await _sender.SendAsync(
             chatId,
             _strings.For(player.Locale).Text("Setup.MyLanguageSet", new { Locale = player.Locale }),
+            null,
+            ct
+        );
+    }
+
+    // All three reminder slots at once, not one setting per command like /settimezone — they
+    // read as one coherent schedule, and asking for all three together avoids the ambiguity
+    // of a single-field edit leaving the other two silently unexplained.
+    private async Task HandleSetRemindersAsync(
+        Team team,
+        PlayerId playerId,
+        TelegramChatId chatId,
+        TelegramUserId telegramUserId,
+        string? argument,
+        CancellationToken ct
+    )
+    {
+        var strings = _strings.For(team.Locale);
+
+        if (!await _teamGuard.IsCaptainAsync(team.Id, playerId, chatId, telegramUserId, ct))
+        {
+            await _sender.SendAsync(chatId, strings.Text("NewGame.NotCaptain"), null, ct);
+            return;
+        }
+
+        var parts = argument?.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? [];
+        if (
+            parts.Length != 3
+            || !FieldParsing.TryParseTime(parts[0], out var eveningBeforeAt, out _)
+            || !FieldParsing.TryParseTime(parts[1], out var morningOfAt, out _)
+            || !FieldParsing.TryParseDuration(parts[2], out var beforeStartLead, out _)
+        )
+        {
+            await _sender.SendAsync(chatId, strings.Text("Setup.RemindersUsage"), null, ct);
+            return;
+        }
+
+        team.EveningBeforeAt = eveningBeforeAt;
+        team.MorningOfAt = morningOfAt;
+        team.BeforeStartLead = beforeStartLead;
+        await _db.SaveChangesAsync(ct);
+
+        await _sender.SendAsync(
+            chatId,
+            strings.Text(
+                "Setup.RemindersSet",
+                new
+                {
+                    EveningBeforeAt = eveningBeforeAt,
+                    MorningOfAt = morningOfAt,
+                    BeforeStartLead = beforeStartLead,
+                }
+            ),
             null,
             ct
         );

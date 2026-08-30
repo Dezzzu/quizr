@@ -7,6 +7,8 @@
   "Setup.LanguageSet": "Sprache auf {Locale} gesetzt. Gruppennachrichten verwenden sie ab jetzt.",
   "Setup.MyLanguageSet": "Alles klar — ich schreibe dir ab jetzt auf {Locale} in Direktnachrichten.",
   "Setup.LanguageInvalid": "\"{Input}\" ist keine Sprache, die ich unterstütze. Wähle eine von: en, ru, de.",
+  "Setup.RemindersUsage": "Antworte mit drei Zeiten, in dieser Reihenfolge: Zeit am Vorabend, Zeit am Morgen des Spieltags, und wie lange vor Beginn erinnert werden soll. Verwende für jede HH:mm, z. B. /setreminders 20:00 09:00 02:00",
+  "Setup.RemindersSet": "Erinnerungen aktualisiert: am Vorabend um {EveningBeforeAt:HH\\:mm}, am Morgen um {MorningOfAt:HH\\:mm}, {BeforeStartLead:hh\\:mm} vor Beginn.",
   "NewGame.NeedsTimeZone": "Für dieses Team ist noch keine Zeitzone eingestellt. Ein Captain sollte zuerst /settimezone ausführen.",
   "NewGame.NotCaptain": "Das kann nur ein Captain tun.",
   "Error.Generic": "Auf meiner Seite ist etwas schiefgelaufen. Es wurde protokolliert — bitte versuch es noch einmal.",

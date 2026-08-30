@@ -7,6 +7,8 @@
   "Setup.LanguageSet": "Language set to {Locale}. Group messages will use it from now on.",
   "Setup.MyLanguageSet": "Got it — I'll use {Locale} for your DMs from now on.",
   "Setup.LanguageInvalid": "\"{Input}\" isn't a language I support. Choose one of: en, ru, de.",
+  "Setup.RemindersUsage": "Reply with three times, in order: evening-before time, morning-of time, and how long before kickoff to remind. Use HH:mm for each, e.g. /setreminders 20:00 09:00 02:00",
+  "Setup.RemindersSet": "Reminders updated: evening before at {EveningBeforeAt:HH\\:mm}, morning of at {MorningOfAt:HH\\:mm}, {BeforeStartLead:hh\\:mm} before kickoff.",
   "NewGame.NeedsTimeZone": "This team doesn't have a timezone set yet. A captain should run /settimezone first.",
   "NewGame.NotCaptain": "Only a captain can do that.",
   "Error.Generic": "Something went wrong on my end. It's been logged — please try again.",

@@ -122,6 +122,54 @@ public class UpdateRouterTests
     }
 
     [Test]
+    public async Task SetRemindersAcceptsAllThreeSlotsTogether()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedCaptainedTeamAsync(db, chatId: 4020, telegramUserId: 4020, ct);
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(MessageUpdate(4020, 4020, "/setreminders 21:00 08:30 01:30"), ct);
+
+        var refreshed = await db.Teams.AsNoTracking().SingleAsync(t => t.Id == team.Id, ct);
+        refreshed.EveningBeforeAt.Should().Be(new TimeOnly(21, 0));
+        refreshed.MorningOfAt.Should().Be(new TimeOnly(8, 30));
+        refreshed.BeforeStartLead.Should().Be(TimeSpan.FromMinutes(90));
+        bot.SentTexts().Should().ContainSingle();
+    }
+
+    [Test]
+    public async Task SetRemindersRejectsTheWrongNumberOfArguments()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedCaptainedTeamAsync(db, chatId: 4021, telegramUserId: 4021, ct);
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(MessageUpdate(4021, 4021, "/setreminders 21:00 08:30"), ct);
+
+        var refreshed = await db.Teams.AsNoTracking().SingleAsync(t => t.Id == team.Id, ct);
+        refreshed.EveningBeforeAt.Should().Be(default(TimeOnly));
+        bot.SentTexts().Should().ContainSingle(text => text.Contains("HH:mm", StringComparison.Ordinal));
+    }
+
+    [Test]
+    public async Task NonCaptainsCannotSetReminders()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 4022, ct);
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(MessageUpdate(4022, 4022, "/setreminders 21:00 08:30 01:30"), ct);
+
+        (await db.Teams.AsNoTracking().SingleAsync(t => t.Id == team.Id, ct))
+            .EveningBeforeAt.Should()
+            .Be(default(TimeOnly));
+        bot.SentTexts().Should().ContainSingle(text => text.Contains("captain", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Test]
     public async Task MyLanguageSetsThePlayersOwnLocaleWithoutTouchingTheTeams()
     {
         var ct = TestContext.Current!.Execution.CancellationToken;

@@ -125,6 +125,24 @@ public class FieldParsingTests
     }
 
     [Test]
+    public void TryParseDurationReadsHoursAndMinutesAsATimeSpan()
+    {
+        FieldParsing.TryParseDuration("02:00", out var value, out var errorKey).Should().BeTrue();
+        value.Should().Be(TimeSpan.FromHours(2));
+        errorKey.Should().BeNull();
+    }
+
+    [Test]
+    [Arguments("2 hours")]
+    [Arguments("25:00")]
+    [Arguments(null)]
+    public void TryParseDurationRejectsOtherFormats(string? input)
+    {
+        FieldParsing.TryParseDuration(input, out _, out var errorKey).Should().BeFalse();
+        errorKey.Should().Be("Validation.TimeInvalid");
+    }
+
+    [Test]
     public void TryParseScheduleExpandsADayRangeAndSingleDays()
     {
         FieldParsing

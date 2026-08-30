@@ -132,6 +132,30 @@ internal static class FieldParsing
         return true;
     }
 
+    // Reuses HH:mm, but as a duration rather than a clock time — "02:00" means two hours,
+    // e.g. how long before kickoff the "starting soon" reminder fires.
+    public static bool TryParseDuration(string? input, out TimeSpan value, out string? errorKey)
+    {
+        if (
+            !TimeOnly.TryParseExact(
+                input?.Trim(),
+                "HH:mm",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out var time
+            )
+        )
+        {
+            value = default;
+            errorKey = "Validation.TimeInvalid";
+            return false;
+        }
+
+        value = time.ToTimeSpan();
+        errorKey = null;
+        return true;
+    }
+
     // "Mon-Fri:19:00, Sat:16:00, Sun:16:00" — comma-separated day-or-range:time pairs. An
     // absent day is one the franchise doesn't run (Franchise.Schedule's own doc comment).
     public static bool TryParseSchedule(string? input, out Dictionary<DayOfWeek, TimeOnly> value, out string? errorKey)
