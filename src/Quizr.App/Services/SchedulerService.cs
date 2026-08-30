@@ -194,9 +194,9 @@ public sealed class SchedulerService
         // Filtered ThenInclude: only the membership for this team comes back, so a signup's
         // Player.Memberships collection here is at most one row, not every team they're in.
         var liveSignups = await _db
-            .Signups.Include(s => s.Player!)
+            .Signups.AsNoTracking()
+            .Include(s => s.Player!)
                 .ThenInclude(p => p.Memberships.Where(m => m.TeamId == team.Id))
-            .AsNoTracking()
             .Where(s => s.GameId == game.Id && s.CancelledAt == null)
             .ToListAsync(ct);
         var memberSignups = liveSignups.Where(s => s.IsMember).ToList();

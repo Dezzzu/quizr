@@ -41,6 +41,27 @@ equality where that's what you want (a franchise schedule, a placement).
 2 says the playing/reserve split is derived from an ordered list. Derived state doesn't belong
 on a tracked entity.
 
+**Entities carry real navigation properties, not just scalar ids** — `Signup.Player`,
+`Game.Team`, `Player.Memberships`, and so on, configured in the `IEntityTypeConfiguration` that
+owns the foreign key (the "many" side just gets the property; EF wires it from the owning side
+via `.WithMany(x => x.Collection)`). **Always branch on the scalar id, never on whether the
+navigation happens to be populated.** `Signup.PlayerId is null` means "this is a guest" — a
+real stored fact. `Signup.Player is null` means "not loaded, or a guest" — a member whose
+`Player` wasn't `Include`d would silently read as an anonymous guest if code checked the
+navigation instead of the id. Nullable navigations stay nullable (`Player?`); required ones get
+`= null!` and a comment pointing at this rule, since a missing `Include` doesn't throw — it
+just reads wrong.
+
+**Single-entity derived facts live in `Quizr.Domain/Extensions/`** as C# 14 extension
+properties (`SignupExtensions.IsMember`, `GameExtensions.IsFinished`, ...) — one file per
+entity, mirrored in the test project. They're sugar over the same scalar-id checks above, not a
+new mechanism, so the same branch-on-the-id rule applies. **They only work in-memory** — a
+custom extension property can't be translated by the Postgres provider, so an EF
+`Where()`/`AnyAsync()` predicate that gets sent to the database keeps the raw comparison
+(`s.CancelledAt == null`); only code running against an already-materialized entity or list can
+use `s.IsLive`. Collection-level derived logic (the queue split, the guest cascade) stays in
+`Roster.cs`/`GuestCascade.cs` — extensions are only ever about one entity at a time.
+
 ## Errors
 
 Three mechanisms, no overlap between them.
@@ -147,7 +168,15 @@ yes, both.
 
 - **No lazy loading, ever.** Explicit `Include`.
 - **`AsNoTracking()`** on reads that don't write — which is most of them, since rendering a
-  message is a read.
+  message is a read. Chain it immediately after the `DbSet`, before `Include`/`Where`/anything
+  else, so there's one place in the chain to check whether a query tracks.
+- **`DbSet` properties are `=> Set<T>()`, not `{ get; }`.** EF caches `Set<T>()` internally per
+  `DbContext` instance, so both forms return the same object — the difference is *when* the
+  lookup happens. `=> Set<T>()` is lazy: a request only pays for the tables it actually touches.
+  `{ get; }` needs a backing field and initializes eagerly, and `QuizrDb` is constructed fresh
+  per Telegram update (see "one DI scope per Telegram update" above) with ten `DbSet`s on it —
+  most updates touch two or three, so eager initialization means paying setup cost for tables
+  that update never uses.
 - **Queries live in `Quizr.App`.** `Quizr.Domain` has no EF reference and never will.
 - Migrations get descriptive names and are read before they're applied.
 - **`SingleAsync`/`SingleOrDefaultAsync` over `FirstAsync`/`FirstOrDefaultAsync`** wherever the

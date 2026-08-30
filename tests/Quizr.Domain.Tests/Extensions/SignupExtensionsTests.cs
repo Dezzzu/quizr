@@ -25,6 +25,7 @@ public class SignupExtensionsTests
         signup.IsMember.Should().BeFalse();
         signup.IsGuest.Should().BeTrue();
         signup.IsTeamGuest.Should().BeFalse();
+        signup.HasInviter.Should().BeTrue();
     }
 
     [Fact]
@@ -34,6 +35,7 @@ public class SignupExtensionsTests
 
         signup.IsGuest.Should().BeTrue();
         signup.IsTeamGuest.Should().BeTrue();
+        signup.HasInviter.Should().BeFalse();
     }
 
     [Fact]

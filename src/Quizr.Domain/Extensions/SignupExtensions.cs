@@ -19,6 +19,11 @@ public static class SignupExtensions
         // after their inviter drops out. Has no owner." Invariant 5 means one is always named.
         public bool IsTeamGuest => signup.PlayerId is null && signup.InvitedByPlayerId is null;
 
+        // In practice only ever true for a guest (JoinAsync never sets InvitedByPlayerId, and
+        // BringGuestAsync never sets PlayerId), but reads from the field itself rather than
+        // presupposing IsGuest, so it stays correct standing alone.
+        public bool HasInviter => signup.InvitedByPlayerId is not null;
+
         public bool IsLive => signup.CancelledAt is null;
 
         public bool IsCancelled => signup.CancelledAt is not null;

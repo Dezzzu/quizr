@@ -49,9 +49,9 @@ public sealed class AnnouncementService
     )
     {
         var signups = await _db
-            .Signups.Include(s => s.Player)
+            .Signups.AsNoTracking()
+            .Include(s => s.Player)
             .Include(s => s.InvitedByPlayer)
-            .AsNoTracking()
             .Where(s => s.GameId == game.Id && s.CancelledAt == null)
             .ToListAsync(ct);
         var roster = Roster.Split(signups, game.Capacity);

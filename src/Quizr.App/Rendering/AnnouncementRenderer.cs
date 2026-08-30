@@ -126,7 +126,7 @@ internal static class AnnouncementRenderer
         {
             var encodedName = WebUtility.HtmlEncode(guestName);
 
-            return signup.InvitedByPlayerId is not null
+            return signup.HasInviter
                 ? strings.Text(
                     "Announcement.NamedGuest",
                     new { Name = encodedName, Inviter = WebUtility.HtmlEncode(signup.InvitedByPlayer!.DisplayName) }
