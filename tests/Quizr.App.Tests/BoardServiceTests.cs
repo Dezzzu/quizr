@@ -12,8 +12,6 @@ using Quizr.Domain.Entities;
 using Telegram.Bot;
 using Telegram.Bot.Exceptions;
 using Telegram.Bot.Requests;
-using Telegram.Bot.Types;
-using Telegram.Bot.Types.Enums;
 using Game = Quizr.Domain.Entities.Game;
 
 namespace Quizr.App.Tests;
@@ -336,7 +334,12 @@ public class BoardServiceTests
     // The debouncer's own delay isn't what's under test here; a zero-window instance still
     // exercises the real coalescing code path.
     private static MessageEditDebouncer NoDebounce(ITelegramBotClient bot) =>
-        new(bot, TimeProvider.System, NullLogger<MessageEditDebouncer>.Instance);
+        new(
+            bot,
+            TimeProvider.System,
+            TelegramBotClientTestHelper.NullScopeFactory(),
+            NullLogger<MessageEditDebouncer>.Instance
+        );
 
     private static async Task<Team> SeedTeamAsync(QuizrDb db, long chatId, CancellationToken ct)
     {

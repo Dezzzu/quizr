@@ -107,7 +107,12 @@ public class TeamBootstrapServiceTests
         var clock = new FakeTimeProvider();
         var sender = new MessageSender(
             bot,
-            new MessageEditDebouncer(bot, clock, NullLogger<MessageEditDebouncer>.Instance)
+            new MessageEditDebouncer(
+                bot,
+                clock,
+                TelegramBotClientTestHelper.NullScopeFactory(),
+                NullLogger<MessageEditDebouncer>.Instance
+            )
         );
 
         return (new TeamBootstrapService(db, sender, new Strings(), clock), db, bot);

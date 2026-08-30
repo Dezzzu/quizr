@@ -369,6 +369,54 @@ public class UpdateRouterSignupLoopTests
         promotionMessages[0].Should().Contain("Bob").And.Contain("Carol");
     }
 
+    // RenderEditGameFieldPicker had no Done button at all — unlike the analogous Franchise
+    // field picker, there was no way to dismiss it once shown.
+    [Test]
+    public async Task DoneClearsTheEditGameFieldPickerKeyboard()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 7053, capacity: 5, ct);
+        var captainId = 7053 * 1000;
+        db.Memberships.Add(
+            new Membership
+            {
+                TeamId = game.TeamId,
+                PlayerId = game.CreatedByPlayerId,
+                IsCaptain = true,
+                JoinedAt = DateTimeOffset.UtcNow,
+            }
+        );
+        await db.SaveChangesAsync(ct);
+        var (router, bot, _) = CreateRouter(db);
+
+        await router.RouteAsync(MessageUpdate(7053, captainId, "Creator", "/editgame"), ct);
+        await router.RouteAsync(
+            CallbackUpdate(
+                7053,
+                captainId,
+                "Creator",
+                CallbackData.Format(CallbackData.PickGameToEdit, game.Id),
+                announcementMessageId: 1
+            ),
+            ct
+        );
+
+        await router.RouteAsync(
+            CallbackUpdate(
+                7053,
+                captainId,
+                "Creator",
+                CallbackData.Format(CallbackData.CloseView, 0L),
+                announcementMessageId: 2
+            ),
+            ct
+        );
+
+        bot.ClearedKeyboards().Should().ContainSingle(r => r.MessageId == 2);
+        (await db.DialogStates.CountAsync(d => d.ChatId == new TelegramChatId(7053), ct)).Should().Be(0);
+    }
+
     // A promoted signup can be an anonymous guest (invariant 5 only requires a live inviter,
     // not a name) — the fallback label must come from the strings table like everything else
     // user-visible, not a bare English literal.
@@ -642,7 +690,12 @@ public class UpdateRouterSignupLoopTests
         var clock = new FakeTimeProvider();
         var sender = new MessageSender(
             bot,
-            new MessageEditDebouncer(bot, clock, NullLogger<MessageEditDebouncer>.Instance)
+            new MessageEditDebouncer(
+                bot,
+                clock,
+                TelegramBotClientTestHelper.NullScopeFactory(),
+                NullLogger<MessageEditDebouncer>.Instance
+            )
         );
         var strings = new Strings();
         var teamBootstrap = new TeamBootstrapService(db, sender, strings, clock);

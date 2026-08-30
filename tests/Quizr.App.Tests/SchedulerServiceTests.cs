@@ -457,7 +457,12 @@ public class SchedulerServiceTests
         // waiting out a debounce window that never advances.
         var sender = new MessageSender(
             bot,
-            new MessageEditDebouncer(bot, TimeProvider.System, NullLogger<MessageEditDebouncer>.Instance)
+            new MessageEditDebouncer(
+                bot,
+                TimeProvider.System,
+                TelegramBotClientTestHelper.NullScopeFactory(),
+                NullLogger<MessageEditDebouncer>.Instance
+            )
         );
         var strings = new Strings();
         var games = new GameService(db, clock);

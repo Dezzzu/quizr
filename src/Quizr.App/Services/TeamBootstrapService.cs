@@ -96,7 +96,7 @@ public sealed class TeamBootstrapService
 
     private async Task HandleRemovedAsync(TelegramChatId chatId, CancellationToken ct)
     {
-        var team = await _db.Teams.SingleOrDefaultAsync(t => t.ChatId == chatId, ct);
+        var team = await _db.Teams.ByChatId(chatId).SingleOrDefaultAsync(ct);
         if (team is not null)
         {
             team.DeactivatedAt = _clock.GetUtcNow();

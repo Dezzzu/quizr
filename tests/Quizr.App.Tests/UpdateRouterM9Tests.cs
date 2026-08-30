@@ -623,7 +623,12 @@ public class UpdateRouterM9Tests
         var clock = new FakeTimeProvider();
         var sender = new MessageSender(
             bot,
-            new MessageEditDebouncer(bot, clock, NullLogger<MessageEditDebouncer>.Instance)
+            new MessageEditDebouncer(
+                bot,
+                clock,
+                TelegramBotClientTestHelper.NullScopeFactory(),
+                NullLogger<MessageEditDebouncer>.Instance
+            )
         );
         var strings = new Strings();
         var teamBootstrap = new TeamBootstrapService(db, sender, strings, clock);

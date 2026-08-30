@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using Telegram.Bot;
 using Telegram.Bot.Requests;
@@ -11,6 +12,14 @@ namespace Quizr.App.Tests;
 // interface's only real member — so that's the one method every test fakes.
 internal static class TelegramBotClientTestHelper
 {
+    // MessageEditDebouncer's own repost-on-deleted-message path (RepostAnnouncementAsync)
+    // needs a scope factory to resolve a fresh QuizrDb/AnnouncementService — every test that
+    // doesn't specifically exercise that path (only MessageEditDebouncerTests does) just
+    // needs *a* working factory, since nothing here ever calls CreateScope(). A real, empty
+    // container gives that for free, no NSubstitute wiring required.
+    public static IServiceScopeFactory NullScopeFactory() =>
+        new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+
     public static ITelegramBotClient Create()
     {
         var bot = Substitute.For<ITelegramBotClient>();

@@ -16,6 +16,10 @@ namespace Quizr.App.Services;
 // apply the same conflict rule rather than risking two different answers to "what if a team
 // already owns the new chat id."
 //
+// The old id isn't discarded — it's kept on Team.OldChatId so a straggling incoming update
+// still tagged with it (one already in flight when the upgrade completed) still resolves to
+// this team; see TeamLookup, which every "find the team for this chat id" query goes through.
+//
 // That conflict is the common case, not the exception: Telegram's own my_chat_member "added"
 // event for the new chat id looks identical to a genuine new addition, so
 // TeamBootstrapService almost always bootstraps a fresh, empty team for it before this ever
@@ -35,6 +39,8 @@ internal static class TeamChatMigration
         CancellationToken ct
     )
     {
+        var oldChatId = team.ChatId;
+
         // Team's global query filter (TeamConfiguration) already limits this to the active
         // team, if any — exactly what "is this chat id taken" needs to ask.
         var conflicting = await db.Teams.SingleOrDefaultAsync(t => t.ChatId == newChatId, ct);
@@ -47,6 +53,8 @@ internal static class TeamChatMigration
                 newChatId.Value
             );
             team.ChatId = newChatId;
+            team.OldChatId = oldChatId;
+            await MoveActiveDialogsAsync(db, oldChatId, newChatId, ct);
         }
         else if (conflicting.TimeZoneId is null || conflicting.BoardMessageId is null)
         {
@@ -70,12 +78,17 @@ internal static class TeamChatMigration
                 conflicting.Id.Value
             );
             team.ChatId = newChatId;
+            team.OldChatId = oldChatId;
+            await MoveActiveDialogsAsync(db, oldChatId, newChatId, ct);
         }
         else
         {
             // The fresh team was actually configured before this ran — a captain reached it
             // first, so it's the real active continuation. Retire the old team instead,
-            // rather than collide with the fresh one on Team.ChatId's unique index.
+            // rather than collide with the fresh one on Team.ChatId's unique index. Any
+            // DialogState still keyed to the old chat id belongs to a team that's now retired,
+            // not to conflicting — left alone here, it self-expires (SchedulerService's
+            // 20-minute cutoff) rather than being moved onto a team it was never part of.
             team.DeactivatedAt = clock.GetUtcNow();
             logger.LogWarning(
                 "Team {TeamId}'s chat migrated to {NewChatId}, already configured as team {ConflictingTeamId} — retiring the old team",
@@ -87,4 +100,21 @@ internal static class TeamChatMigration
 
         await db.SaveChangesAsync(ct);
     }
+
+    // Telegram tags every update for a migrated chat with the new id from the moment the
+    // migration completes, including callback queries on messages posted before it — so a
+    // DialogState row still keyed to the old id (a captain mid-wizard at the exact instant of
+    // migration) becomes unreachable the moment the next reply arrives, and the wizard breaks
+    // silently rather than picking up where it left off. Bulk update, matching
+    // SchedulerService's own ExecuteDeleteAsync precedent for this table — there's normally at
+    // most one row to move.
+    private static async Task MoveActiveDialogsAsync(
+        QuizrDb db,
+        TelegramChatId oldChatId,
+        TelegramChatId newChatId,
+        CancellationToken ct
+    ) =>
+        await db
+            .DialogStates.Where(d => d.ChatId == oldChatId)
+            .ExecuteUpdateAsync(s => s.SetProperty(d => d.ChatId, newChatId), ct);
 }

@@ -143,7 +143,12 @@ Breaking one of these is a bug, not a preference.
   proactively from the migrate notice (a `Message` with no text, otherwise indistinguishable
   from noise), reactively from the API error's own `MigrateToChatId` — and retires rather than
   overwrites when `TeamBootstrapService`'s own `my_chat_member` handler already bootstrapped a
-  second team for the new id first.
+  second team for the new id first. It also moves any `DialogState` a captain had active at
+  the exact moment of migration onto the new chat id (otherwise unreachable the moment the
+  next reply arrives) and records the old id on `Team.OldChatId`, since a straggling update
+  already in flight when the upgrade completed can still arrive tagged with it. Every "find
+  the team for this chat id" query goes through `TeamLookup.ByChatId`, which matches either
+  id, rather than repeating `|| t.OldChatId == chatId` at each call site.
 
 ## Time
 

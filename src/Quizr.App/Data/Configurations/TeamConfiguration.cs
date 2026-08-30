@@ -12,6 +12,8 @@ internal sealed class TeamConfiguration : IEntityTypeConfiguration<Team>
         builder.Property(t => t.Id).HasConversion(IdConverters.Team).ValueGeneratedOnAdd();
 
         builder.Property(t => t.ChatId).HasConversion(IdConverters.TelegramChat);
+        builder.Property(t => t.OldChatId).HasConversion(IdConverters.TelegramChat);
+        builder.HasIndex(t => t.OldChatId);
 
         // Filtered so a retired team's chat id is free to be reused by the team that
         // actually takes over it (TeamChatMigration) — nothing is ever deleted (invariant

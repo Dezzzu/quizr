@@ -4,6 +4,13 @@ public sealed class Team
 {
     public TeamId Id { get; set; }
     public required TelegramChatId ChatId { get; set; }
+
+    // Set by TeamChatMigration when a basic group upgrades to a supergroup — Telegram can
+    // still deliver a straggling update tagged with this id (one already in flight when the
+    // upgrade completed), so it stays a valid alternative match for "which team does this
+    // chat id belong to" (CLAUDE.md's Telegram-migration note; see TeamLookup).
+    public TelegramChatId? OldChatId { get; set; }
+
     public required string Name { get; set; }
 
     // IANA id, never an offset — see CLAUDE.md's Time section. Null until a captain sets it;

@@ -11,6 +11,7 @@ using Quizr.Domain.Entities;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
+using Game = Quizr.Domain.Entities.Game;
 
 namespace Quizr.App.Tests;
 
@@ -542,9 +543,90 @@ public class UpdateRouterTests
 
         await router.RouteAsync(MigrateUpdate(oldChatId: 4023, newChatId: -1004023999999), ct);
 
-        (await db.Teams.AsNoTracking().SingleAsync(t => t.Id == team.Id, ct))
-            .ChatId.Should()
-            .Be(new TelegramChatId(-1004023999999));
+        var refreshed = await db.Teams.AsNoTracking().SingleAsync(t => t.Id == team.Id, ct);
+        refreshed.ChatId.Should().Be(new TelegramChatId(-1004023999999));
+        refreshed.OldChatId.Should().Be(new TelegramChatId(4023));
+    }
+
+    // The old id isn't just discarded — a straggling update already in flight when Telegram
+    // completed the upgrade can still arrive tagged with it, and TeamLookup (used by every
+    // "find the team for this chat id" query) needs to keep resolving it to the same team.
+    // /settimezone specifically: it no-ops entirely when team is null, so a successful update
+    // is proof the team was actually found, not just that some reply was sent either way.
+    [Test]
+    public async Task AMessageTaggedWithTheOldChatIdStillResolvesTheTeamAfterMigration()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedCaptainedTeamAsync(db, chatId: 4037, telegramUserId: 4037, ct);
+        var (router, _) = CreateRouter(db);
+
+        await router.RouteAsync(MigrateUpdate(oldChatId: 4037, newChatId: -1004037999999), ct);
+        await router.RouteAsync(MessageUpdate(4037, 4037, "/settimezone Europe/Berlin"), ct);
+
+        (await db.Teams.AsNoTracking().SingleAsync(t => t.Id == team.Id, ct)).TimeZoneId.Should().Be("Europe/Berlin");
+    }
+
+    // HandleDropPromptAsync (like ~30 other handlers) pulls its send target straight off the
+    // incoming callback's own embedded message rather than from Team — ResolveChatIdAsync is
+    // what redirects that send to the team's current chat id when the callback still carries
+    // the pre-migration, non-supergroup-shaped one.
+    [Test]
+    public async Task ADropPromptOnAStaleChatIdIsSentToTheCurrentOne()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var oldChatId = new TelegramChatId(-123456789);
+        var newChatId = new TelegramChatId(-1004038999999);
+        var team = new Team
+        {
+            ChatId = newChatId,
+            OldChatId = oldChatId,
+            Name = "Test team",
+            Locale = "en",
+            TimeZoneId = "Europe/Berlin",
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+        db.Teams.Add(team);
+        var player = new Player
+        {
+            TelegramUserId = new TelegramUserId(4038),
+            DisplayName = "Creator",
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+        db.Players.Add(player);
+        await db.SaveChangesAsync(ct);
+        var game = new Game
+        {
+            TeamId = team.Id,
+            Title = "Quiz Night",
+            Venue = "The Pub",
+            StartsAt = DateTimeOffset.UtcNow.AddDays(1),
+            Capacity = 5,
+            AnnouncementMessageId = new TelegramMessageId(1),
+            CreatedAt = DateTimeOffset.UtcNow,
+            CreatedByPlayerId = player.Id,
+        };
+        db.Games.Add(game);
+        await db.SaveChangesAsync(ct);
+        db.Signups.Add(
+            new Signup
+            {
+                GameId = game.Id,
+                PlayerId = player.Id,
+                CreatedAt = DateTimeOffset.UtcNow,
+            }
+        );
+        await db.SaveChangesAsync(ct);
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(
+            CallbackUpdate(oldChatId.Value, 4038, CallbackData.Format(CallbackData.Drop, game.Id)),
+            ct
+        );
+
+        bot.SentTexts(newChatId.Value).Should().ContainSingle(t => t.Contains("Quiz Night", StringComparison.Ordinal));
+        bot.SentTexts(oldChatId.Value).Should().BeEmpty();
     }
 
     // The common conflict case: TeamBootstrapService's own my_chat_member "added" handler
@@ -605,6 +687,39 @@ public class UpdateRouterTests
         (await db.Teams.AsNoTracking().SingleAsync(t => t.Id == configuredTeam.Id, ct)).DeactivatedAt.Should().BeNull();
     }
 
+    // A captain mid-wizard at the exact instant of migration would otherwise have their
+    // DialogState stranded on the old chat id — Telegram tags every later update, including a
+    // reply to a message posted before the migration, with the new one, so without this the
+    // wizard becomes silently unreachable instead of continuing where it left off.
+    [Test]
+    public async Task ChatMigrationMovesAnActiveDialogToTheNewChatId()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedCaptainedTeamAsync(db, chatId: 4036, telegramUserId: 4036, ct);
+        var player = await db.Players.SingleAsync(p => p.TelegramUserId == new TelegramUserId(4036), ct);
+        db.DialogStates.Add(
+            new DialogState
+            {
+                TeamId = team.Id,
+                PlayerId = player.Id,
+                ChatId = team.ChatId,
+                Kind = DialogKinds.NewFranchise,
+                Step = "",
+                Data = "{}",
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            }
+        );
+        await db.SaveChangesAsync(ct);
+        var (router, _) = CreateRouter(db);
+
+        await router.RouteAsync(MigrateUpdate(oldChatId: 4036, newChatId: -1004036999999), ct);
+
+        var dialog = await db.DialogStates.AsNoTracking().SingleAsync(d => d.TeamId == team.Id, ct);
+        dialog.ChatId.Should().Be(new TelegramChatId(-1004036999999));
+    }
+
     // The exact shape TeamChatMigration's filtered index makes possible: an active team and
     // a retired one sharing the same chat id (the retired one lost the chat id fight but,
     // per invariant 7, is never deleted — it just keeps the id it had). Team's global query
@@ -653,7 +768,12 @@ public class UpdateRouterTests
         var clock = new FakeTimeProvider();
         var sender = new MessageSender(
             bot,
-            new MessageEditDebouncer(bot, clock, NullLogger<MessageEditDebouncer>.Instance)
+            new MessageEditDebouncer(
+                bot,
+                clock,
+                TelegramBotClientTestHelper.NullScopeFactory(),
+                NullLogger<MessageEditDebouncer>.Instance
+            )
         );
         var strings = new Strings();
         var teamBootstrap = new TeamBootstrapService(db, sender, strings, clock);
