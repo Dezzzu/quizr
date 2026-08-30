@@ -205,6 +205,7 @@ Considered and rejected. If one seems necessary, raise it rather than adding it.
 | MarkdownV2 | Escaping hazard. Use HTML parse mode. |
 | OneOf | Per-operation unions by construction, so cross-cutting failures like "not a captain" get repeated in every signature. |
 | ErrorOr, FluentResults | Stringly-typed errors (code plus description), which kills exhaustive switching and turns the message-key mapping into a string lookup. |
+| .NET Aspire | Its value is orchestrating several services; this is one process and one database, deliberately. Service discovery and health checks buy nothing here, `ServiceDefaults` would own a startup we want to understand, and the AppHost is dev-time only — so the whole benefit is local, where one Postgres container is needed. Two more projects and a fast-moving dependency to replace fifteen lines of `docker-compose.yml`. The dashboard is the one part genuinely worth missing. |
 
 ## When to revisit
 
@@ -214,6 +215,7 @@ Nothing above is permanent. These are the specific triggers that should reopen a
 | --- | --- |
 | A new SDK feature band lands | Re-test `dotnet test` with xUnit v3. If it works, drop the `dotnet run` workaround from the docs. |
 | The mini app arrives | Generic host becomes `WebApplication`. Hosted services carry over unchanged. |
+| Phase 2 turns into genuinely separate services rather than one host | Reconsider .NET Aspire. Its orchestration and dashboard start earning their keep once there is more than one thing to run, and the objection above is entirely about there being one. |
 | You want log aggregation | Add OpenTelemetry at the composition root and point OTLP wherever you like. Call sites are already structured, so nothing else moves. |
 | Scheduling grows teeth — backoff, one-off jobs, an operational dashboard | TickerQ becomes the right library to reach for: EF Core-backed, so no separate storage or migration story. |
 | A second process appears | Two assumptions break — migrations applied at startup, and the in-process edit debouncer. Both need rethinking *before* a second instance exists, not after. |
