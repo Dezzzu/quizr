@@ -301,12 +301,16 @@ players" on a live announcement (captain registers or drops a member on their be
 reusing `JoinAsync`/`DropAsync` unchanged); `/managecaptains` (grant/revoke, team-wide);
 Decline with a confirm step; an explicit Finish button sharing `GameService.FinishAsync` with
 the scheduler's auto-finish; `Game.Tags`, settable alongside the other overridable fields and
-rendered as hashtags; an `AuditRecorder` writing `AuditEntry` rows for the six actions
-invariant 13 names, in the same transaction as the change that caused them.
+rendered as hashtags; an `AuditRecorder` writing `AuditEntry` rows for the actions invariant 13
+names, in the same transaction as the change that caused them — including
+`ParticipationService.ToggleAttendedAsync`/`TogglePlayedAsync` (editing a finished game's
+roster is the exact dispute this table exists for) and `AddVenueAssignedAsync`, added once the
+first pass at audit logging turned out to have missed both.
 
-Done when: a captain can decline, finish early, manage another player's signup, and manage
-captaincy, all without a developer; every reminder slot is actually reachable by a player;
-and each of those captain actions leaves an `AuditEntry` row naming who did it.
+Done when: a captain can decline, finish early, manage another player's signup, manage
+captaincy, and edit a finished game's roster, all without a developer; every reminder slot is
+actually reachable by a player; and each of those captain actions leaves an `AuditEntry` row
+naming who did it.
 
 Governed by: invariant 13, `CLAUDE.md` Conventions (audit logging), `VISION.md`'s Bot v1
 list.

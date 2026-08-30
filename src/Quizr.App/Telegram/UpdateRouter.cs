@@ -1125,7 +1125,7 @@ public sealed class UpdateRouter
         }
 
         var game = await _db.Games.SingleAsync(g => g.Id == data.GameId, ct);
-        var result = await _participations.AddVenueAssignedAsync(game, name, ct);
+        var result = await _participations.AddVenueAssignedAsync(game, name, dialog.PlayerId, ct);
 
         _db.DialogStates.Remove(dialog);
         await _db.SaveChangesAsync(ct);
@@ -2272,6 +2272,7 @@ public sealed class UpdateRouter
                 await HandleToggleParticipationAsync(
                     new ParticipationId(value),
                     verb == CallbackData.ToggleAttended,
+                    player.Id,
                     chatId,
                     callbackQuery,
                     strings,
@@ -2288,13 +2289,16 @@ public sealed class UpdateRouter
     private async Task HandleToggleParticipationAsync(
         ParticipationId participationId,
         bool toggleAttended,
+        PlayerId actorPlayerId,
         TelegramChatId chatId,
         CallbackQuery callbackQuery,
         IStringsFor strings,
         CancellationToken ct
     )
     {
-        var participation = await _db.Participations.SingleOrDefaultAsync(p => p.Id == participationId, ct);
+        var participation = await _db
+            .Participations.Include(p => p.Game)
+            .SingleOrDefaultAsync(p => p.Id == participationId, ct);
         if (participation is null)
         {
             await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
@@ -2302,10 +2306,10 @@ public sealed class UpdateRouter
         }
 
         _ = toggleAttended
-            ? await _participations.ToggleAttendedAsync(participation, ct)
-            : await _participations.TogglePlayedAsync(participation, ct);
+            ? await _participations.ToggleAttendedAsync(participation, actorPlayerId, ct)
+            : await _participations.TogglePlayedAsync(participation, actorPlayerId, ct);
 
-        var game = await _db.Games.SingleAsync(g => g.Id == participation.GameId, ct);
+        var game = participation.Game;
         var participations = await LoadParticipationsAsync(game, ct);
         await _sender.EditAsync(
             chatId,

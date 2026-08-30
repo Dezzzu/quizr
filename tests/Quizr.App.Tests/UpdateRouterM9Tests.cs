@@ -267,6 +267,52 @@ public class UpdateRouterM9Tests
         bot.SentTexts().Should().ContainSingle(text => text.Contains("captain", StringComparison.OrdinalIgnoreCase));
     }
 
+    // Editing a finished game's roster (invariant 11's second half) is also a captain action
+    // that affects someone else's record — added to invariant 13's list after the first pass
+    // at audit logging turned out to have missed it.
+    [Test]
+    public async Task TogglingAttendedOnAFinishedGamesRosterRecordsAnAuditEntry()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var (game, participation) = await SeedFinishedGameWithParticipationAsync(db, chatId: 8010, ct);
+        var captain = await SeedCaptainAsync(db, game.TeamId, telegramUserId: 80101, ct);
+        var (router, _) = CreateRouter(db);
+
+        await router.RouteAsync(
+            CallbackUpdate(8010, 80101, CallbackData.Format(CallbackData.ToggleAttended, participation.Id)),
+            ct
+        );
+
+        (await db.Participations.AsNoTracking().SingleAsync(p => p.Id == participation.Id, ct))
+            .Attended.Should()
+            .BeFalse();
+        var entry = await db.AuditEntries.SingleAsync(e => e.GameId == game.Id, ct);
+        entry.Action.Should().Be(AuditActions.ParticipationAttendedToggled);
+        entry.ActorPlayerId.Should().Be(captain.Id);
+    }
+
+    [Test]
+    public async Task AddingAVenuePlayerRecordsAnAuditEntry()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var (game, _) = await SeedFinishedGameWithParticipationAsync(db, chatId: 8011, ct);
+        var captain = await SeedCaptainAsync(db, game.TeamId, telegramUserId: 80111, ct);
+        var (router, _) = CreateRouter(db);
+
+        await router.RouteAsync(CallbackUpdate(8011, 80111, CallbackData.Format(CallbackData.AddPlayer, game.Id)), ct);
+        await router.RouteAsync(MessageUpdate(8011, 80111, "Walk-in Wendy"), ct);
+
+        var added = await db.Participations.AsNoTracking().SingleAsync(p => p.Name == "Walk-in Wendy", ct);
+        added.Kind.Should().Be(ParticipationKind.VenueAssigned);
+        var entry = await db.AuditEntries.SingleAsync(
+            e => e.GameId == game.Id && e.Action == AuditActions.VenuePlayerAdded,
+            ct
+        );
+        entry.ActorPlayerId.Should().Be(captain.Id);
+    }
+
     private static (UpdateRouter Router, ITelegramBotClient Bot) CreateRouter(QuizrDb db)
     {
         var bot = TelegramBotClientTestHelper.Create();
@@ -396,6 +442,45 @@ public class UpdateRouterM9Tests
         await db.SaveChangesAsync(ct);
 
         return game;
+    }
+
+    private static async Task<(Game Game, Participation Participation)> SeedFinishedGameWithParticipationAsync(
+        QuizrDb db,
+        long chatId,
+        CancellationToken ct
+    )
+    {
+        var team = await SeedTeamAsync(db, chatId, ct);
+        var creator = await SeedMemberAsync(db, team.Id, telegramUserId: chatId * 1000, ct);
+
+        var game = new Game
+        {
+            TeamId = team.Id,
+            Title = "Quiz Night",
+            Venue = "The Pub",
+            StartsAt = DateTimeOffset.UtcNow.AddHours(-5),
+            FinishedAt = DateTimeOffset.UtcNow,
+            Capacity = 10,
+            AnnouncementMessageId = new TelegramMessageId(1),
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-5),
+            CreatedByPlayerId = creator.Id,
+        };
+        db.Games.Add(game);
+        await db.SaveChangesAsync(ct);
+
+        var participation = new Participation
+        {
+            GameId = game.Id,
+            PlayerId = creator.Id,
+            Kind = ParticipationKind.Member,
+            Played = true,
+            Attended = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+        db.Participations.Add(participation);
+        await db.SaveChangesAsync(ct);
+
+        return (game, participation);
     }
 
     private static Update CallbackUpdate(long chatId, long telegramUserId, string data) =>

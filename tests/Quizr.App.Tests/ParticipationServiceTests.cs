@@ -1,4 +1,5 @@
 using AwesomeAssertions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Time.Testing;
 using Quizr.App.Data;
 using Quizr.App.Services;
@@ -15,47 +16,60 @@ public class ParticipationServiceTests
     public ParticipationServiceTests(PostgresFixture fixture) => _fixture = fixture;
 
     [Test]
-    public async Task ToggleAttendedAsyncFlipsAttended()
+    public async Task ToggleAttendedAsyncFlipsAttendedAndRecordsAnAuditEntry()
     {
         var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
-        var (_, participation) = await SeedFinishedGameWithParticipationAsync(db, chatId: 6201, ct);
+        var (game, participation, captain) = await SeedFinishedGameWithParticipationAsync(db, chatId: 6201, ct);
         var service = new ParticipationService(db, new FakeTimeProvider());
 
-        var toggledOff = await service.ToggleAttendedAsync(participation, ct);
+        var toggledOff = await service.ToggleAttendedAsync(participation, captain.Id, ct);
         toggledOff.Attended.Should().BeFalse();
 
-        var toggledOn = await service.ToggleAttendedAsync(participation, ct);
+        var toggledOn = await service.ToggleAttendedAsync(participation, captain.Id, ct);
         toggledOn.Attended.Should().BeTrue();
+
+        var entries = await db.AuditEntries.Where(e => e.GameId == game.Id).ToListAsync(ct);
+        entries.Should().HaveCount(2);
+        entries.Should().OnlyContain(e => e.Action == AuditActions.ParticipationAttendedToggled);
+        entries.Should().OnlyContain(e => e.ActorPlayerId == captain.Id);
     }
 
     [Test]
-    public async Task TogglePlayedAsyncFlipsPlayed()
+    public async Task TogglePlayedAsyncFlipsPlayedAndRecordsAnAuditEntry()
     {
         var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
-        var (_, participation) = await SeedFinishedGameWithParticipationAsync(db, chatId: 6202, ct);
+        var (game, participation, captain) = await SeedFinishedGameWithParticipationAsync(db, chatId: 6202, ct);
         var service = new ParticipationService(db, new FakeTimeProvider());
 
-        var toggledOff = await service.TogglePlayedAsync(participation, ct);
+        var toggledOff = await service.TogglePlayedAsync(participation, captain.Id, ct);
         toggledOff.Played.Should().BeFalse();
+
+        var entry = await db.AuditEntries.SingleAsync(e => e.GameId == game.Id, ct);
+        entry.Action.Should().Be(AuditActions.ParticipationPlayedToggled);
+        entry.ActorPlayerId.Should().Be(captain.Id);
     }
 
     [Test]
-    public async Task AddVenueAssignedAsyncInsertsARowOnAFinishedGame()
+    public async Task AddVenueAssignedAsyncInsertsARowOnAFinishedGameAndRecordsAnAuditEntry()
     {
         var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
-        var (game, _) = await SeedFinishedGameWithParticipationAsync(db, chatId: 6203, ct);
+        var (game, _, captain) = await SeedFinishedGameWithParticipationAsync(db, chatId: 6203, ct);
         var service = new ParticipationService(db, new FakeTimeProvider());
 
-        var result = await service.AddVenueAssignedAsync(game, "Walk-in Wendy", ct);
+        var result = await service.AddVenueAssignedAsync(game, "Walk-in Wendy", captain.Id, ct);
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Kind.Should().Be(ParticipationKind.VenueAssigned);
         result.Value.Name.Should().Be("Walk-in Wendy");
         result.Value.Played.Should().BeTrue();
         result.Value.Attended.Should().BeTrue();
+
+        var entry = await db.AuditEntries.SingleAsync(e => e.GameId == game.Id, ct);
+        entry.Action.Should().Be(AuditActions.VenuePlayerAdded);
+        entry.ActorPlayerId.Should().Be(captain.Id);
     }
 
     [Test]
@@ -94,17 +108,17 @@ public class ParticipationServiceTests
         await db.SaveChangesAsync(ct);
         var service = new ParticipationService(db, new FakeTimeProvider());
 
-        var result = await service.AddVenueAssignedAsync(game, "Too soon", ct);
+        var result = await service.AddVenueAssignedAsync(game, "Too soon", creator.Id, ct);
 
         result.IsSuccess.Should().BeFalse();
         result.Error.Should().BeOfType<BusinessError.GameNotFinished>();
     }
 
-    private static async Task<(Game Game, Participation Participation)> SeedFinishedGameWithParticipationAsync(
-        QuizrDb db,
-        long chatId,
-        CancellationToken ct
-    )
+    private static async Task<(
+        Game Game,
+        Participation Participation,
+        Player Captain
+    )> SeedFinishedGameWithParticipationAsync(QuizrDb db, long chatId, CancellationToken ct)
     {
         var team = new Team
         {
@@ -150,6 +164,6 @@ public class ParticipationServiceTests
         db.Participations.Add(participation);
         await db.SaveChangesAsync(ct);
 
-        return (game, participation);
+        return (game, participation, creator);
     }
 }

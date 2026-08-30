@@ -12,13 +12,22 @@ namespace Quizr.App.Services;
 // same as HandleGameCallbackAsync already does for a missing Game. Only adding a row is
 // guarded here, since that's the one case this service alone can tell is invalid: before a
 // game finishes (invariant 10), there's nothing yet to add to.
+//
+// Every method here is reachable only through a captain-gated handler (unlike
+// ISignupService.JoinAsync/DropAsync, which self-service also calls), so the audit write —
+// invariant 13 — lives inside the service itself rather than at each call site.
 public interface IParticipationService
 {
-    Task<Participation> ToggleAttendedAsync(Participation participation, CancellationToken ct);
+    Task<Participation> ToggleAttendedAsync(Participation participation, PlayerId actorPlayerId, CancellationToken ct);
 
-    Task<Participation> TogglePlayedAsync(Participation participation, CancellationToken ct);
+    Task<Participation> TogglePlayedAsync(Participation participation, PlayerId actorPlayerId, CancellationToken ct);
 
-    Task<Result<Participation>> AddVenueAssignedAsync(Game game, string name, CancellationToken ct);
+    Task<Result<Participation>> AddVenueAssignedAsync(
+        Game game,
+        string name,
+        PlayerId actorPlayerId,
+        CancellationToken ct
+    );
 }
 
 public sealed class ParticipationService : IParticipationService
@@ -32,23 +41,58 @@ public sealed class ParticipationService : IParticipationService
         _clock = clock;
     }
 
-    public async Task<Participation> ToggleAttendedAsync(Participation participation, CancellationToken ct)
+    public async Task<Participation> ToggleAttendedAsync(
+        Participation participation,
+        PlayerId actorPlayerId,
+        CancellationToken ct
+    )
     {
         participation.Attended = !participation.Attended;
+
+        AuditRecorder.Record(
+            _db,
+            participation.Game.TeamId,
+            participation.GameId,
+            actorPlayerId,
+            AuditActions.ParticipationAttendedToggled,
+            new { ParticipationId = participation.Id.Value, participation.Attended },
+            _clock
+        );
+
         await _db.SaveChangesAsync(ct);
 
         return participation;
     }
 
-    public async Task<Participation> TogglePlayedAsync(Participation participation, CancellationToken ct)
+    public async Task<Participation> TogglePlayedAsync(
+        Participation participation,
+        PlayerId actorPlayerId,
+        CancellationToken ct
+    )
     {
         participation.Played = !participation.Played;
+
+        AuditRecorder.Record(
+            _db,
+            participation.Game.TeamId,
+            participation.GameId,
+            actorPlayerId,
+            AuditActions.ParticipationPlayedToggled,
+            new { ParticipationId = participation.Id.Value, participation.Played },
+            _clock
+        );
+
         await _db.SaveChangesAsync(ct);
 
         return participation;
     }
 
-    public async Task<Result<Participation>> AddVenueAssignedAsync(Game game, string name, CancellationToken ct)
+    public async Task<Result<Participation>> AddVenueAssignedAsync(
+        Game game,
+        string name,
+        PlayerId actorPlayerId,
+        CancellationToken ct
+    )
     {
         if (!game.IsFinished)
         {
@@ -65,6 +109,17 @@ public sealed class ParticipationService : IParticipationService
             CreatedAt = _clock.GetUtcNow(),
         };
         _db.Participations.Add(participation);
+
+        AuditRecorder.Record(
+            _db,
+            game.TeamId,
+            game.Id,
+            actorPlayerId,
+            AuditActions.VenuePlayerAdded,
+            new { Name = name },
+            _clock
+        );
+
         await _db.SaveChangesAsync(ct);
 
         return participation;

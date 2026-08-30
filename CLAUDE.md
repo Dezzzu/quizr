@@ -105,7 +105,8 @@ Breaking one of these is a bug, not a preference.
     from the database if the message is gone.
 13. **Captain actions that change another player's state are recorded in `AuditEntry`** —
     registering or dropping someone on their behalf, declining or finishing a game, granting
-    or revoking captaincy. `ActorPlayerId` is the captain; null means the system did it (the
+    or revoking captaincy, editing a finished game's participation (played/attended, or adding
+    a venue-assigned player). `ActorPlayerId` is the captain; null means the system did it (the
     scheduler's auto-finish). Ordinary self-service already carries its own actor via a
     signup's own fields; this is for the actions that don't.
 
@@ -202,9 +203,10 @@ Native BCL types throughout.
   somewhere.
 - **Record captain actions that affect someone else in `AuditEntry`, in the same transaction
   as the change** — a small, fixed set of actions (declining or finishing a game, granting or
-  revoking captaincy, registering or dropping someone on their behalf), not a
-  general-purpose event log. Unlike the notifications table, there's no uniqueness constraint
-  to enforce, so the write just rides along in the caller's own `SaveChangesAsync`.
+  revoking captaincy, registering or dropping someone on their behalf, editing a finished
+  game's participation), not a general-purpose event log. Unlike the notifications table,
+  there's no uniqueness constraint to enforce, so the write just rides along in the caller's
+  own `SaveChangesAsync`.
 - Bot handle: **@quizr_team_bot**. Display name: **Quizr**.
 
 ## Out of scope — do not build
