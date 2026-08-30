@@ -25,6 +25,12 @@ internal static class AnnouncementRenderer
         var text = new StringBuilder();
 
         text.Append("<b>").Append(WebUtility.HtmlEncode(game.Title)).Append("</b>\n");
+
+        if (game.FinishedAt is not null)
+        {
+            text.Append(strings.Text("Announcement.Finished")).Append('\n');
+        }
+
         text.Append(strings.Text("Announcement.Venue", new { Venue = WebUtility.HtmlEncode(game.Venue) })).Append('\n');
         // The format spec lives in the template, not here — SmartFormat applies it through
         // IFormattable with the team's locale, so day and month names come out localized
@@ -61,8 +67,17 @@ internal static class AnnouncementRenderer
         return text.ToString().TrimEnd();
     }
 
-    public static InlineKeyboardMarkup RenderKeyboard(GameId gameId, IStringsFor strings) =>
-        new([
+    // Null once a game has finished (invariant 8) — self-serve is over, so there's nothing
+    // left for a button to do.
+    public static InlineKeyboardMarkup? RenderKeyboard(Game game, IStringsFor strings)
+    {
+        if (game.FinishedAt is not null)
+        {
+            return null;
+        }
+
+        var gameId = game.Id;
+        return new([
             [
                 InlineKeyboardButton.WithCallbackData(
                     strings.Text("Announcement.JoinButton"),
@@ -86,6 +101,7 @@ internal static class AnnouncementRenderer
                 ),
             ],
         ]);
+    }
 
     private static void AppendRoster(
         StringBuilder text,

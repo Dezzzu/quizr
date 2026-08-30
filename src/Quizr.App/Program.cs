@@ -5,6 +5,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Quizr.App.Data;
 using Quizr.App.Localization;
+using Quizr.App.Scheduling;
 using Quizr.App.Services;
 using Quizr.App.Telegram;
 using Quizr.Domain;
@@ -52,9 +53,11 @@ builder.Services.AddScoped<PlayerBootstrapService>();
 builder.Services.AddScoped<ISignupService, SignupService>();
 builder.Services.AddScoped<AnnouncementService>();
 builder.Services.AddScoped<BoardService>();
+builder.Services.AddScoped<SchedulerService>();
 builder.Services.AddScoped<UpdateRouter>();
 builder.Services.AddSingleton<UpdateDispatcher>();
 builder.Services.AddHostedService<BotHostedService>();
+builder.Services.AddHostedService<SchedulerHostedService>();
 
 var host = builder.Build();
 

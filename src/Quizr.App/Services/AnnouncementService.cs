@@ -42,7 +42,7 @@ public sealed class AnnouncementService
         await _sender.EditAsync(team.ChatId, messageId, text, keyboard, ct);
     }
 
-    private async Task<(string Text, InlineKeyboardMarkup Keyboard)> RenderAsync(
+    private async Task<(string Text, InlineKeyboardMarkup? Keyboard)> RenderAsync(
         Game game,
         Team team,
         CancellationToken ct
@@ -70,7 +70,7 @@ public sealed class AnnouncementService
 
         return (
             AnnouncementRenderer.RenderText(game, roster, players, team.TimeZoneId!, strings),
-            AnnouncementRenderer.RenderKeyboard(game.Id, strings)
+            AnnouncementRenderer.RenderKeyboard(game, strings)
         );
     }
 }

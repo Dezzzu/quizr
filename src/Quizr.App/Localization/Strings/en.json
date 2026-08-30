@@ -24,6 +24,7 @@
   "Announcement.DropButton": "❌ Can't make it",
   "Announcement.Joined": "You're in!",
   "Announcement.GuestAdded": "Guest added!",
+  "Announcement.Finished": "🏁 <b>Finished</b>",
 
   "Drop.ConfirmPrompt": "Drop out of {Title}? You'll lose your place in the queue — rejoining puts you at the back.",
   "Drop.ConfirmYes": "Yes, I'm out",
@@ -53,6 +54,13 @@
   "Board.Entry": "{When:ddd, d MMM, HH\\:mm} — {Title}",
 
   "Promotion.Message": "🎉 {Who} moved up to Playing!",
+
+  "Reminder.EveningBefore.Group": "⏰ Reminder for {Mentions}: <b>{Title}</b> is tomorrow at {When:HH\\:mm}!",
+  "Reminder.EveningBefore.Dm": "⏰ Reminder: <b>{Title}</b> is tomorrow at {When:HH\\:mm}!",
+  "Reminder.MorningOf.Group": "⏰ Reminder for {Mentions}: <b>{Title}</b> is today at {When:HH\\:mm}!",
+  "Reminder.MorningOf.Dm": "⏰ Reminder: <b>{Title}</b> is today at {When:HH\\:mm}!",
+  "Reminder.BeforeStart.Group": "⏰ Reminder for {Mentions}: <b>{Title}</b> starts soon, at {When:HH\\:mm}!",
+  "Reminder.BeforeStart.Dm": "⏰ Reminder: <b>{Title}</b> starts soon, at {When:HH\\:mm}!",
 
   "Signup.AlreadySignedUp": "You're already signed up for this game.",
   "Signup.NotSignedUp": "You don't have a spot in this game.",

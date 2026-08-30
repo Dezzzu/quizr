@@ -37,10 +37,30 @@ internal static class TelegramBotClientTestHelper
             .Select(request => request.Text)
             .ToList();
 
+    // Scoped to one chat — the scheduler processes every team in the database each tick, and
+    // PostgresFixture shares one database across every test in the class, so a scheduler
+    // test's assertions need to ignore sibling tests' teams rather than see every send ever
+    // made against the shared fake bot.
+    public static IReadOnlyList<string> SentTexts(this ITelegramBotClient bot, long chatId) =>
+        bot.ReceivedCalls()
+            .Select(call => call.GetArguments()[0])
+            .OfType<SendMessageRequest>()
+            .Where(request => request.ChatId.Identifier == chatId)
+            .Select(request => request.Text)
+            .ToList();
+
     public static IReadOnlyList<string?> EditedTexts(this ITelegramBotClient bot) =>
         bot.ReceivedCalls()
             .Select(call => call.GetArguments()[0])
             .OfType<EditMessageTextRequest>()
+            .Select(request => request.Text)
+            .ToList();
+
+    public static IReadOnlyList<string?> EditedTexts(this ITelegramBotClient bot, long chatId) =>
+        bot.ReceivedCalls()
+            .Select(call => call.GetArguments()[0])
+            .OfType<EditMessageTextRequest>()
+            .Where(request => request.ChatId.Identifier == chatId)
             .Select(request => request.Text)
             .ToList();
 

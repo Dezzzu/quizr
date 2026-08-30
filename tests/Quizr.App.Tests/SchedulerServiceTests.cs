@@ -1,0 +1,438 @@
+using AwesomeAssertions;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
+using Quizr.App.Data;
+using Quizr.App.Localization;
+using Quizr.App.Services;
+using Quizr.App.Telegram;
+using Quizr.Domain;
+using Quizr.Domain.Entities;
+using Telegram.Bot;
+using Game = Quizr.Domain.Entities.Game;
+
+namespace Quizr.App.Tests;
+
+public class SchedulerServiceTests : IClassFixture<PostgresFixture>
+{
+    private static readonly TimeOnly EveningBeforeAt = new(20, 0);
+    private static readonly TimeOnly MorningOfAt = new(9, 0);
+    private static readonly TimeSpan BeforeStartLead = TimeSpan.FromHours(2);
+
+    private readonly PostgresFixture _fixture;
+
+    public SchedulerServiceTests(PostgresFixture fixture) => _fixture = fixture;
+
+    [Fact]
+    public async Task AGameLeftAloneFinishesItselfFourHoursAfterItStarted()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
+        var team = await SeedTeamAsync(db, chatId: 9001, ct);
+        var game = await SeedGameAsync(db, team, startsAt, capacity: 1, ct);
+        var playing = await SeedPlayerAsync(db, 9001, ct);
+        var reserve = await SeedPlayerAsync(db, 9002, ct);
+        await SeedSignupAsync(db, game, playing, startsAt.AddMinutes(-100), ct);
+        await SeedSignupAsync(db, game, reserve, startsAt.AddMinutes(-90), ct);
+        var (scheduler, _) = CreateScheduler(db, startsAt.AddHours(4).AddMinutes(1));
+
+        await scheduler.RunTickAsync(ct);
+
+        var refreshed = await db.Games.AsNoTracking().SingleAsync(g => g.Id == game.Id, ct);
+        refreshed.FinishedAt.Should().NotBeNull();
+
+        var participations = await db.Participations.AsNoTracking().Where(p => p.GameId == game.Id).ToListAsync(ct);
+        participations.Should().HaveCount(2);
+        participations.Single(p => p.PlayerId == playing.Id).Played.Should().BeTrue();
+        participations.Single(p => p.PlayerId == reserve.Id).Played.Should().BeFalse();
+        participations.Should().OnlyContain(p => p.Attended);
+    }
+
+    [Fact]
+    public async Task AGameNotYetFourHoursPastItsStartIsLeftAlone()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
+        var team = await SeedTeamAsync(db, chatId: 9003, ct);
+        var game = await SeedGameAsync(db, team, startsAt, capacity: 5, ct);
+        var (scheduler, _) = CreateScheduler(db, startsAt.AddHours(3));
+
+        await scheduler.RunTickAsync(ct);
+
+        (await db.Games.AsNoTracking().SingleAsync(g => g.Id == game.Id, ct)).FinishedAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task FinishingRemovesTheJoinButtonsFromTheAnnouncement()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
+        var team = await SeedTeamAsync(db, chatId: 9004, ct);
+        var game = await SeedGameAsync(db, team, startsAt, capacity: 5, ct);
+        game.AnnouncementMessageId = new TelegramMessageId(1);
+        await db.SaveChangesAsync(ct);
+        var (scheduler, bot) = CreateScheduler(db, startsAt.AddHours(5));
+
+        await scheduler.RunTickAsync(ct);
+        await WaitUntilAsync(() => bot.EditedTexts(9004).Count > 0, ct);
+
+        bot.EditedTexts(9004)
+            .Should()
+            .ContainSingle(text => text != null && text.Contains("Finished", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task AGroupReminderBatchesEveryOptedInPlayerIntoOneMessage()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
+        var team = await SeedTeamAsync(db, chatId: 9005, ct);
+        var game = await SeedGameAsync(db, team, startsAt, capacity: 5, ct);
+        var alice = await SeedPlayerAsync(db, 9005, ct, displayName: "Alice");
+        var bob = await SeedPlayerAsync(db, 9006, ct, displayName: "Bob");
+        await SeedSignupAsync(db, game, alice, startsAt.AddDays(-3), ct);
+        await SeedSignupAsync(db, game, bob, startsAt.AddDays(-3).AddMinutes(1), ct);
+        await SeedMembershipAsync(db, team, alice, ReminderChannel.Group, ct);
+        await SeedMembershipAsync(db, team, bob, ReminderChannel.Group, ct);
+        // Evening-before due instant: 2026-03-05 20:00 Berlin = 19:00 UTC.
+        var (scheduler, bot) = CreateScheduler(db, new DateTimeOffset(2026, 3, 5, 19, 0, 0, TimeSpan.Zero));
+
+        await scheduler.RunTickAsync(ct);
+
+        var reminders = bot.SentTexts(9005).Where(t => t.Contains("Reminder", StringComparison.Ordinal)).ToList();
+        reminders.Should().ContainSingle();
+        reminders.Single().Should().Contain("Alice").And.Contain("Bob");
+    }
+
+    [Fact]
+    public async Task ARunningTheSameTickTwiceDoesNotSendTheReminderTwice()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
+        var team = await SeedTeamAsync(db, chatId: 9007, ct);
+        var game = await SeedGameAsync(db, team, startsAt, capacity: 5, ct);
+        var alice = await SeedPlayerAsync(db, 9007, ct);
+        await SeedSignupAsync(db, game, alice, startsAt.AddDays(-3), ct);
+        await SeedMembershipAsync(db, team, alice, ReminderChannel.Group, ct);
+        var (scheduler, bot) = CreateScheduler(db, new DateTimeOffset(2026, 3, 5, 19, 0, 0, TimeSpan.Zero));
+
+        await scheduler.RunTickAsync(ct);
+        await scheduler.RunTickAsync(ct);
+
+        bot.SentTexts(9007).Count(t => t.Contains("Reminder", StringComparison.Ordinal)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ADmReminderIsSentOnlyWhenTheRecipientHasStartedTheBot()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
+        var team = await SeedTeamAsync(db, chatId: 9008, ct);
+        var game = await SeedGameAsync(db, team, startsAt, capacity: 5, ct);
+        var noDm = await SeedPlayerAsync(db, 90080, ct, dmEnabled: false);
+        var withDm = await SeedPlayerAsync(db, 90090, ct, dmEnabled: true);
+        await SeedSignupAsync(db, game, noDm, startsAt.AddDays(-3), ct);
+        await SeedSignupAsync(db, game, withDm, startsAt.AddDays(-3).AddMinutes(1), ct);
+        await SeedMembershipAsync(db, team, noDm, ReminderChannel.Dm, ct);
+        await SeedMembershipAsync(db, team, withDm, ReminderChannel.Dm, ct);
+        var (scheduler, bot) = CreateScheduler(db, new DateTimeOffset(2026, 3, 5, 19, 0, 0, TimeSpan.Zero));
+
+        await scheduler.RunTickAsync(ct);
+
+        var reminders = bot.SentTexts(withDm.TelegramUserId.Value)
+            .Where(t => t.Contains("Reminder", StringComparison.Ordinal))
+            .ToList();
+        reminders.Should().ContainSingle();
+        bot.SentTexts(noDm.TelegramUserId.Value).Should().BeEmpty();
+        var notified = await db.Notifications.AsNoTracking().ToListAsync(ct);
+        var withDmSignup = await db.Signups.AsNoTracking().SingleAsync(s => s.PlayerId == withDm.Id, ct);
+        notified.Should().ContainSingle(n => n.SignupId == withDmSignup.Id);
+    }
+
+    [Fact]
+    public async Task AReserveIsSkippedUnlessTheyOptedInToReserveReminders()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
+        var team = await SeedTeamAsync(db, chatId: 9010, ct);
+        var game = await SeedGameAsync(db, team, startsAt, capacity: 1, ct);
+        var playing = await SeedPlayerAsync(db, 9010, ct, displayName: "Playing Alice");
+        var reserve = await SeedPlayerAsync(db, 9011, ct, displayName: "Reserve Bob");
+        await SeedSignupAsync(db, game, playing, startsAt.AddDays(-3), ct);
+        await SeedSignupAsync(db, game, reserve, startsAt.AddDays(-3).AddMinutes(1), ct);
+        await SeedMembershipAsync(db, team, playing, ReminderChannel.Group, ct);
+        await SeedMembershipAsync(db, team, reserve, ReminderChannel.Group, ct, remindWhenReserve: false);
+        var (scheduler, bot) = CreateScheduler(db, new DateTimeOffset(2026, 3, 5, 19, 0, 0, TimeSpan.Zero));
+
+        await scheduler.RunTickAsync(ct);
+
+        var reminders = bot.SentTexts(9010).Where(t => t.Contains("Reminder", StringComparison.Ordinal)).ToList();
+        reminders.Should().ContainSingle();
+        reminders.Single().Should().Contain("Playing Alice");
+        reminders.Single().Should().NotContain("Reserve Bob");
+    }
+
+    [Fact]
+    public async Task AReserveWhoOptedInIsIncluded()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
+        var team = await SeedTeamAsync(db, chatId: 9012, ct);
+        var game = await SeedGameAsync(db, team, startsAt, capacity: 1, ct);
+        var playing = await SeedPlayerAsync(db, 9013, ct);
+        var reserve = await SeedPlayerAsync(db, 9014, ct);
+        await SeedSignupAsync(db, game, playing, startsAt.AddDays(-3), ct);
+        await SeedSignupAsync(db, game, reserve, startsAt.AddDays(-3).AddMinutes(1), ct);
+        await SeedMembershipAsync(db, team, playing, ReminderChannel.Off, ct);
+        await SeedMembershipAsync(db, team, reserve, ReminderChannel.Group, ct, remindWhenReserve: true);
+        var (scheduler, bot) = CreateScheduler(db, new DateTimeOffset(2026, 3, 5, 19, 0, 0, TimeSpan.Zero));
+
+        await scheduler.RunTickAsync(ct);
+
+        var notified = await db.Notifications.AsNoTracking().ToListAsync(ct);
+        var reserveSignup = await db.Signups.AsNoTracking().SingleAsync(s => s.PlayerId == reserve.Id, ct);
+        notified.Should().ContainSingle(n => n.SignupId == reserveSignup.Id);
+    }
+
+    [Fact]
+    public async Task TheBeforeStartReminderFiresRelativeToTheGamesStartTime()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
+        var team = await SeedTeamAsync(db, chatId: 9015, ct);
+        var game = await SeedGameAsync(db, team, startsAt, capacity: 5, ct);
+        var alice = await SeedPlayerAsync(db, 9015, ct);
+        await SeedSignupAsync(db, game, alice, startsAt.AddDays(-3), ct);
+        await SeedMembershipAsync(db, team, alice, ReminderChannel.Off, ct, beforeStart: ReminderChannel.Group);
+        // Before too early: BeforeStartLead is 2h, so 3h before start must not fire yet.
+        var (tooEarly, botTooEarly) = CreateScheduler(db, startsAt.AddHours(-3));
+        await tooEarly.RunTickAsync(ct);
+        botTooEarly.SentTexts(9015).Where(t => t.Contains("Reminder", StringComparison.Ordinal)).Should().BeEmpty();
+
+        var (dueNow, botDueNow) = CreateScheduler(db, startsAt.AddHours(-1));
+        await dueNow.RunTickAsync(ct);
+
+        botDueNow.SentTexts(9015).Where(t => t.Contains("Reminder", StringComparison.Ordinal)).Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task ARestartMidWindowStillSendsAReminderThatCameDueWhileItWasDown()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
+        var team = await SeedTeamAsync(db, chatId: 9016, ct);
+        var game = await SeedGameAsync(db, team, startsAt, capacity: 5, ct);
+        var alice = await SeedPlayerAsync(db, 9016, ct);
+        await SeedSignupAsync(db, game, alice, startsAt.AddDays(-3), ct);
+        await SeedMembershipAsync(
+            db,
+            team,
+            alice,
+            ReminderChannel.Group,
+            ct,
+            morningOf: ReminderChannel.Off,
+            beforeStart: ReminderChannel.Off
+        );
+        // "Process restarted" after the evening-before slot came due (2026-03-05 19:00 UTC)
+        // but before the morning-of slot (2026-03-06 08:00 UTC) — only the missed one fires.
+        var (scheduler, bot) = CreateScheduler(db, new DateTimeOffset(2026, 3, 6, 0, 0, 0, TimeSpan.Zero));
+
+        await scheduler.RunTickAsync(ct);
+
+        bot.SentTexts(9016).Where(t => t.Contains("Reminder", StringComparison.Ordinal)).Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task ADeclinedGameNeverFiresAReminder()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
+        var team = await SeedTeamAsync(db, chatId: 9017, ct);
+        var game = await SeedGameAsync(db, team, startsAt, capacity: 5, ct);
+        game.DeclinedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(ct);
+        var alice = await SeedPlayerAsync(db, 9017, ct);
+        await SeedSignupAsync(db, game, alice, startsAt.AddDays(-3), ct);
+        await SeedMembershipAsync(db, team, alice, ReminderChannel.Group, ct);
+        var (scheduler, bot) = CreateScheduler(db, new DateTimeOffset(2026, 3, 5, 19, 0, 0, TimeSpan.Zero));
+
+        await scheduler.RunTickAsync(ct);
+
+        bot.SentTexts(9017).Where(t => t.Contains("Reminder", StringComparison.Ordinal)).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task EveryTickRefreshesTheBoardEvenWithNoGames()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 9018, ct);
+        var (scheduler, bot) = CreateScheduler(db, DateTimeOffset.UtcNow);
+
+        await scheduler.RunTickAsync(ct);
+
+        bot.SentTexts(9018).Should().ContainSingle(t => t.Contains("No upcoming games yet", StringComparison.Ordinal));
+    }
+
+    // Mirrors MessageEditDebouncerTests' pattern: the debouncer flushes on a real timer, so an
+    // assertion on an edit has to poll for it rather than check immediately after the tick.
+    private static async Task WaitUntilAsync(Func<bool> condition, CancellationToken ct)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(3);
+        while (!condition() && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(10, ct);
+        }
+    }
+
+    private static (SchedulerService Scheduler, ITelegramBotClient Bot) CreateScheduler(QuizrDb db, DateTimeOffset now)
+    {
+        var bot = TelegramBotClientTestHelper.Create();
+        var clock = new FakeTimeProvider(now);
+        // The debouncer runs on the real clock, not the fake business-time one, so an edit
+        // (the Board, a finished announcement) actually flushes during the test instead of
+        // waiting out a debounce window that never advances.
+        var sender = new MessageSender(bot, new MessageEditDebouncer(bot, TimeProvider.System));
+        var strings = new Strings();
+        var announcements = new AnnouncementService(db, sender, strings);
+        var board = new BoardService(db, sender, bot, strings);
+
+        var scheduler = new SchedulerService(
+            db,
+            sender,
+            strings,
+            announcements,
+            board,
+            clock,
+            NullLogger<SchedulerService>.Instance
+        );
+
+        return (scheduler, bot);
+    }
+
+    private static async Task<Team> SeedTeamAsync(QuizrDb db, long chatId, CancellationToken ct)
+    {
+        var team = new Team
+        {
+            ChatId = new TelegramChatId(chatId),
+            Name = "Test team",
+            TimeZoneId = "Europe/Berlin",
+            Locale = "en",
+            EveningBeforeAt = EveningBeforeAt,
+            MorningOfAt = MorningOfAt,
+            BeforeStartLead = BeforeStartLead,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+        db.Teams.Add(team);
+        await db.SaveChangesAsync(ct);
+        return team;
+    }
+
+    private static async Task<Game> SeedGameAsync(
+        QuizrDb db,
+        Team team,
+        DateTimeOffset startsAt,
+        int capacity,
+        CancellationToken ct
+    )
+    {
+        var creator = new Player
+        {
+            TelegramUserId = new TelegramUserId(team.ChatId.Value * 1000),
+            DisplayName = "Creator",
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+        db.Players.Add(creator);
+        await db.SaveChangesAsync(ct);
+
+        var game = new Game
+        {
+            TeamId = team.Id,
+            Title = "Quiz Night",
+            Venue = "The Pub",
+            StartsAt = startsAt,
+            Capacity = capacity,
+            CreatedAt = DateTimeOffset.UtcNow,
+            CreatedByPlayerId = creator.Id,
+        };
+        db.Games.Add(game);
+        await db.SaveChangesAsync(ct);
+        return game;
+    }
+
+    private static async Task<Player> SeedPlayerAsync(
+        QuizrDb db,
+        long telegramUserId,
+        CancellationToken ct,
+        bool dmEnabled = true,
+        string? displayName = null
+    )
+    {
+        var player = new Player
+        {
+            TelegramUserId = new TelegramUserId(telegramUserId),
+            DisplayName = displayName ?? $"Player{telegramUserId}",
+            DmEnabled = dmEnabled,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+        db.Players.Add(player);
+        await db.SaveChangesAsync(ct);
+        return player;
+    }
+
+    private static async Task SeedSignupAsync(
+        QuizrDb db,
+        Game game,
+        Player player,
+        DateTimeOffset createdAt,
+        CancellationToken ct
+    )
+    {
+        db.Signups.Add(
+            new Signup
+            {
+                GameId = game.Id,
+                PlayerId = player.Id,
+                CreatedAt = createdAt,
+            }
+        );
+        await db.SaveChangesAsync(ct);
+    }
+
+    private static async Task SeedMembershipAsync(
+        QuizrDb db,
+        Team team,
+        Player player,
+        ReminderChannel eveningBefore,
+        CancellationToken ct,
+        ReminderChannel? morningOf = null,
+        ReminderChannel? beforeStart = null,
+        bool remindWhenReserve = false
+    )
+    {
+        db.Memberships.Add(
+            new Membership
+            {
+                TeamId = team.Id,
+                PlayerId = player.Id,
+                EveningBefore = eveningBefore,
+                MorningOf = morningOf ?? eveningBefore,
+                BeforeStart = beforeStart ?? eveningBefore,
+                RemindWhenReserve = remindWhenReserve,
+                JoinedAt = DateTimeOffset.UtcNow,
+            }
+        );
+        await db.SaveChangesAsync(ct);
+    }
+}
