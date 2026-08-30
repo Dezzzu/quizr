@@ -10,6 +10,7 @@ using Quizr.App.Time;
 using Quizr.App.Validation;
 using Quizr.Domain;
 using Quizr.Domain.Entities;
+using Quizr.Domain.Extensions;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
@@ -1061,10 +1062,7 @@ public sealed class UpdateRouter
         await _announcements.RefreshAsync(game, team, ct);
         await _sender.SendAsync(chatId, strings.Text("EditGame.Updated"), null, ct);
 
-        foreach (var signup in promoted)
-        {
-            await SendPromotionMessageAsync(chatId, signup, strings, ct);
-        }
+        await SendPromotionMessagesAsync(chatId, promoted, strings, ct);
     }
 
     private async Task HandleAddVenuePlayerReplyAsync(DialogState dialog, Message message, CancellationToken ct)
@@ -1404,10 +1402,7 @@ public sealed class UpdateRouter
             await SendGuestChoicePromptAsync(chatId, guest, strings, ct);
         }
 
-        foreach (var promoted in outcome.NewlyPromoted)
-        {
-            await SendPromotionMessageAsync(chatId, promoted, strings, ct);
-        }
+        await SendPromotionMessagesAsync(chatId, outcome.NewlyPromoted, strings, ct);
     }
 
     private async Task HandleStayAsync(CallbackQuery callbackQuery, IStringsFor strings, CancellationToken ct)
@@ -1501,10 +1496,7 @@ public sealed class UpdateRouter
         await _sender.EditAsync(chatId, new TelegramMessageId(callbackQuery.Message.MessageId), text, keyboard, ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, strings.Text("MyGuests.Removed"), cancellationToken: ct);
 
-        foreach (var promoted in outcome.NewlyPromoted)
-        {
-            await SendPromotionMessageAsync(chatId, promoted, strings, ct);
-        }
+        await SendPromotionMessagesAsync(chatId, outcome.NewlyPromoted, strings, ct);
     }
 
     private async Task HandleGuestCallbackAsync(char verb, CallbackQuery callbackQuery, CancellationToken ct)
@@ -1587,10 +1579,7 @@ public sealed class UpdateRouter
         var game = await _db.Games.SingleAsync(g => g.Id == outcome.Guest.GameId, ct);
         await _announcements.RefreshAsync(game, team, ct);
 
-        foreach (var promoted in outcome.NewlyPromoted)
-        {
-            await SendPromotionMessageAsync(chatId, promoted, strings, ct);
-        }
+        await SendPromotionMessagesAsync(chatId, outcome.NewlyPromoted, strings, ct);
     }
 
     private async Task SendGuestChoicePromptAsync(
@@ -2432,23 +2421,34 @@ public sealed class UpdateRouter
     private static string Mention(Player player) =>
         $"""<a href="tg://user?id={player.TelegramUserId.Value}">{WebUtility.HtmlEncode(player.DisplayName)}</a>""";
 
-    private async Task SendPromotionMessageAsync(
+    // One message for every promotion a single change caused (a capacity bump or a drop can
+    // promote several people at once), not one per person — same reasoning as
+    // SchedulerService's batched group reminder. Player is Included wherever these signups are
+    // loaded (GameService.SetCapacityAsync, SignupService.LoadRosterAsync), so this reads the
+    // navigation directly instead of a separate lookup per signup or a hand-rolled dictionary.
+    private async Task SendPromotionMessagesAsync(
         TelegramChatId chatId,
-        Signup signup,
+        IReadOnlyList<Signup> promoted,
         IStringsFor strings,
         CancellationToken ct
     )
     {
-        string who;
-        if (signup.PlayerId is { } playerId)
+        if (promoted.Count == 0)
         {
-            var promoted = await _db.Players.AsNoTracking().SingleAsync(p => p.Id == playerId, ct);
-            who = WebUtility.HtmlEncode(promoted.DisplayName);
+            return;
         }
-        else
-        {
-            who = WebUtility.HtmlEncode(signup.GuestName ?? "Guest");
-        }
+
+        // An anonymous guest is rare here — invariant 5 means one only survives with a live
+        // inviter, and this is the promotion path, not the removal cascade — but still a real,
+        // reachable case, so the fallback goes through the strings table like everything else
+        // user-visible, never a bare English literal.
+        var unnamedGuestLabel = strings.Text("Promotion.UnnamedGuest");
+        var who = string.Join(
+            ", ",
+            promoted.Select(s =>
+                WebUtility.HtmlEncode(s.IsMember ? s.Player!.DisplayName : s.GuestName ?? unnamedGuestLabel)
+            )
+        );
 
         await _sender.SendAsync(chatId, strings.Text("Promotion.Message", new { Who = who }), null, ct);
     }

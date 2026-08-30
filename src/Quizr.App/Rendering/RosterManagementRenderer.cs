@@ -3,6 +3,7 @@ using System.Text;
 using Quizr.App.Localization;
 using Quizr.App.Telegram;
 using Quizr.Domain.Entities;
+using Quizr.Domain.Extensions;
 using Telegram.Bot.Types.ReplyMarkups;
 
 namespace Quizr.App.Rendering;
@@ -68,8 +69,7 @@ internal static class RosterManagementRenderer
     }
 
     // A finished game's Participation rows carry their own Name for guests/venue-assigned;
-    // Player is only loaded for members. Mirrors AnnouncementRenderer's NameOf: branch on the
-    // scalar PlayerId, never on whether the navigation happens to be populated.
+    // Player is only loaded for members.
     private static string NameOf(Participation participation) =>
-        participation.PlayerId is not null ? participation.Player!.DisplayName : participation.Name ?? "?";
+        participation.IsMember ? participation.Player!.DisplayName : participation.Name ?? "?";
 }

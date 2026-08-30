@@ -184,6 +184,7 @@ public sealed class GameService : IGameService
     {
         var liveSignups = await _db
             .Signups.AsNoTracking()
+            .Include(s => s.Player)
             .Where(s => s.GameId == game.Id && s.CancelledAt == null)
             .ToListAsync(ct);
         var before = Roster.Split(liveSignups, game.Capacity);

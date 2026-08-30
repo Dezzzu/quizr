@@ -267,6 +267,148 @@ public class UpdateRouterSignupLoopTests
         bot.SentTexts().Should().Contain(text => text.Contains("Bob", StringComparison.Ordinal));
     }
 
+    // A capacity increase can promote several reserves at once — this is what makes that a
+    // single "🎉 X, Y moved up!" message rather than one send per person.
+    [Test]
+    public async Task IncreasingCapacityPromotesMultipleReservesInOneMessage()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 7050, capacity: 1, ct);
+        var captainId = 7050 * 1000;
+        db.Memberships.Add(
+            new Membership
+            {
+                TeamId = game.TeamId,
+                PlayerId = game.CreatedByPlayerId,
+                IsCaptain = true,
+                JoinedAt = DateTimeOffset.UtcNow,
+            }
+        );
+        await db.SaveChangesAsync(ct);
+        var (router, bot, _) = CreateRouter(db);
+
+        await router.RouteAsync(
+            CallbackUpdate(
+                7050,
+                70501,
+                "Alice",
+                CallbackData.Format(CallbackData.Join, game.Id),
+                announcementMessageId: 1
+            ),
+            ct
+        );
+        await router.RouteAsync(
+            CallbackUpdate(
+                7050,
+                70502,
+                "Bob",
+                CallbackData.Format(CallbackData.Join, game.Id),
+                announcementMessageId: 1
+            ),
+            ct
+        );
+        await router.RouteAsync(
+            CallbackUpdate(
+                7050,
+                70503,
+                "Carol",
+                CallbackData.Format(CallbackData.Join, game.Id),
+                announcementMessageId: 1
+            ),
+            ct
+        );
+
+        await router.RouteAsync(MessageUpdate(7050, captainId, "Creator", "/editgame"), ct);
+        await router.RouteAsync(
+            CallbackUpdate(
+                7050,
+                captainId,
+                "Creator",
+                CallbackData.Format(CallbackData.PickGameToEdit, game.Id),
+                announcementMessageId: 1
+            ),
+            ct
+        );
+        await router.RouteAsync(
+            CallbackUpdate(
+                7050,
+                captainId,
+                "Creator",
+                CallbackData.Format(CallbackData.EditField, EditGameDialogData.Capacity),
+                announcementMessageId: 1
+            ),
+            ct
+        );
+        await router.RouteAsync(MessageUpdate(7050, captainId, "Creator", "3"), ct);
+
+        var promotionMessages = bot.SentTexts(7050)
+            .Where(text => text.Contains("moved up", StringComparison.Ordinal))
+            .ToList();
+        promotionMessages.Should().ContainSingle();
+        promotionMessages[0].Should().Contain("Bob").And.Contain("Carol");
+    }
+
+    // A promoted signup can be an anonymous guest (invariant 5 only requires a live inviter,
+    // not a name) — the fallback label must come from the strings table like everything else
+    // user-visible, not a bare English literal.
+    [Test]
+    public async Task PromotingAnAnonymousGuestUsesTheLocalizedFallbackLabel()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 7051, capacity: 1, ct);
+        var (router, bot, _) = CreateRouter(db);
+
+        await router.RouteAsync(
+            CallbackUpdate(
+                7051,
+                70511,
+                "Alice",
+                CallbackData.Format(CallbackData.Join, game.Id),
+                announcementMessageId: 1
+            ),
+            ct
+        );
+        await router.RouteAsync(
+            CallbackUpdate(
+                7051,
+                70512,
+                "Bob",
+                CallbackData.Format(CallbackData.Guest, game.Id),
+                announcementMessageId: 1
+            ),
+            ct
+        );
+
+        await router.RouteAsync(
+            CallbackUpdate(
+                7051,
+                70511,
+                "Alice",
+                CallbackData.Format(CallbackData.Drop, game.Id),
+                announcementMessageId: 2
+            ),
+            ct
+        );
+        await router.RouteAsync(
+            CallbackUpdate(
+                7051,
+                70511,
+                "Alice",
+                CallbackData.Format(CallbackData.ConfirmDrop, game.Id),
+                announcementMessageId: 2
+            ),
+            ct
+        );
+
+        var promotionMessages = bot.SentTexts(7051)
+            .Where(text => text.Contains("moved up", StringComparison.Ordinal))
+            .ToList();
+        promotionMessages.Should().ContainSingle();
+        promotionMessages[0].Should().Contain("Guest");
+    }
+
     [Test]
     public async Task ConfirmingADropSurfacesANamedGuestChoiceThatCanBeKept()
     {

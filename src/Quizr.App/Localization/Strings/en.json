@@ -60,6 +60,7 @@
   "Board.Entry": "{When:ddd, d MMM, HH\\:mm} — {Title}",
 
   "Promotion.Message": "🎉 {Who} moved up to Playing!",
+  "Promotion.UnnamedGuest": "Guest",
 
   "Reminder.EveningBefore.Group": "⏰ Reminder for {Mentions}: <b>{Title}</b> is tomorrow at {When:HH\\:mm}!",
   "Reminder.EveningBefore.Dm": "⏰ Reminder: <b>{Title}</b> is tomorrow at {When:HH\\:mm}!",
