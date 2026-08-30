@@ -15,6 +15,7 @@ internal static class DialogKinds
     public const string EditGame = "EditGame";
     public const string Nudge = "Nudge";
     public const string AddVenuePlayer = "AddVenuePlayer";
+    public const string ManagePlayers = "ManagePlayers";
 }
 
 internal sealed record GuestNameDialogData(SignupId SignupId);
@@ -22,3 +23,7 @@ internal sealed record GuestNameDialogData(SignupId SignupId);
 // A stranger the organisers add to the team on the night (CLAUDE.md's "venue-assigned"),
 // recorded from the Manage roster view's Add player button. One field, so one step.
 internal sealed record AddVenuePlayerDialogData(GameId GameId);
+
+// Acting on behalf of a player (design decision #2 of M9): remembers which game the member
+// list belongs to between taps — mirrors NudgeDialogData. No Step; there's only one screen.
+internal sealed record ManagePlayersDialogData(GameId GameId);

@@ -56,6 +56,7 @@ public class GameServiceTests
             franchise.DefaultCapacity,
             franchise.DefaultPrice,
             null,
+            [],
             creator.Id,
             team.TimeZoneId!,
             ct
@@ -81,6 +82,7 @@ public class GameServiceTests
             franchise.DefaultCapacity,
             franchise.DefaultPrice,
             null,
+            [],
             creator.Id,
             team.TimeZoneId!,
             ct
@@ -214,6 +216,139 @@ public class GameServiceTests
         clock.Advance(TimeSpan.FromMinutes(5));
         var third = await gameService.TryNudgeAsync(game, ct);
         third.IsSuccess.Should().BeTrue();
+    }
+
+    [Test]
+    public async Task DeclineAsyncStampsDeclinedAtAndRecordsAnAuditEntry()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 6107, ct);
+        var creator = await SeedPlayerAsync(db, telegramUserId: 6107, ct);
+        var clock = new FakeTimeProvider();
+        var gameService = new GameService(db, clock);
+        var game = await gameService.CreateOneOffAsync(
+            team.Id,
+            "Quiz",
+            "The Pub",
+            new DateOnly(2026, 9, 12),
+            new TimeOnly(19, 0),
+            10,
+            null,
+            creator.Id,
+            team.TimeZoneId!,
+            ct
+        );
+
+        await gameService.DeclineAsync(game, creator.Id, ct);
+
+        game.DeclinedAt.Should().Be(clock.GetUtcNow());
+        var entry = await db.AuditEntries.SingleAsync(e => e.GameId == game.Id, ct);
+        entry.Action.Should().Be(AuditActions.GameDeclined);
+        entry.ActorPlayerId.Should().Be(creator.Id);
+        entry.TeamId.Should().Be(team.Id);
+    }
+
+    [Test]
+    public async Task FinishAsyncMaterializesParticipationAndRecordsAnAuditEntry()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 6108, ct);
+        var creator = await SeedPlayerAsync(db, telegramUserId: 6108, ct);
+        var clock = new FakeTimeProvider();
+        var gameService = new GameService(db, clock);
+        var game = await gameService.CreateOneOffAsync(
+            team.Id,
+            "Quiz",
+            "The Pub",
+            new DateOnly(2026, 9, 12),
+            new TimeOnly(19, 0),
+            1,
+            null,
+            creator.Id,
+            team.TimeZoneId!,
+            ct
+        );
+
+        var signups = new SignupService(db, clock);
+        var playing = await SeedPlayerAsync(db, telegramUserId: 61081, ct);
+        var reserve = await SeedPlayerAsync(db, telegramUserId: 61082, ct);
+        await signups.JoinAsync(game, playing.Id, ct);
+        await signups.JoinAsync(game, reserve.Id, ct);
+
+        // A captain finishing the game manually — actorPlayerId is set, unlike the scheduler's
+        // own auto-finish call which passes null.
+        await gameService.FinishAsync(game, creator.Id, ct);
+
+        game.FinishedAt.Should().Be(clock.GetUtcNow());
+        var participations = await db.Participations.Where(p => p.GameId == game.Id).ToListAsync(ct);
+        participations.Should().HaveCount(2);
+        participations.Single(p => p.PlayerId == playing.Id).Played.Should().BeTrue();
+        participations.Single(p => p.PlayerId == reserve.Id).Played.Should().BeFalse();
+        participations.Should().OnlyContain(p => p.Attended);
+
+        var entry = await db.AuditEntries.SingleAsync(e => e.GameId == game.Id, ct);
+        entry.Action.Should().Be(AuditActions.GameFinished);
+        entry.ActorPlayerId.Should().Be(creator.Id);
+    }
+
+    [Test]
+    public async Task SetTagsAsyncReplacesTheTagList()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 6109, ct);
+        var creator = await SeedPlayerAsync(db, telegramUserId: 6109, ct);
+        var gameService = new GameService(db, new FakeTimeProvider());
+        var game = await gameService.CreateOneOffAsync(
+            team.Id,
+            "Quiz",
+            "The Pub",
+            new DateOnly(2026, 9, 12),
+            new TimeOnly(19, 0),
+            10,
+            null,
+            creator.Id,
+            team.TimeZoneId!,
+            ct
+        );
+
+        await gameService.SetTagsAsync(game, ["music", "detective"], ct);
+
+        game.Tags.Should().Equal("music", "detective");
+    }
+
+    [Test]
+    public async Task LoadMemberStatusesAsyncReflectsWhoIsSignedUp()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 6110, ct);
+        var creator = await SeedPlayerAsync(db, telegramUserId: 6110, ct);
+        var gameService = new GameService(db, new FakeTimeProvider());
+        var game = await gameService.CreateOneOffAsync(
+            team.Id,
+            "Quiz",
+            "The Pub",
+            new DateOnly(2026, 9, 12),
+            new TimeOnly(19, 0),
+            10,
+            null,
+            creator.Id,
+            team.TimeZoneId!,
+            ct
+        );
+
+        var signedUp = await SeedMemberAsync(db, team.Id, telegramUserId: 61101, ct);
+        var notSignedUp = await SeedMemberAsync(db, team.Id, telegramUserId: 61102, ct);
+        var signups = new SignupService(db, new FakeTimeProvider());
+        await signups.JoinAsync(game, signedUp.Id, ct);
+
+        var statuses = await gameService.LoadMemberStatusesAsync(game, ct);
+
+        statuses.Single(s => s.Membership.PlayerId == signedUp.Id).IsSignedUp.Should().BeTrue();
+        statuses.Single(s => s.Membership.PlayerId == notSignedUp.Id).IsSignedUp.Should().BeFalse();
     }
 
     private static async Task<(Team Team, Franchise Franchise, Player Creator)> SeedFranchiseAsync(

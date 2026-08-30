@@ -223,6 +223,8 @@ only ever taps one button in the group chat stays a first-class member of the te
 - Guests — unlimited, occupying seats, optionally named
 - Team guests when the inviter drops (named only)
 - Captains act on anyone's behalf
+- Explicit captain grant and revoke
+- Every captain action that affects someone else recorded in an audit log
 - Announcement post, rewritten on every change
 - Pinned Board, date-ordered, self-repinning
 - Franchises with defaults and a per-weekday schedule; create a game by picking a date
@@ -233,6 +235,8 @@ only ever taps one button in the group chat stays a first-class member of the te
 - Add venue-assigned players who were never registered
 - Decline a game the team chose not to play
 - Archive, browsable by everyone
+- Game tags (music, detective, …) — also the interim way to find past games in chat history,
+  as a real Telegram hashtag, until the mini app's archive lands
 - Reminders before a game — three slots (the evening before, the morning of, shortly before
   kickoff), each **opt-in and off by default**, each independently set to arrive in the group
   chat or as a private message. Only people signed up to that game are reminded, and a
@@ -246,7 +250,6 @@ only ever taps one button in the group chat stays a first-class member of the te
 
 **Later** — wanted, not yet.
 
-- Game tags (music, detective, …)
 - Captain-authored announcement templates — a team's own wording, from a fixed set of
   placeholders, validated when saved
 - Results — score and placement

@@ -23,6 +23,7 @@ public sealed class SchedulerService
     private readonly QuizrDb _db;
     private readonly IMessageSender _sender;
     private readonly IStrings _strings;
+    private readonly IGameService _games;
     private readonly AnnouncementService _announcements;
     private readonly BoardService _board;
     private readonly TimeProvider _clock;
@@ -32,6 +33,7 @@ public sealed class SchedulerService
         QuizrDb db,
         IMessageSender sender,
         IStrings strings,
+        IGameService games,
         AnnouncementService announcements,
         BoardService board,
         TimeProvider clock,
@@ -41,6 +43,7 @@ public sealed class SchedulerService
         _db = db;
         _sender = sender;
         _strings = strings;
+        _games = games;
         _announcements = announcements;
         _board = board;
         _clock = clock;
@@ -79,7 +82,7 @@ public sealed class SchedulerService
             {
                 if (now >= game.StartsAt + AutoFinishAfter)
                 {
-                    await FinishGameAsync(team, game, now, ct);
+                    await FinishGameAsync(team, game, ct);
                 }
                 else
                 {
@@ -99,48 +102,13 @@ public sealed class SchedulerService
         await _board.RefreshAsync(team, ct);
     }
 
-    private async Task FinishGameAsync(Team team, Game game, DateTimeOffset now, CancellationToken ct)
+    // actorPlayerId is always null here — the scheduler is the system, not a captain
+    // (invariant 13). The manual Finish button shares this same materialization through
+    // GameService.FinishAsync; only who called it differs.
+    private async Task FinishGameAsync(Team team, Game game, CancellationToken ct)
     {
-        var liveSignups = await _db
-            .Signups.AsNoTracking()
-            .Where(s => s.GameId == game.Id && s.CancelledAt == null)
-            .ToListAsync(ct);
-        var roster = Roster.Split(liveSignups, game.Capacity);
-        var playingIds = roster.Playing.Select(s => s.Id).ToHashSet();
-
-        // Inserted in queue order so Participation.Id — the only ordering signal it has —
-        // still reflects it, for whatever later reads these rows back.
-        foreach (var signup in roster.Playing.Concat(roster.Reserve))
-        {
-            _db.Participations.Add(
-                new Participation
-                {
-                    GameId = game.Id,
-                    PlayerId = signup.PlayerId,
-                    Name = signup.IsGuest ? signup.GuestName : null,
-                    Kind = ParticipationKindOf(signup),
-                    Played = playingIds.Contains(signup.Id),
-                    // Invariant 9: attended defaults true, the ordinary case needing zero input.
-                    Attended = true,
-                    CreatedAt = now,
-                }
-            );
-        }
-
-        game.FinishedAt = now;
-        await _db.SaveChangesAsync(ct);
-
+        await _games.FinishAsync(game, actorPlayerId: null, ct);
         await _announcements.RefreshAsync(game, team, ct);
-    }
-
-    private static ParticipationKind ParticipationKindOf(Signup signup)
-    {
-        if (signup.IsMember)
-        {
-            return ParticipationKind.Member;
-        }
-
-        return signup.IsTeamGuest ? ParticipationKind.TeamGuest : ParticipationKind.Guest;
     }
 
     private async Task SendDueRemindersAsync(Team team, Game game, DateTimeOffset now, CancellationToken ct)

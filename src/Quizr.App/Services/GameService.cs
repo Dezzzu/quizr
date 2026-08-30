@@ -3,6 +3,7 @@ using Quizr.App.Data;
 using Quizr.App.Time;
 using Quizr.Domain;
 using Quizr.Domain.Entities;
+using Quizr.Domain.Extensions;
 
 namespace Quizr.App.Services;
 
@@ -25,6 +26,7 @@ public interface IGameService
         int capacity,
         decimal? price,
         string? notes,
+        List<string> tags,
         PlayerId createdByPlayerId,
         string timeZoneId,
         CancellationToken ct
@@ -53,12 +55,28 @@ public interface IGameService
 
     Task SetNotesAsync(Game game, string? notes, CancellationToken ct);
 
+    Task SetTagsAsync(Game game, List<string> tags, CancellationToken ct);
+
     Task SetStartTimeAsync(Game game, TimeOnly time, string timeZoneId, CancellationToken ct);
 
     Task<IReadOnlyList<Membership>> LoadMissingMembersAsync(Game game, CancellationToken ct);
 
+    Task<IReadOnlyList<MemberSignupStatus>> LoadMemberStatusesAsync(Game game, CancellationToken ct);
+
     Task<Result<Unit>> TryNudgeAsync(Game game, CancellationToken ct);
+
+    // Captain-only (invariant 13's GameDeclined). No un-decline flow exists, so this is meant
+    // to be gated by a confirm step at the call site.
+    Task DeclineAsync(Game game, PlayerId actorPlayerId, CancellationToken ct);
+
+    // Shared by the scheduler's auto-finish and the manual Finish button (invariant 8) — one
+    // materialization path, not two. actorPlayerId null means the system did it.
+    Task FinishAsync(Game game, PlayerId? actorPlayerId, CancellationToken ct);
 }
+
+// Whether this member currently has a live signup for the game — the "Manage players" view's
+// register-or-drop toggle reads this to decide which action a tap performs.
+public sealed record MemberSignupStatus(Membership Membership, bool IsSignedUp);
 
 public sealed class GameService : IGameService
 {
@@ -112,6 +130,7 @@ public sealed class GameService : IGameService
         int capacity,
         decimal? price,
         string? notes,
+        List<string> tags,
         PlayerId createdByPlayerId,
         string timeZoneId,
         CancellationToken ct
@@ -129,6 +148,7 @@ public sealed class GameService : IGameService
             Capacity = capacity,
             Price = price,
             Notes = notes,
+            Tags = tags,
             CreatedAt = _clock.GetUtcNow(),
             CreatedByPlayerId = createdByPlayerId,
         };
@@ -221,6 +241,12 @@ public sealed class GameService : IGameService
         await _db.SaveChangesAsync(ct);
     }
 
+    public async Task SetTagsAsync(Game game, List<string> tags, CancellationToken ct)
+    {
+        game.Tags = tags;
+        await _db.SaveChangesAsync(ct);
+    }
+
     public async Task SetStartTimeAsync(Game game, TimeOnly time, string timeZoneId, CancellationToken ct)
     {
         var localDate = DateOnly.FromDateTime(TeamTime.ConvertToLocal(game.StartsAt, timeZoneId).Date);
@@ -243,6 +269,24 @@ public sealed class GameService : IGameService
             .ToListAsync(ct);
     }
 
+    public async Task<IReadOnlyList<MemberSignupStatus>> LoadMemberStatusesAsync(Game game, CancellationToken ct)
+    {
+        var signedUpPlayerIds = await _db
+            .Signups.AsNoTracking()
+            .Where(s => s.GameId == game.Id && s.CancelledAt == null && s.PlayerId != null)
+            .Select(s => s.PlayerId!.Value)
+            .ToListAsync(ct);
+        var signedUpSet = signedUpPlayerIds.ToHashSet();
+
+        var members = await _db
+            .Memberships.AsNoTracking()
+            .Include(m => m.Player)
+            .Where(m => m.TeamId == game.TeamId)
+            .ToListAsync(ct);
+
+        return members.Select(m => new MemberSignupStatus(m, signedUpSet.Contains(m.PlayerId))).ToList();
+    }
+
     public async Task<Result<Unit>> TryNudgeAsync(Game game, CancellationToken ct)
     {
         var now = _clock.GetUtcNow();
@@ -255,5 +299,61 @@ public sealed class GameService : IGameService
         await _db.SaveChangesAsync(ct);
 
         return new Unit();
+    }
+
+    public async Task DeclineAsync(Game game, PlayerId actorPlayerId, CancellationToken ct)
+    {
+        game.DeclinedAt = _clock.GetUtcNow();
+
+        AuditRecorder.Record(_db, game.TeamId, game.Id, actorPlayerId, AuditActions.GameDeclined, new { }, _clock);
+
+        await _db.SaveChangesAsync(ct);
+    }
+
+    public async Task FinishAsync(Game game, PlayerId? actorPlayerId, CancellationToken ct)
+    {
+        var now = _clock.GetUtcNow();
+
+        var liveSignups = await _db
+            .Signups.AsNoTracking()
+            .Where(s => s.GameId == game.Id && s.CancelledAt == null)
+            .ToListAsync(ct);
+        var roster = Roster.Split(liveSignups, game.Capacity);
+        var playingIds = roster.Playing.Select(s => s.Id).ToHashSet();
+
+        // Inserted in queue order so Participation.Id — the only ordering signal it has —
+        // still reflects it, for whatever later reads these rows back.
+        foreach (var signup in roster.Playing.Concat(roster.Reserve))
+        {
+            _db.Participations.Add(
+                new Participation
+                {
+                    GameId = game.Id,
+                    PlayerId = signup.PlayerId,
+                    Name = signup.IsGuest ? signup.GuestName : null,
+                    Kind = ParticipationKindOf(signup),
+                    Played = playingIds.Contains(signup.Id),
+                    // Invariant 9: attended defaults true, the ordinary case needing zero input.
+                    Attended = true,
+                    CreatedAt = now,
+                }
+            );
+        }
+
+        game.FinishedAt = now;
+
+        AuditRecorder.Record(_db, game.TeamId, game.Id, actorPlayerId, AuditActions.GameFinished, new { }, _clock);
+
+        await _db.SaveChangesAsync(ct);
+    }
+
+    private static ParticipationKind ParticipationKindOf(Signup signup)
+    {
+        if (signup.IsMember)
+        {
+            return ParticipationKind.Member;
+        }
+
+        return signup.IsTeamGuest ? ParticipationKind.TeamGuest : ParticipationKind.Guest;
     }
 }

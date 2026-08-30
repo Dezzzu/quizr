@@ -13,4 +13,5 @@ internal sealed record EditGameDialogData(GameId GameId, int? FieldIndex)
     public const int Price = 3;
     public const int Notes = 4;
     public const int StartTime = 5;
+    public const int Tags = 6;
 }

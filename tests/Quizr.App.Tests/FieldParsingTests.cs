@@ -41,6 +41,25 @@ public class FieldParsingTests
     }
 
     [Test]
+    [Arguments(null)]
+    [Arguments("")]
+    [Arguments("   ")]
+    public void TryParseTagsTreatsEmptyInputAsClearingTheTags(string? input)
+    {
+        FieldParsing.TryParseTags(input, out var value, out var errorKey).Should().BeTrue();
+        value.Should().BeEmpty();
+        errorKey.Should().BeNull();
+    }
+
+    [Test]
+    public void TryParseTagsSplitsOnCommasAndTrimsEachTag()
+    {
+        FieldParsing.TryParseTags(" music, detective ,, sci-fi ", out var value, out var errorKey).Should().BeTrue();
+        value.Should().Equal("music", "detective", "sci-fi");
+        errorKey.Should().BeNull();
+    }
+
+    [Test]
     [Arguments("10", 10)]
     [Arguments(" 1 ", 1)]
     public void TryParseCapacityAcceptsPositiveIntegers(string input, int expected)

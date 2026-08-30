@@ -32,6 +32,10 @@ public sealed class Game
     public int Capacity { get; set; }
     public decimal? Price { get; set; }
     public string? Notes { get; set; }
+
+    // Advisory, e.g. "music", "detective" — also the interim way to find past games in chat
+    // history, rendered as real Telegram hashtags until the mini app's archive lands.
+    public List<string> Tags { get; set; } = [];
     public TelegramMessageId? AnnouncementMessageId { get; set; }
     public DateTimeOffset? FinishedAt { get; set; }
     public DateTimeOffset? DeclinedAt { get; set; }

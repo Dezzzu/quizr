@@ -88,6 +88,18 @@ internal static class FieldParsing
         return true;
     }
 
+    // "music, detective theme" -> two tags. Always succeeds, like TryParseOptionalText — an
+    // empty reply clears the tags rather than being rejected.
+    public static bool TryParseTags(string? input, out List<string> value, out string? errorKey)
+    {
+        var trimmed = input?.Trim();
+        value = string.IsNullOrEmpty(trimmed)
+            ? []
+            : trimmed.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToList();
+        errorKey = null;
+        return true;
+    }
+
     public static bool TryParseCapacity(string? input, out int value, out string? errorKey)
     {
         if (!int.TryParse(input?.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out value) || value <= 0)

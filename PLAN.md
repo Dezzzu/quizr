@@ -287,6 +287,30 @@ test at 1, 2, 5, 21 and 111.
 
 Governed by: `CLAUDE.md`'s localization section.
 
+### M9 — Closing the v1 feature gap
+
+M1–M8 built the core loop but left several things VISION.md's Bot v1 list — and CLAUDE.md's
+own invariant 8 — already promised: reminder opt-in, act-on-behalf-of, decline, an explicit
+finish button, captain grant/revoke. `AuditEntry` was scaffolded in M1's data model and never
+written to. Tags, listed under VISION.md's "Later," move up because a tag rendered as a real
+Telegram hashtag is the interim, no-bot-command way to find past games in chat history until
+the mini-app's archive lands.
+
+Build: `/myreminders` (per-slot channel cycling, reserve toggle, self-service); "Manage
+players" on a live announcement (captain registers or drops a member on their behalf,
+reusing `JoinAsync`/`DropAsync` unchanged); `/managecaptains` (grant/revoke, team-wide);
+Decline with a confirm step; an explicit Finish button sharing `GameService.FinishAsync` with
+the scheduler's auto-finish; `Game.Tags`, settable alongside the other overridable fields and
+rendered as hashtags; an `AuditRecorder` writing `AuditEntry` rows for the six actions
+invariant 13 names, in the same transaction as the change that caused them.
+
+Done when: a captain can decline, finish early, manage another player's signup, and manage
+captaincy, all without a developer; every reminder slot is actually reachable by a player;
+and each of those captain actions leaves an `AuditEntry` row naming who did it.
+
+Governed by: invariant 13, `CLAUDE.md` Conventions (audit logging), `VISION.md`'s Bot v1
+list.
+
 ## Deliberately not in scope
 
 Tags, results and scores, statistics, captain-authored templates, badges, export — all

@@ -25,6 +25,10 @@ internal static class AnnouncementRenderer
         {
             text.Append(strings.Text("Announcement.Finished")).Append('\n');
         }
+        else if (game.IsDeclined)
+        {
+            text.Append(strings.Text("Announcement.Declined")).Append('\n');
+        }
 
         text.Append(strings.Text("Announcement.Venue", new { Venue = WebUtility.HtmlEncode(game.Venue) })).Append('\n');
         // The format spec lives in the template, not here — SmartFormat applies it through
@@ -42,6 +46,11 @@ internal static class AnnouncementRenderer
         if (!string.IsNullOrWhiteSpace(game.Notes))
         {
             text.Append(WebUtility.HtmlEncode(game.Notes)).Append('\n');
+        }
+
+        if (game.Tags.Count > 0)
+        {
+            text.Append(string.Join(' ', game.Tags.Select(ToHashtag))).Append('\n');
         }
 
         text.Append('\n');
@@ -62,11 +71,18 @@ internal static class AnnouncementRenderer
         return text.ToString().TrimEnd();
     }
 
-    // Self-serve buttons before a game finishes (invariant 8); after, just the captain-only
-    // door into the Manage roster view (design decision #4) replaces them.
+    // Self-serve buttons before a game finishes or is declined (invariant 8); after, just the
+    // captain-only door into the Manage roster view (design decision #4) replaces them, or
+    // nothing at all for a declined game — there's no roster to manage, but it stays visible
+    // for the record (invariant 7).
     public static InlineKeyboardMarkup RenderKeyboard(Game game, IStringsFor strings)
     {
         var gameId = game.Id;
+
+        if (game.IsDeclined)
+        {
+            return new InlineKeyboardMarkup(new List<IEnumerable<InlineKeyboardButton>>());
+        }
 
         if (game.IsFinished)
         {
@@ -107,8 +123,30 @@ internal static class AnnouncementRenderer
                     CallbackData.Format(CallbackData.Nudge, gameId)
                 ),
             ],
+            [
+                InlineKeyboardButton.WithCallbackData(
+                    strings.Text("Announcement.ManagePlayersButton"),
+                    CallbackData.Format(CallbackData.ManagePlayers, gameId)
+                ),
+            ],
+            [
+                InlineKeyboardButton.WithCallbackData(
+                    strings.Text("Announcement.FinishButton"),
+                    CallbackData.Format(CallbackData.FinishGame, gameId)
+                ),
+                InlineKeyboardButton.WithCallbackData(
+                    strings.Text("Announcement.DeclineButton"),
+                    CallbackData.Format(CallbackData.DeclineGame, gameId)
+                ),
+            ],
         ]);
     }
+
+    // A real, clickable Telegram hashtag — internal whitespace becomes '_' so it stays one
+    // token. This is deliberately the interim archive: Telegram's own in-chat search already
+    // finds every message with a given hashtag, finished and declined games included, with no
+    // bot command needed until the mini app's archive lands.
+    private static string ToHashtag(string tag) => "#" + WebUtility.HtmlEncode(tag.Trim().Replace(' ', '_'));
 
     private static void AppendRoster(StringBuilder text, IReadOnlyList<Signup> signups, IStringsFor strings)
     {

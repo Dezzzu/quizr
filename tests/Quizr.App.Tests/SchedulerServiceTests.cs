@@ -312,6 +312,7 @@ public class SchedulerServiceTests
         // waiting out a debounce window that never advances.
         var sender = new MessageSender(bot, new MessageEditDebouncer(bot, TimeProvider.System));
         var strings = new Strings();
+        var games = new GameService(db, clock);
         var announcements = new AnnouncementService(db, sender, strings);
         var board = new BoardService(db, sender, bot, strings);
 
@@ -319,6 +320,7 @@ public class SchedulerServiceTests
             db,
             sender,
             strings,
+            games,
             announcements,
             board,
             clock,

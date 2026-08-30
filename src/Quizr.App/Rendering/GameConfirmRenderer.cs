@@ -32,8 +32,17 @@ internal static class GameConfirmRenderer
             text.Append(WebUtility.HtmlEncode(data.Notes)).Append('\n');
         }
 
+        if (data.Tags is { Count: > 0 })
+        {
+            text.Append(string.Join(' ', data.Tags.Select(ToHashtag))).Append('\n');
+        }
+
         return text.ToString().TrimEnd();
     }
+
+    // Same rendering as AnnouncementRenderer.ToHashtag — the confirm screen previews exactly
+    // what the announcement will show.
+    private static string ToHashtag(string tag) => "#" + WebUtility.HtmlEncode(tag.Trim().Replace(' ', '_'));
 
     public static InlineKeyboardMarkup RenderKeyboard(IStringsFor strings) =>
         new([
@@ -55,6 +64,12 @@ internal static class GameConfirmRenderer
                 InlineKeyboardButton.WithCallbackData(
                     strings.Text("NewGame.EditNotesButton"),
                     CallbackData.Format(CallbackData.EditField, NewGameDialogData.OverrideNotes)
+                ),
+            ],
+            [
+                InlineKeyboardButton.WithCallbackData(
+                    strings.Text("NewGame.EditTagsButton"),
+                    CallbackData.Format(CallbackData.EditField, NewGameDialogData.OverrideTags)
                 ),
             ],
             [

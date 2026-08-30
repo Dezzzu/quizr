@@ -193,6 +193,20 @@ public sealed class UpdateRouter
             case "/editgame" when team is not null && player is not null && message.From is not null:
                 await HandleEditGameCommandAsync(team, player.Id, chatId, new TelegramUserId(message.From.Id), ct);
                 break;
+
+            case "/myreminders" when team is not null && player is not null:
+                await HandleMyRemindersCommandAsync(team, player.Id, chatId, ct);
+                break;
+
+            case "/managecaptains" when team is not null && player is not null && message.From is not null:
+                await HandleManageCaptainsCommandAsync(
+                    team,
+                    player.Id,
+                    chatId,
+                    new TelegramUserId(message.From.Id),
+                    ct
+                );
+                break;
         }
     }
 
@@ -604,6 +618,10 @@ public sealed class UpdateRouter
                 await HandleAddVenuePlayerReplyAsync(dialog, message, ct);
                 break;
 
+            // Callback-only dialogs — no text-reply step exists for either, so a reply while
+            // one is active is discarded exactly like a genuinely unrecognised kind.
+            case DialogKinds.Nudge:
+            case DialogKinds.ManagePlayers:
             default:
                 _logger.LogWarning("Discarding a dialog with unrecognised kind {Kind}", dialog.Kind);
                 _db.DialogStates.Remove(dialog);
@@ -777,12 +795,15 @@ public sealed class UpdateRouter
                 }
                 break;
 
-            default: // EditFranchiseDialogData.Schedule
+            case EditFranchiseDialogData.Schedule:
                 if (FieldParsing.TryParseSchedule(input, team.Locale, out var schedule, out errorKey))
                 {
                     await _franchises.SetScheduleAsync(franchise, schedule, ct);
                 }
                 break;
+
+            default:
+                throw new ArgumentOutOfRangeException(nameof(dialog), fieldIndex, "Unknown EditFranchise field index");
         }
 
         if (errorKey is not null)
@@ -918,9 +939,14 @@ public sealed class UpdateRouter
                 await HandleNewGameFieldOverrideReplyAsync(dialog, data, input, chatId, strings, ct);
                 break;
 
-            default: // ChooseBranch, PickDate — button-only steps
+            case NewGameDialogData.ChooseBranch:
+            case NewGameDialogData.PickDate:
+            case NewGameDialogData.Confirm:
                 await _sender.SendAsync(chatId, strings.Text("NewGame.UseButtons"), null, ct);
                 break;
+
+            default:
+                throw new ArgumentOutOfRangeException(nameof(dialog), data.Step, "Unknown NewGame dialog step");
         }
     }
 
@@ -959,10 +985,22 @@ public sealed class UpdateRouter
                 }
                 break;
 
-            default: // OverrideNotes
+            case NewGameDialogData.OverrideNotes:
                 _ = FieldParsing.TryParseOptionalText(input, out var notes, out errorKey);
                 updated = data with { Notes = notes };
                 break;
+
+            case NewGameDialogData.OverrideTags:
+                _ = FieldParsing.TryParseTags(input, out var tags, out errorKey);
+                updated = data with { Tags = tags };
+                break;
+
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(data),
+                    data.EditingFieldIndex,
+                    "Unknown NewGame override field index"
+                );
         }
 
         if (errorKey is not null)
@@ -1042,12 +1080,20 @@ public sealed class UpdateRouter
                 await _games.SetNotesAsync(game, notes, ct);
                 break;
 
-            default: // EditGameDialogData.StartTime
+            case EditGameDialogData.StartTime:
                 if (FieldParsing.TryParseTime(input, out var time, out errorKey))
                 {
                     await _games.SetStartTimeAsync(game, time, team.TimeZoneId!, ct);
                 }
                 break;
+
+            case EditGameDialogData.Tags:
+                _ = FieldParsing.TryParseTags(input, out var tags, out errorKey);
+                await _games.SetTagsAsync(game, tags, ct);
+                break;
+
+            default:
+                throw new ArgumentOutOfRangeException(nameof(dialog), fieldIndex, "Unknown EditGame field index");
         }
 
         if (errorKey is not null)
@@ -1142,6 +1188,11 @@ public sealed class UpdateRouter
             case CallbackData.MyGuests:
             case CallbackData.Nudge:
             case CallbackData.ManageRoster:
+            case CallbackData.ManagePlayers:
+            case CallbackData.DeclineGame:
+            case CallbackData.ConfirmDecline:
+            case CallbackData.CancelDecline:
+            case CallbackData.FinishGame:
                 await HandleGameCallbackAsync(verb, callbackQuery, ct);
                 break;
 
@@ -1172,6 +1223,19 @@ public sealed class UpdateRouter
             case CallbackData.ToggleNudgeTarget:
             case CallbackData.SendNudge:
                 await HandleNudgeCallbackAsync(verb, callbackQuery, ct);
+                break;
+
+            case CallbackData.TogglePlayerSignup:
+                await HandleManagePlayersCallbackAsync(callbackQuery, ct);
+                break;
+
+            case CallbackData.CycleReminderChannel:
+            case CallbackData.ToggleReserveReminder:
+                await HandleReminderSettingsCallbackAsync(verb, callbackQuery, ct);
+                break;
+
+            case CallbackData.ToggleCaptain:
+                await HandleManageCaptainsCallbackAsync(callbackQuery, ct);
                 break;
 
             default:
@@ -1229,6 +1293,26 @@ public sealed class UpdateRouter
 
             case CallbackData.ManageRoster:
                 await HandleManageRosterButtonAsync(game, team, player, callbackQuery, strings, ct);
+                break;
+
+            case CallbackData.ManagePlayers:
+                await HandleManagePlayersButtonAsync(game, team, player, callbackQuery, strings, ct);
+                break;
+
+            case CallbackData.DeclineGame:
+                await HandleDeclinePromptAsync(game, team, player, callbackQuery, strings, ct);
+                break;
+
+            case CallbackData.ConfirmDecline:
+                await HandleConfirmDeclineAsync(game, team, player, callbackQuery, strings, ct);
+                break;
+
+            case CallbackData.CancelDecline:
+                await HandleCancelDeclineAsync(callbackQuery, strings, ct);
+                break;
+
+            case CallbackData.FinishGame:
+                await HandleFinishButtonAsync(game, team, player, callbackQuery, strings, ct);
                 break;
         }
     }
@@ -1899,7 +1983,12 @@ public sealed class UpdateRouter
             EditFranchiseDialogData.Venue => "Franchise.AskVenue",
             EditFranchiseDialogData.Capacity => "Franchise.AskCapacity",
             EditFranchiseDialogData.Price => "Franchise.AskPrice",
-            _ => "Franchise.AskSchedule",
+            EditFranchiseDialogData.Schedule => "Franchise.AskSchedule",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(fieldIndex),
+                fieldIndex,
+                "Unknown EditFranchise field index"
+            ),
         };
 
     private static string NewGameFieldPromptKey(int fieldIndex) =>
@@ -1908,7 +1997,13 @@ public sealed class UpdateRouter
             NewGameDialogData.OverrideVenue => "NewGame.AskVenue",
             NewGameDialogData.OverrideCapacity => "NewGame.AskCapacity",
             NewGameDialogData.OverridePrice => "NewGame.AskPrice",
-            _ => "NewGame.AskNotes",
+            NewGameDialogData.OverrideNotes => "NewGame.AskNotes",
+            NewGameDialogData.OverrideTags => "NewGame.AskTags",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(fieldIndex),
+                fieldIndex,
+                "Unknown NewGame override field index"
+            ),
         };
 
     private static string EditGameFieldPromptKey(int fieldIndex) =>
@@ -1919,7 +2014,9 @@ public sealed class UpdateRouter
             EditGameDialogData.Capacity => "EditGame.AskCapacity",
             EditGameDialogData.Price => "EditGame.AskPrice",
             EditGameDialogData.Notes => "EditGame.AskNotes",
-            _ => "EditGame.AskStartTime",
+            EditGameDialogData.StartTime => "EditGame.AskStartTime",
+            EditGameDialogData.Tags => "EditGame.AskTags",
+            _ => throw new ArgumentOutOfRangeException(nameof(fieldIndex), fieldIndex, "Unknown EditGame field index"),
         };
 
     private async Task HandleConfirmNewGameAsync(
@@ -1957,6 +2054,7 @@ public sealed class UpdateRouter
                 data.Capacity!.Value,
                 data.Price,
                 data.Notes,
+                data.Tags ?? [],
                 player.Id,
                 team.TimeZoneId!,
                 ct
@@ -1979,6 +2077,11 @@ public sealed class UpdateRouter
             if (!string.IsNullOrWhiteSpace(data.Notes))
             {
                 await _games.SetNotesAsync(game, data.Notes, ct);
+            }
+
+            if (data.Tags is { Count: > 0 })
+            {
+                await _games.SetTagsAsync(game, data.Tags, ct);
             }
         }
 
@@ -2090,6 +2193,12 @@ public sealed class UpdateRouter
                 InlineKeyboardButton.WithCallbackData(
                     strings.Text("EditGame.EditStartTimeButton"),
                     CallbackData.Format(CallbackData.EditField, EditGameDialogData.StartTime)
+                ),
+            ],
+            [
+                InlineKeyboardButton.WithCallbackData(
+                    strings.Text("EditGame.EditTagsButton"),
+                    CallbackData.Format(CallbackData.EditField, EditGameDialogData.Tags)
                 ),
             ],
         ]);
@@ -2451,6 +2560,456 @@ public sealed class UpdateRouter
         );
 
         await _sender.SendAsync(chatId, strings.Text("Promotion.Message", new { Who = who }), null, ct);
+    }
+
+    // --- Decline (with confirm, mirroring Drop/ConfirmDrop/Stay) and the no-confirm Finish
+    // button. Both captain-only, on a live announcement. ---
+
+    private async Task HandleDeclinePromptAsync(
+        Game game,
+        Team team,
+        Player player,
+        CallbackQuery callbackQuery,
+        IStringsFor strings,
+        CancellationToken ct
+    )
+    {
+        var chatId = new TelegramChatId(callbackQuery.Message!.Chat.Id);
+        var telegramUserId = new TelegramUserId(callbackQuery.From.Id);
+        if (!await _teamGuard.IsCaptainAsync(team.Id, player.Id, chatId, telegramUserId, ct))
+        {
+            await AnswerAlertAsync(callbackQuery, strings.Text("NewGame.NotCaptain"), ct);
+            return;
+        }
+
+        var keyboard = new InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton.WithCallbackData(
+                    strings.Text("Decline.ConfirmYes"),
+                    CallbackData.Format(CallbackData.ConfirmDecline, game.Id)
+                ),
+                InlineKeyboardButton.WithCallbackData(
+                    strings.Text("Decline.ConfirmNo"),
+                    CallbackData.Format(CallbackData.CancelDecline, game.Id)
+                ),
+            ],
+        ]);
+        await _sender.SendAsync(
+            chatId,
+            strings.Text("Decline.ConfirmPrompt", new { Title = WebUtility.HtmlEncode(game.Title) }),
+            keyboard,
+            ct
+        );
+        await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
+    }
+
+    private async Task HandleConfirmDeclineAsync(
+        Game game,
+        Team team,
+        Player player,
+        CallbackQuery callbackQuery,
+        IStringsFor strings,
+        CancellationToken ct
+    )
+    {
+        var chatId = new TelegramChatId(callbackQuery.Message!.Chat.Id);
+        var telegramUserId = new TelegramUserId(callbackQuery.From.Id);
+        if (!await _teamGuard.IsCaptainAsync(team.Id, player.Id, chatId, telegramUserId, ct))
+        {
+            await AnswerAlertAsync(callbackQuery, strings.Text("NewGame.NotCaptain"), ct);
+            return;
+        }
+
+        await _games.DeclineAsync(game, player.Id, ct);
+        await _announcements.RefreshAsync(game, team, ct);
+        await _board.RefreshAsync(team, ct);
+
+        await _sender.EditAsync(
+            chatId,
+            new TelegramMessageId(callbackQuery.Message.MessageId),
+            strings.Text("Decline.Declined"),
+            null,
+            ct
+        );
+        await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
+    }
+
+    private async Task HandleCancelDeclineAsync(CallbackQuery callbackQuery, IStringsFor strings, CancellationToken ct)
+    {
+        var chatId = new TelegramChatId(callbackQuery.Message!.Chat.Id);
+        await _sender.EditAsync(
+            chatId,
+            new TelegramMessageId(callbackQuery.Message!.MessageId),
+            strings.Text("Decline.Cancelled"),
+            null,
+            ct
+        );
+        await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
+    }
+
+    private async Task HandleFinishButtonAsync(
+        Game game,
+        Team team,
+        Player player,
+        CallbackQuery callbackQuery,
+        IStringsFor strings,
+        CancellationToken ct
+    )
+    {
+        var chatId = new TelegramChatId(callbackQuery.Message!.Chat.Id);
+        var telegramUserId = new TelegramUserId(callbackQuery.From.Id);
+        if (!await _teamGuard.IsCaptainAsync(team.Id, player.Id, chatId, telegramUserId, ct))
+        {
+            await AnswerAlertAsync(callbackQuery, strings.Text("NewGame.NotCaptain"), ct);
+            return;
+        }
+
+        await _games.FinishAsync(game, player.Id, ct);
+        await _announcements.RefreshAsync(game, team, ct);
+        await _board.RefreshAsync(team, ct);
+
+        await _bot.AnswerCallbackQuery(callbackQuery.Id, strings.Text("Finish.Finished"), cancellationToken: ct);
+    }
+
+    // --- Act on behalf of a player ("Manage players", design decision #2 of M9) ---
+
+    private async Task HandleManagePlayersButtonAsync(
+        Game game,
+        Team team,
+        Player player,
+        CallbackQuery callbackQuery,
+        IStringsFor strings,
+        CancellationToken ct
+    )
+    {
+        var chatId = new TelegramChatId(callbackQuery.Message!.Chat.Id);
+        var telegramUserId = new TelegramUserId(callbackQuery.From.Id);
+        if (!await _teamGuard.IsCaptainAsync(team.Id, player.Id, chatId, telegramUserId, ct))
+        {
+            await AnswerAlertAsync(callbackQuery, strings.Text("NewGame.NotCaptain"), ct);
+            return;
+        }
+
+        await StartDialogAsync(
+            team.Id,
+            player.Id,
+            chatId,
+            DialogKinds.ManagePlayers,
+            new ManagePlayersDialogData(game.Id),
+            ct
+        );
+
+        var statuses = await _games.LoadMemberStatusesAsync(game, ct);
+        await _sender.SendAsync(
+            chatId,
+            ManagePlayersRenderer.RenderText(game, statuses, strings),
+            ManagePlayersRenderer.RenderKeyboard(statuses, strings),
+            ct
+        );
+        await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
+    }
+
+    private async Task HandleManagePlayersCallbackAsync(CallbackQuery callbackQuery, CancellationToken ct)
+    {
+        var chatId = new TelegramChatId(callbackQuery.Message!.Chat.Id);
+        var team = await _db.Teams.SingleAsync(t => t.ChatId == chatId, ct);
+        var strings = _strings.For(team.Locale);
+        var actor = await _playerBootstrap.GetOrCreateAsync(callbackQuery.From, ct);
+        var telegramUserId = new TelegramUserId(callbackQuery.From.Id);
+
+        if (!await _teamGuard.IsCaptainAsync(team.Id, actor.Id, chatId, telegramUserId, ct))
+        {
+            await AnswerAlertAsync(callbackQuery, strings.Text("NewGame.NotCaptain"), ct);
+            return;
+        }
+
+        var dialog = await _db.DialogStates.SingleOrDefaultAsync(
+            d => d.ChatId == chatId && d.PlayerId == actor.Id && d.Kind == DialogKinds.ManagePlayers,
+            ct
+        );
+        if (dialog is null)
+        {
+            await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
+            return;
+        }
+
+        var data = JsonSerializer.Deserialize<ManagePlayersDialogData>(dialog.Data)!;
+        var game = await _db.Games.SingleAsync(g => g.Id == data.GameId, ct);
+        _ = CallbackData.TryParse(callbackQuery.Data!, out _, out PlayerId targetPlayerId);
+
+        var isSignedUp = await _db.Signups.AnyAsync(
+            s => s.GameId == game.Id && s.PlayerId == targetPlayerId && s.CancelledAt == null,
+            ct
+        );
+
+        if (isSignedUp)
+        {
+            var result = await _signups.DropAsync(game, targetPlayerId, ct);
+            if (!result.IsSuccess)
+            {
+                await AnswerAlertAsync(callbackQuery, strings.Text(ErrorKey(result.Error)), ct);
+                return;
+            }
+
+            AuditRecorder.Record(
+                _db,
+                team.Id,
+                game.Id,
+                actor.Id,
+                AuditActions.PlayerDroppedOnBehalf,
+                new { TargetPlayerId = targetPlayerId.Value },
+                _clock
+            );
+            await _db.SaveChangesAsync(ct);
+            await _announcements.RefreshAsync(game, team, ct);
+
+            var outcome = result.Value;
+            foreach (var guest in outcome.NamedGuestsNeedingChoice)
+            {
+                await SendGuestChoicePromptAsync(chatId, guest, strings, ct);
+            }
+
+            await SendPromotionMessagesAsync(chatId, outcome.NewlyPromoted, strings, ct);
+        }
+        else
+        {
+            var result = await _signups.JoinAsync(game, targetPlayerId, ct);
+            if (!result.IsSuccess)
+            {
+                await AnswerAlertAsync(callbackQuery, strings.Text(ErrorKey(result.Error)), ct);
+                return;
+            }
+
+            AuditRecorder.Record(
+                _db,
+                team.Id,
+                game.Id,
+                actor.Id,
+                AuditActions.PlayerRegisteredOnBehalf,
+                new { TargetPlayerId = targetPlayerId.Value },
+                _clock
+            );
+            await _db.SaveChangesAsync(ct);
+            await _announcements.RefreshAsync(game, team, ct);
+        }
+
+        var statuses = await _games.LoadMemberStatusesAsync(game, ct);
+        await _sender.EditAsync(
+            chatId,
+            new TelegramMessageId(callbackQuery.Message!.MessageId),
+            ManagePlayersRenderer.RenderText(game, statuses, strings),
+            ManagePlayersRenderer.RenderKeyboard(statuses, strings),
+            ct
+        );
+        await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
+    }
+
+    // --- Reminder settings (/myreminders) — self-service, no captain check, no dialog. ---
+
+    private async Task HandleMyRemindersCommandAsync(
+        Team team,
+        PlayerId playerId,
+        TelegramChatId chatId,
+        CancellationToken ct
+    )
+    {
+        var membership = await _db.Memberships.SingleAsync(m => m.TeamId == team.Id && m.PlayerId == playerId, ct);
+        var strings = _strings.For(team.Locale);
+        var (text, keyboard) = BuildReminderSettingsView(membership, strings);
+        await _sender.SendAsync(chatId, text, keyboard, ct);
+    }
+
+    private async Task HandleReminderSettingsCallbackAsync(char verb, CallbackQuery callbackQuery, CancellationToken ct)
+    {
+        var chatId = new TelegramChatId(callbackQuery.Message!.Chat.Id);
+        var team = await _db.Teams.SingleAsync(t => t.ChatId == chatId, ct);
+        var player = await _playerBootstrap.GetOrCreateAsync(callbackQuery.From, ct);
+        var membership = await _db.Memberships.SingleAsync(m => m.TeamId == team.Id && m.PlayerId == player.Id, ct);
+        var strings = _strings.For(team.Locale);
+
+        if (verb == CallbackData.CycleReminderChannel)
+        {
+            _ = CallbackData.TryParse(callbackQuery.Data!, out _, out long slotIndex);
+            var next = (ReminderChannel)(((int)ChannelFor(membership, (int)slotIndex) + 1) % 3);
+            SetChannel(membership, (int)slotIndex, next);
+        }
+        else
+        {
+            membership.RemindWhenReserve = !membership.RemindWhenReserve;
+        }
+
+        await _db.SaveChangesAsync(ct);
+
+        var (text, keyboard) = BuildReminderSettingsView(membership, strings);
+        await _sender.EditAsync(chatId, new TelegramMessageId(callbackQuery.Message!.MessageId), text, keyboard, ct);
+        await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
+    }
+
+    private static (string Text, InlineKeyboardMarkup Keyboard) BuildReminderSettingsView(
+        Membership membership,
+        IStringsFor strings
+    )
+    {
+        var keyboard = new InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton.WithCallbackData(
+                    strings.Text(
+                        "Reminders.EveningBeforeButton",
+                        new { Channel = ChannelLabel(membership.EveningBefore, strings) }
+                    ),
+                    CallbackData.Format(CallbackData.CycleReminderChannel, 0L)
+                ),
+            ],
+            [
+                InlineKeyboardButton.WithCallbackData(
+                    strings.Text(
+                        "Reminders.MorningOfButton",
+                        new { Channel = ChannelLabel(membership.MorningOf, strings) }
+                    ),
+                    CallbackData.Format(CallbackData.CycleReminderChannel, 1L)
+                ),
+            ],
+            [
+                InlineKeyboardButton.WithCallbackData(
+                    strings.Text(
+                        "Reminders.BeforeStartButton",
+                        new { Channel = ChannelLabel(membership.BeforeStart, strings) }
+                    ),
+                    CallbackData.Format(CallbackData.CycleReminderChannel, 2L)
+                ),
+            ],
+            [
+                InlineKeyboardButton.WithCallbackData(
+                    strings.Text(membership.RemindWhenReserve ? "Reminders.ReserveOn" : "Reminders.ReserveOff"),
+                    CallbackData.Format(CallbackData.ToggleReserveReminder, 0L)
+                ),
+            ],
+        ]);
+
+        return (strings.Text("Reminders.Header"), keyboard);
+    }
+
+    private static string ChannelLabel(ReminderChannel channel, IStringsFor strings) =>
+        channel switch
+        {
+            ReminderChannel.Off => strings.Text("Reminders.ChannelOff"),
+            ReminderChannel.Group => strings.Text("Reminders.ChannelGroup"),
+            ReminderChannel.Dm => strings.Text("Reminders.ChannelDm"),
+            _ => throw new ArgumentOutOfRangeException(nameof(channel), channel, "Unknown reminder channel."),
+        };
+
+    private static ReminderChannel ChannelFor(Membership membership, int slotIndex) =>
+        slotIndex switch
+        {
+            0 => membership.EveningBefore,
+            1 => membership.MorningOf,
+            2 => membership.BeforeStart,
+            _ => throw new ArgumentOutOfRangeException(nameof(slotIndex), slotIndex, "Unknown reminder slot index"),
+        };
+
+    private static void SetChannel(Membership membership, int slotIndex, ReminderChannel value)
+    {
+        switch (slotIndex)
+        {
+            case 0:
+                membership.EveningBefore = value;
+                break;
+            case 1:
+                membership.MorningOf = value;
+                break;
+            case 2:
+                membership.BeforeStart = value;
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(slotIndex), slotIndex, "Unknown reminder slot index");
+        }
+    }
+
+    // --- Captain grant/revoke (/managecaptains) — team-wide, no game context, no dialog. ---
+
+    private async Task HandleManageCaptainsCommandAsync(
+        Team team,
+        PlayerId playerId,
+        TelegramChatId chatId,
+        TelegramUserId telegramUserId,
+        CancellationToken ct
+    )
+    {
+        var strings = _strings.For(team.Locale);
+        if (!await _teamGuard.IsCaptainAsync(team.Id, playerId, chatId, telegramUserId, ct))
+        {
+            await _sender.SendAsync(chatId, strings.Text("NewGame.NotCaptain"), null, ct);
+            return;
+        }
+
+        var members = await LoadMembersAsync(team.Id, ct);
+        var (text, keyboard) = BuildManageCaptainsView(members, strings);
+        await _sender.SendAsync(chatId, text, keyboard, ct);
+    }
+
+    private async Task HandleManageCaptainsCallbackAsync(CallbackQuery callbackQuery, CancellationToken ct)
+    {
+        var chatId = new TelegramChatId(callbackQuery.Message!.Chat.Id);
+        var team = await _db.Teams.SingleAsync(t => t.ChatId == chatId, ct);
+        var strings = _strings.For(team.Locale);
+        var actor = await _playerBootstrap.GetOrCreateAsync(callbackQuery.From, ct);
+        var telegramUserId = new TelegramUserId(callbackQuery.From.Id);
+
+        if (!await _teamGuard.IsCaptainAsync(team.Id, actor.Id, chatId, telegramUserId, ct))
+        {
+            await AnswerAlertAsync(callbackQuery, strings.Text("NewGame.NotCaptain"), ct);
+            return;
+        }
+
+        _ = CallbackData.TryParse(callbackQuery.Data!, out _, out PlayerId targetPlayerId);
+        var membership = await _db.Memberships.SingleAsync(
+            m => m.TeamId == team.Id && m.PlayerId == targetPlayerId,
+            ct
+        );
+        membership.IsCaptain = !membership.IsCaptain;
+
+        AuditRecorder.Record(
+            _db,
+            team.Id,
+            null,
+            actor.Id,
+            membership.IsCaptain ? AuditActions.CaptainGranted : AuditActions.CaptainRevoked,
+            new { TargetPlayerId = targetPlayerId.Value },
+            _clock
+        );
+        await _db.SaveChangesAsync(ct);
+
+        var members = await LoadMembersAsync(team.Id, ct);
+        var (text, keyboard) = BuildManageCaptainsView(members, strings);
+        await _sender.EditAsync(chatId, new TelegramMessageId(callbackQuery.Message!.MessageId), text, keyboard, ct);
+        await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
+    }
+
+    private async Task<IReadOnlyList<Membership>> LoadMembersAsync(TeamId teamId, CancellationToken ct) =>
+        await _db.Memberships.AsNoTracking().Include(m => m.Player).Where(m => m.TeamId == teamId).ToListAsync(ct);
+
+    private static (string Text, InlineKeyboardMarkup Keyboard) BuildManageCaptainsView(
+        IReadOnlyList<Membership> members,
+        IStringsFor strings
+    )
+    {
+        var ordered = members.OrderBy(m => m.Player.DisplayName, StringComparer.Ordinal).ToList();
+        var rows = ordered
+            .Select(m =>
+                new[]
+                {
+                    InlineKeyboardButton.WithCallbackData(
+                        strings.Text(
+                            m.IsCaptain ? "Captains.RevokeButton" : "Captains.GrantButton",
+                            new { Name = m.Player.DisplayName }
+                        ),
+                        CallbackData.Format(CallbackData.ToggleCaptain, m.PlayerId)
+                    ),
+                }
+            )
+            .ToList();
+
+        return (strings.Text("Captains.Header"), new InlineKeyboardMarkup(rows));
     }
 
     private async Task AnswerAlertAsync(CallbackQuery callbackQuery, string text, CancellationToken ct) =>

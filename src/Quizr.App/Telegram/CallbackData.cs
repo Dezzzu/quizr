@@ -45,6 +45,23 @@ internal static class CallbackData
     public const char ToggleAttended = 'y';
     public const char TogglePlayed = 'l';
 
+    // Reminder settings (/myreminders) — self-service, carry a slot index or a dummy id.
+    public const char CycleReminderChannel = 'e'; // carries a slot index (0/1/2)
+    public const char ToggleReserveReminder = 'h'; // dummy id
+
+    // Act on behalf of a player ("Manage players") and captain grant/revoke
+    // (/managecaptains) — the same member-list-with-toggle shape used twice more.
+    public const char ManagePlayers = 'r'; // carries GameId
+    public const char TogglePlayerSignup = 'k'; // carries PlayerId
+    public const char ToggleCaptain = 'n'; // carries PlayerId
+
+    // Decline (with confirm, like Drop/ConfirmDrop/Stay) and the no-confirm Finish button —
+    // carry a GameId.
+    public const char DeclineGame = 'A';
+    public const char ConfirmDecline = 'B';
+    public const char CancelDecline = 'C';
+    public const char FinishGame = 'E';
+
     public static string Format(char verb, GameId gameId) => Format(verb, gameId.Value);
 
     public static string Format(char verb, SignupId signupId) => Format(verb, signupId.Value);

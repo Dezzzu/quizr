@@ -5,7 +5,7 @@ namespace Quizr.App.Services;
 // NewGame branches at the first step: pick a franchise (then a date from a candidate list
 // computed once and stored here, so a slow reply can't pick a drifted date) or go one-off
 // (then a sequential Title -> Venue -> Date -> Time -> Capacity -> Price walk). Both paths
-// land on the same Confirm step, where Venue/Capacity/Price/Notes are individually
+// land on the same Confirm step, where Venue/Capacity/Price/Notes/Tags are individually
 // overridable — EditingFieldIndex remembers which one a text reply is answering.
 internal sealed record NewGameDialogData(
     string Step,
@@ -18,6 +18,7 @@ internal sealed record NewGameDialogData(
     int? Capacity = null,
     decimal? Price = null,
     string? Notes = null,
+    List<string>? Tags = null,
     int? EditingFieldIndex = null
 )
 {
@@ -39,4 +40,5 @@ internal sealed record NewGameDialogData(
     public const int OverrideCapacity = 1;
     public const int OverridePrice = 2;
     public const int OverrideNotes = 3;
+    public const int OverrideTags = 4;
 }
