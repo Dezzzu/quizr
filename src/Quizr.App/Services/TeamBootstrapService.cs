@@ -50,7 +50,7 @@ public sealed class TeamBootstrapService
 
     private async Task HandleAddedAsync(ChatMemberUpdated update, TelegramChatId chatId, CancellationToken ct)
     {
-        var team = await _db.Teams.FirstOrDefaultAsync(t => t.ChatId == chatId, ct);
+        var team = await _db.Teams.SingleOrDefaultAsync(t => t.ChatId == chatId, ct);
 
         if (team is not null)
         {
@@ -86,7 +86,7 @@ public sealed class TeamBootstrapService
 
     private async Task HandleRemovedAsync(TelegramChatId chatId, CancellationToken ct)
     {
-        var team = await _db.Teams.FirstOrDefaultAsync(t => t.ChatId == chatId, ct);
+        var team = await _db.Teams.SingleOrDefaultAsync(t => t.ChatId == chatId, ct);
         if (team is not null)
         {
             team.DeactivatedAt = _clock.GetUtcNow();

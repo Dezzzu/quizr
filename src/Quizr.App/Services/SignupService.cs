@@ -124,7 +124,7 @@ public sealed class SignupService : ISignupService
         CancellationToken ct
     )
     {
-        var guest = await _db.Signups.FirstOrDefaultAsync(s => s.Id == guestSignupId, ct);
+        var guest = await _db.Signups.SingleOrDefaultAsync(s => s.Id == guestSignupId, ct);
         if (guest is null || guest.IsMember || guest.InvitedByPlayerId != requestingPlayerId)
         {
             return new BusinessError.NotYourGuest();
@@ -145,7 +145,7 @@ public sealed class SignupService : ISignupService
     {
         var before = await LoadRosterAsync(game, ct);
 
-        var signup = await _db.Signups.FirstOrDefaultAsync(
+        var signup = await _db.Signups.SingleOrDefaultAsync(
             s => s.GameId == game.Id && s.PlayerId == playerId && s.CancelledAt == null,
             ct
         );
@@ -181,7 +181,7 @@ public sealed class SignupService : ISignupService
         CancellationToken ct
     )
     {
-        var guest = await _db.Signups.FirstOrDefaultAsync(s => s.Id == guestSignupId, ct);
+        var guest = await _db.Signups.SingleOrDefaultAsync(s => s.Id == guestSignupId, ct);
         if (guest is null || guest.InvitedByPlayerId != requestingPlayerId)
         {
             return new BusinessError.NotYourGuest();
@@ -192,7 +192,7 @@ public sealed class SignupService : ISignupService
             return new BusinessError.GuestAlreadyResolved();
         }
 
-        var game = await _db.Games.FirstAsync(g => g.Id == guest.GameId, ct);
+        var game = await _db.Games.SingleAsync(g => g.Id == guest.GameId, ct);
         var before = await LoadRosterAsync(game, ct);
 
         if (keep)
@@ -224,7 +224,7 @@ public sealed class SignupService : ISignupService
         CancellationToken ct
     )
     {
-        var guest = await _db.Signups.FirstOrDefaultAsync(s => s.Id == guestSignupId, ct);
+        var guest = await _db.Signups.SingleOrDefaultAsync(s => s.Id == guestSignupId, ct);
         if (guest is null || guest.InvitedByPlayerId != requestingPlayerId)
         {
             return new BusinessError.NotYourGuest();
@@ -235,7 +235,7 @@ public sealed class SignupService : ISignupService
             return new BusinessError.GuestAlreadyResolved();
         }
 
-        var game = await _db.Games.FirstAsync(g => g.Id == guest.GameId, ct);
+        var game = await _db.Games.SingleAsync(g => g.Id == guest.GameId, ct);
         var before = await LoadRosterAsync(game, ct);
 
         guest.CancelledAt = _clock.GetUtcNow();

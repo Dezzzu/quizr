@@ -94,7 +94,7 @@ public sealed class UpdateRouter
     private async Task HandleMessageAsync(Message message, CancellationToken ct)
     {
         var chatId = new TelegramChatId(message.Chat.Id);
-        var team = await _db.Teams.FirstOrDefaultAsync(t => t.ChatId == chatId, ct);
+        var team = await _db.Teams.SingleOrDefaultAsync(t => t.ChatId == chatId, ct);
 
         Player? player = null;
         if (message.From is not null)
@@ -108,7 +108,7 @@ public sealed class UpdateRouter
 
         if (player is not null && !message.Text!.StartsWith('/'))
         {
-            var dialog = await _db.DialogStates.FirstOrDefaultAsync(
+            var dialog = await _db.DialogStates.SingleOrDefaultAsync(
                 d => d.ChatId == chatId && d.PlayerId == player.Id,
                 ct
             );
@@ -227,7 +227,7 @@ public sealed class UpdateRouter
     {
         var data = JsonSerializer.Deserialize<GuestNameDialogData>(dialog.Data)!;
         var chatId = new TelegramChatId(message.Chat.Id);
-        var team = await _db.Teams.FirstAsync(t => t.Id == dialog.TeamId, ct);
+        var team = await _db.Teams.SingleAsync(t => t.Id == dialog.TeamId, ct);
         var strings = _strings.For(team.Locale);
 
         var result = await _signups.NameGuestAsync(data.SignupId, dialog.PlayerId, message.Text!.Trim(), ct);
@@ -241,7 +241,7 @@ public sealed class UpdateRouter
             return;
         }
 
-        var game = await _db.Games.FirstAsync(g => g.Id == result.Value.GameId, ct);
+        var game = await _db.Games.SingleAsync(g => g.Id == result.Value.GameId, ct);
         await _announcements.RefreshAsync(game, team, ct);
 
         await _sender.SendAsync(
@@ -291,14 +291,14 @@ public sealed class UpdateRouter
     {
         _ = CallbackData.TryParse(callbackQuery.Data!, out _, out GameId gameId);
 
-        var game = await _db.Games.FirstOrDefaultAsync(g => g.Id == gameId, ct);
+        var game = await _db.Games.SingleOrDefaultAsync(g => g.Id == gameId, ct);
         if (game is null)
         {
             await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
             return;
         }
 
-        var team = await _db.Teams.FirstAsync(t => t.Id == game.TeamId, ct);
+        var team = await _db.Teams.SingleAsync(t => t.Id == game.TeamId, ct);
         var strings = _strings.For(team.Locale);
         var player = await _playerBootstrap.GetOrCreateAsync(callbackQuery.From, ct);
         await _playerBootstrap.EnsureMembershipAsync(team.Id, player.Id, ct);
@@ -390,7 +390,7 @@ public sealed class UpdateRouter
 
         // One dialog per (chat, player) — a stray earlier one (e.g. from a naming prompt
         // nobody answered) is replaced rather than left to collide on the unique index.
-        var existing = await _db.DialogStates.FirstOrDefaultAsync(
+        var existing = await _db.DialogStates.SingleOrDefaultAsync(
             d => d.ChatId == chatId && d.PlayerId == player.Id,
             ct
         );
@@ -578,7 +578,7 @@ public sealed class UpdateRouter
     )
     {
         var chatId = new TelegramChatId(callbackQuery.Message!.Chat.Id);
-        var team = await _db.Teams.FirstAsync(t => t.ChatId == chatId, ct);
+        var team = await _db.Teams.SingleAsync(t => t.ChatId == chatId, ct);
         var strings = _strings.For(team.Locale);
 
         var result = await _signups.RemoveGuestAsync(guestSignupId, player.Id, ct);
@@ -589,7 +589,7 @@ public sealed class UpdateRouter
         }
 
         var outcome = result.Value;
-        var game = await _db.Games.FirstAsync(g => g.Id == outcome.Guest.GameId, ct);
+        var game = await _db.Games.SingleAsync(g => g.Id == outcome.Guest.GameId, ct);
         await _announcements.RefreshAsync(game, team, ct);
 
         var remaining = await _signups.LoadLiveGuestsAsync(game, player.Id, ct);
@@ -628,7 +628,7 @@ public sealed class UpdateRouter
     private async Task HandleSkipGuestNameAsync(Player player, CallbackQuery callbackQuery, CancellationToken ct)
     {
         var chatId = new TelegramChatId(callbackQuery.Message!.Chat.Id);
-        var dialog = await _db.DialogStates.FirstOrDefaultAsync(
+        var dialog = await _db.DialogStates.SingleOrDefaultAsync(
             d => d.ChatId == chatId && d.PlayerId == player.Id && d.Kind == DialogKinds.NameGuest,
             ct
         );
@@ -638,7 +638,7 @@ public sealed class UpdateRouter
             await _db.SaveChangesAsync(ct);
         }
 
-        var team = await _db.Teams.FirstAsync(t => t.ChatId == chatId, ct);
+        var team = await _db.Teams.SingleAsync(t => t.ChatId == chatId, ct);
         var strings = _strings.For(team.Locale);
         await _sender.EditAsync(
             chatId,
@@ -659,7 +659,7 @@ public sealed class UpdateRouter
     )
     {
         var chatId = new TelegramChatId(callbackQuery.Message!.Chat.Id);
-        var team = await _db.Teams.FirstAsync(t => t.ChatId == chatId, ct);
+        var team = await _db.Teams.SingleAsync(t => t.ChatId == chatId, ct);
         var strings = _strings.For(team.Locale);
 
         var result = await _signups.ResolveGuestChoiceAsync(guestSignupId, player.Id, keep, ct);
@@ -680,7 +680,7 @@ public sealed class UpdateRouter
         );
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
 
-        var game = await _db.Games.FirstAsync(g => g.Id == outcome.Guest.GameId, ct);
+        var game = await _db.Games.SingleAsync(g => g.Id == outcome.Guest.GameId, ct);
         await _announcements.RefreshAsync(game, team, ct);
 
         foreach (var promoted in outcome.NewlyPromoted)
@@ -722,7 +722,7 @@ public sealed class UpdateRouter
         string who;
         if (signup.PlayerId is { } playerId)
         {
-            var promoted = await _db.Players.AsNoTracking().FirstAsync(p => p.Id == playerId, ct);
+            var promoted = await _db.Players.AsNoTracking().SingleAsync(p => p.Id == playerId, ct);
             who = WebUtility.HtmlEncode(promoted.DisplayName);
         }
         else

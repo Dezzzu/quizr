@@ -150,6 +150,15 @@ yes, both.
   message is a read.
 - **Queries live in `Quizr.App`.** `Quizr.Domain` has no EF reference and never will.
 - Migrations get descriptive names and are read before they're applied.
+- **`SingleAsync`/`SingleOrDefaultAsync` over `FirstAsync`/`FirstOrDefaultAsync`** wherever the
+  predicate matches a primary key, a unique index, or an invariant the application layer
+  already enforces (e.g. at most one live signup per game and player). `First` silently
+  accepts a second match; `Single` throws, which is what turns a broken uniqueness assumption
+  into a loud bug instead of a query that quietly picks one row and moves on. `First`/
+  `FirstOrDefault` stay fine for in-memory LINQ once singularity is already guaranteed by
+  prior logic — there the difference is real (`Single` has to scan the whole sequence to
+  confirm no second match; `First` short-circuits), so it's a legitimate performance choice,
+  not a correctness one.
 
 ## Comments
 

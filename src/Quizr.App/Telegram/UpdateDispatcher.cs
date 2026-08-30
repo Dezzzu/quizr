@@ -83,7 +83,7 @@ public sealed class UpdateDispatcher : IUpdateHandler
         var db = services.GetRequiredService<QuizrDb>();
         var team = await db
             .Teams.AsNoTracking()
-            .FirstOrDefaultAsync(t => t.ChatId == new TelegramChatId(chatId.Value), ct);
+            .SingleOrDefaultAsync(t => t.ChatId == new TelegramChatId(chatId.Value), ct);
         var strings = services.GetRequiredService<IStrings>();
         var apology = strings.For(team?.Locale ?? "en").Text("Error.Generic");
 

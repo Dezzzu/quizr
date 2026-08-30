@@ -36,7 +36,7 @@ public sealed class TeamGuard
     {
         var membership = await _db
             .Memberships.AsNoTracking()
-            .FirstOrDefaultAsync(m => m.TeamId == teamId && m.PlayerId == playerId, ct);
+            .SingleOrDefaultAsync(m => m.TeamId == teamId && m.PlayerId == playerId, ct);
 
         if (membership?.IsCaptain == true)
         {

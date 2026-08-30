@@ -22,7 +22,7 @@ public sealed class PlayerBootstrapService
     public async Task<Player> GetOrCreateAsync(User telegramUser, CancellationToken ct)
     {
         var telegramUserId = new TelegramUserId(telegramUser.Id);
-        var player = await _db.Players.FirstOrDefaultAsync(p => p.TelegramUserId == telegramUserId, ct);
+        var player = await _db.Players.SingleOrDefaultAsync(p => p.TelegramUserId == telegramUserId, ct);
         if (player is not null)
         {
             return player;
