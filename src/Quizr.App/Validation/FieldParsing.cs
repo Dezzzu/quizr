@@ -325,4 +325,13 @@ internal static class FieldParsing
 
         return localeNames.TryGetValue(token, out day) || EnglishDayNames.TryGetValue(token, out day);
     }
+
+    // The reverse of the day-name tables above — a franchise's schedule should render back
+    // using the same day names a captain in that locale would type to set it, not always
+    // English (DayOfWeek.ToString() has no locale of its own).
+    public static string DayName(DayOfWeek day, string locale)
+    {
+        var localeNames = DayNamesByLocale.TryGetValue(locale, out var found) ? found : EnglishDayNames;
+        return localeNames.First(kv => kv.Value == day).Key;
+    }
 }

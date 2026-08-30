@@ -65,7 +65,6 @@ public class BoardServiceTests
         );
         await service.RefreshAsync(team, ct);
         var boardMessageId = team.BoardMessageId!.Value;
-        StubGetChat(bot, pinnedMessageId: (int)boardMessageId.Value);
         await SeedGameAsync(db, team, "Quiz Night", DateTimeOffset.UtcNow.AddDays(1), ct);
 
         await service.RefreshAsync(team, ct);
@@ -76,8 +75,14 @@ public class BoardServiceTests
         team.BoardMessageId!.Value.Should().Be(boardMessageId);
     }
 
+    // Telegram's getChat doesn't reliably report an unpin performed by anyone other than the
+    // bot (confirmed against a live chat), so there's nothing trustworthy to check before
+    // deciding whether to re-pin — every tick just does it unconditionally, whether the board
+    // is already correctly pinned, displaced by something else, or genuinely unpinned. This
+    // replaces what used to be two separate tests (re-pin-when-displaced,
+    // skip-when-already-pinned) — that distinction no longer exists in the code.
     [Test]
-    public async Task RefreshAsyncRePinsWhenSomethingElseHasBeenPinnedOverTheBoard()
+    public async Task RefreshAsyncPinsOnEveryCallRegardlessOfCurrentPinState()
     {
         var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
@@ -90,20 +95,23 @@ public class BoardServiceTests
             new Strings(),
             NullLogger<BoardService>.Instance
         );
-        await service.RefreshAsync(team, ct);
-        StubGetChat(bot, pinnedMessageId: 999999); // some other message is now pinned
 
         await service.RefreshAsync(team, ct);
+        await service.RefreshAsync(team, ct);
+        await service.RefreshAsync(team, ct);
 
-        bot.PinCallCount().Should().Be(2);
+        bot.PinCallCount().Should().Be(3);
     }
 
+    // Telegram rejects a redundant pin of the already-pinned message with a 400 rather than a
+    // silent success — the common case now that every tick pins unconditionally — and that
+    // must not be mistaken for a genuine pin failure.
     [Test]
-    public async Task RefreshAsyncDoesNotRePinWhenAlreadyCorrectlyPinned()
+    public async Task RefreshAsyncDoesNotThrowWhenTheMessageIsAlreadyPinned()
     {
         var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
-        var team = await SeedTeamAsync(db, chatId: 8004, ct);
+        var team = await SeedTeamAsync(db, chatId: 8010, ct);
         var bot = TelegramBotClientTestHelper.Create();
         var service = new BoardService(
             db,
@@ -113,11 +121,12 @@ public class BoardServiceTests
             NullLogger<BoardService>.Instance
         );
         await service.RefreshAsync(team, ct);
-        StubGetChat(bot, pinnedMessageId: (int)team.BoardMessageId!.Value.Value);
+        bot.SendRequest(Arg.Any<PinChatMessageRequest>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new ApiRequestException("Bad Request: CHAT_NOT_MODIFIED", 400));
 
         await service.RefreshAsync(team, ct);
 
-        bot.PinCallCount().Should().Be(1);
+        (await db.Teams.AsNoTracking().SingleAsync(t => t.Id == team.Id, ct)).BoardMessageId.Should().NotBeNull();
     }
 
     [Test]
@@ -174,13 +183,11 @@ public class BoardServiceTests
                     400
                 )
             );
-        StubGetChat(bot, pinnedMessageId: (int)originalMessageId.Value);
-
         await service.RefreshAsync(team, ct);
 
         team.BoardMessageId!.Value.Should().Be(originalMessageId);
         bot.SentTexts().Should().ContainSingle();
-        bot.PinCallCount().Should().Be(1);
+        bot.PinCallCount().Should().Be(2); // pins unconditionally on both calls, not just once
     }
 
     // Invariant 12: "the bot verifies the pin and restores it silently." A missing-rights pin
@@ -230,7 +237,6 @@ public class BoardServiceTests
         );
         await service.RefreshAsync(team, ct);
 
-        StubGetChat(bot, pinnedMessageId: 0); // still nothing pinned
         bot.SendRequest(Arg.Any<PinChatMessageRequest>(), Arg.Any<CancellationToken>()).Returns(true);
         var teamOnNextTick = await db.Teams.SingleAsync(t => t.Id == team.Id, ct);
 
@@ -331,17 +337,6 @@ public class BoardServiceTests
     // exercises the real coalescing code path.
     private static MessageEditDebouncer NoDebounce(ITelegramBotClient bot) =>
         new(bot, TimeProvider.System, NullLogger<MessageEditDebouncer>.Instance);
-
-    private static void StubGetChat(ITelegramBotClient bot, int pinnedMessageId) =>
-        bot.SendRequest(Arg.Any<GetChatRequest>(), Arg.Any<CancellationToken>())
-            .Returns(
-                new ChatFullInfo
-                {
-                    Id = 1,
-                    Type = ChatType.Supergroup,
-                    PinnedMessage = new Message { Id = pinnedMessageId },
-                }
-            );
 
     private static async Task<Team> SeedTeamAsync(QuizrDb db, long chatId, CancellationToken ct)
     {

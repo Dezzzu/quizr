@@ -288,4 +288,38 @@ public class FieldParsingTests
         value.Should().BeEmpty();
         errorKey.Should().Be("Validation.ScheduleInvalid");
     }
+
+    [Test]
+    [Arguments("en", "Mon")]
+    [Arguments("ru", "Пн")]
+    [Arguments("de", "Mo")]
+    public void DayNameReturnsTheLocalesOwnAbbreviation(string locale, string expected)
+    {
+        FieldParsing.DayName(DayOfWeek.Monday, locale).Should().Be(expected);
+    }
+
+    // No locale file of its own yet falls back to English, same as everywhere else
+    // locale-dependent (Strings' own For(locale) fallback).
+    [Test]
+    public void DayNameFallsBackToEnglishForAnUnknownLocale()
+    {
+        FieldParsing.DayName(DayOfWeek.Friday, "fr").Should().Be("Fri");
+    }
+
+    // Round-trips every day through every locale's own table — the abbreviation DayName
+    // returns must be exactly one TryParseSchedule in that same locale would accept back.
+    [Test]
+    [Arguments("en")]
+    [Arguments("ru")]
+    [Arguments("de")]
+    public void DayNameRoundTripsThroughTryParseScheduleInTheSameLocale(string locale)
+    {
+        foreach (DayOfWeek day in Enum.GetValues<DayOfWeek>())
+        {
+            var name = FieldParsing.DayName(day, locale);
+
+            FieldParsing.TryParseSchedule($"{name}: 19:00", locale, out var value, out _).Should().BeTrue();
+            value.Should().ContainSingle().Which.Key.Should().Be(day);
+        }
+    }
 }

@@ -12,10 +12,13 @@ using Telegram.Bot.Requests;
 
 namespace Quizr.App.Services;
 
-// The one pinned message per chat (CLAUDE.md invariant 12). Verified and silently restored:
-// reposting from the database if it's gone, re-pinning if it's been displaced. This is the
-// mechanism; the periodic call that makes restoration happen without anyone acting is the
-// scheduler's job (STACK.md, M6) — RefreshAsync just needs to be safe to call repeatedly.
+// The one pinned message per chat (CLAUDE.md invariant 12). Silently restored: reposting from
+// the database if it's gone, re-pinning unconditionally otherwise — Telegram's own signal for
+// "is this still pinned" (Chat.PinnedMessage) doesn't reliably reflect an unpin performed by
+// anyone other than the bot, so there's nothing trustworthy to check before deciding whether
+// to act. This is the mechanism; the periodic call that makes restoration happen without
+// anyone acting is the scheduler's job (STACK.md, M6) — RefreshAsync just needs to be safe to
+// call repeatedly.
 public sealed class BoardService
 {
     private readonly QuizrDb _db;
@@ -55,7 +58,7 @@ public sealed class BoardService
             && await _sender.TryEditImmediatelyAsync(team.ChatId, messageId, text, null, ct)
         )
         {
-            await EnsurePinnedAsync(team.ChatId, messageId, ct);
+            await PinAsync(team.ChatId, messageId, ct);
             return;
         }
 
@@ -71,15 +74,11 @@ public sealed class BoardService
         await PinAsync(team.ChatId, messageId, ct);
     }
 
-    private async Task EnsurePinnedAsync(TelegramChatId chatId, TelegramMessageId messageId, CancellationToken ct)
-    {
-        var chat = await _bot.SendRequest(new GetChatRequest { ChatId = chatId.Value }, ct);
-        if (chat.PinnedMessage?.MessageId != (int)messageId.Value)
-        {
-            await PinAsync(chatId, messageId, ct);
-        }
-    }
-
+    // Unconditional, every tick — no "is it already pinned?" check first. getChat's own
+    // pinned_message field is the obvious way to ask that, but it doesn't reliably reflect an
+    // unpin someone other than the bot performed (confirmed against a live chat), so the only
+    // trustworthy way to "verify the pin" (invariant 12) is to just restore it every time and
+    // let Telegram itself no-op when nothing changed.
     private async Task PinAsync(TelegramChatId chatId, TelegramMessageId messageId, CancellationToken ct)
     {
         try
@@ -110,5 +109,17 @@ public sealed class BoardService
             // failure still surfaces as the genuine bug it would be.
             _logger.LogInformation("Board pin skipped for chat {ChatId}: the bot isn't a chat admin yet", chatId);
         }
+        catch (ApiRequestException ex) when (IsAlreadyPinned(ex))
+        {
+            // Pinning the message that's already pinned — the common case now that this runs
+            // unconditionally every tick instead of only after detecting a mismatch. Not an
+            // error, just Telegram saying there was nothing to do.
+        }
     }
+
+    // Telegram's wording for "you asked to pin the message that's already pinned" — no
+    // dedicated error code for it, just this text (or CHAT_NOT_MODIFIED) on a 400.
+    private static bool IsAlreadyPinned(ApiRequestException ex) =>
+        ex.Message.Contains("CHAT_NOT_MODIFIED", StringComparison.OrdinalIgnoreCase)
+        || ex.Message.Contains("message is already pinned", StringComparison.OrdinalIgnoreCase);
 }

@@ -3,6 +3,7 @@ using System.Text;
 using Quizr.App.Localization;
 using Quizr.App.Services;
 using Quizr.App.Telegram;
+using Quizr.App.Validation;
 using Quizr.Domain.Entities;
 using Telegram.Bot.Types.ReplyMarkups;
 
@@ -52,7 +53,9 @@ internal static class FranchiseRenderer
                     : strings.Text("Franchise.NoPrice")
             )
             .Append('\n');
-        text.Append(strings.Text("Franchise.Schedule", new { Schedule = FormatSchedule(franchise.Schedule) }));
+        text.Append(
+            strings.Text("Franchise.Schedule", new { Schedule = FormatSchedule(franchise.Schedule, strings.Locale) })
+        );
 
         return text.ToString();
     }
@@ -103,7 +106,7 @@ internal static class FranchiseRenderer
             DoneButton.Row(strings),
         ]);
 
-    private static string FormatSchedule(Dictionary<DayOfWeek, TimeOnly> schedule)
+    private static string FormatSchedule(Dictionary<DayOfWeek, TimeOnly> schedule, string locale)
     {
         if (schedule.Count == 0)
         {
@@ -112,9 +115,9 @@ internal static class FranchiseRenderer
 
         return string.Join(
             ", ",
-            WeekOrder.Where(schedule.ContainsKey).Select(day => $"{Abbreviate(day)} {schedule[day]:HH\\:mm}")
+            WeekOrder
+                .Where(schedule.ContainsKey)
+                .Select(day => $"{FieldParsing.DayName(day, locale)} {schedule[day]:HH\\:mm}")
         );
     }
-
-    private static string Abbreviate(DayOfWeek day) => day.ToString()[..3];
 }
