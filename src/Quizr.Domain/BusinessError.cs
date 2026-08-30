@@ -12,4 +12,7 @@ public abstract record BusinessError
     public sealed record AlreadySignedUp : BusinessError;
 
     public sealed record GameAlreadyFinished : BusinessError;
+
+    // The team hasn't set a timezone yet, so nothing that computes a game's start time can run.
+    public sealed record TeamNotConfigured : BusinessError;
 }

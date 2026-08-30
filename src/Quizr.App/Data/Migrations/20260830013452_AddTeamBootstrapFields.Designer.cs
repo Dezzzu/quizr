@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Quizr.App.Data;
@@ -11,9 +12,11 @@ using Quizr.App.Data;
 namespace Quizr.App.Data.Migrations
 {
     [DbContext(typeof(QuizrDb))]
-    partial class QuizrDbModelSnapshot : ModelSnapshot
+    [Migration("20260830013452_AddTeamBootstrapFields")]
+    partial class AddTeamBootstrapFields
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

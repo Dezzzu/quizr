@@ -1,5 +1,9 @@
 namespace Quizr.Domain;
 
+// The payload for a Result<T> that has nothing to carry beyond success itself —
+// a guard like "is the team configured yet" has no value worth returning.
+public readonly record struct Unit;
+
 // Factory methods live here rather than as statics on Result<T> — CA1000
 // forbids static members on generic types. Construction normally goes through
 // the implicit operators below instead; these are for the rare spot that

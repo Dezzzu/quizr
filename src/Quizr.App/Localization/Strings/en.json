@@ -1,0 +1,11 @@
+{
+  "Start.Greeting": "Hi! I'm Quizr — I run sign-ups for your quiz nights.",
+  "Setup.Welcome": "Thanks for adding me! I've set the group language to English. Before I can schedule games, a captain needs to set the team's timezone: send /settimezone with an IANA id, e.g. /settimezone Europe/Berlin.",
+  "Setup.NotAdmin": "I'm not an admin here yet. Please make me one — I need it to pin the board and to see who joins or leaves.",
+  "Setup.TimeZoneSet": "Timezone set to {TimeZoneId}. Games created from now on will use it.",
+  "Setup.TimeZoneInvalid": "\"{Input}\" isn't a timezone I recognise. Use an IANA id, e.g. Europe/Berlin or America/New_York.",
+  "NewGame.NeedsTimeZone": "This team doesn't have a timezone set yet. A captain should run /settimezone first.",
+  "NewGame.NotCaptain": "Only a captain can do that.",
+  "NewGame.NotBuiltYet": "Game creation isn't built yet — it's coming in a later milestone.",
+  "Error.Generic": "Something went wrong on my end. It's been logged — please try again."
+}

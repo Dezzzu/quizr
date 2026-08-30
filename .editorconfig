@@ -58,6 +58,12 @@ dotnet_style_readonly_field = true:warning
 # Seal what isn't designed for inheritance.
 dotnet_diagnostic.CA1852.severity = suggestion
 
+# CLAUDE.md mandates calling ILogger's extension methods directly with structured
+# templates (LogInformation("Promoted {UserId}...", ...)), not source-generated
+# LoggerMessage delegates — these two fire on every such call site.
+dotnet_diagnostic.CA1848.severity = suggestion
+dotnet_diagnostic.CA1873.severity = suggestion
+
 # Nullability is not optional here — the roster is full of "maybe" values
 dotnet_diagnostic.CS8600.severity = warning
 dotnet_diagnostic.CS8602.severity = warning
