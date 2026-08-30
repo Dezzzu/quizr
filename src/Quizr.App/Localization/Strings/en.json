@@ -48,6 +48,10 @@
   "MyGuests.AddAnotherButton": "➕ Add another guest",
   "MyGuests.Removed": "Removed.",
 
+  "Board.Header": "📋 <b>Upcoming games</b>",
+  "Board.NoGames": "No upcoming games yet.",
+  "Board.Entry": "{When:ddd, d MMM, HH\\:mm} — {Title}",
+
   "Promotion.Message": "🎉 {Who} moved up to Playing!",
 
   "Signup.AlreadySignedUp": "You're already signed up for this game.",

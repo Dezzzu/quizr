@@ -51,6 +51,7 @@ builder.Services.AddScoped<TeamBootstrapService>();
 builder.Services.AddScoped<PlayerBootstrapService>();
 builder.Services.AddScoped<ISignupService, SignupService>();
 builder.Services.AddScoped<AnnouncementService>();
+builder.Services.AddScoped<BoardService>();
 builder.Services.AddScoped<UpdateRouter>();
 builder.Services.AddSingleton<UpdateDispatcher>();
 builder.Services.AddHostedService<BotHostedService>();

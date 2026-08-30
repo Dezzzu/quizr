@@ -1,5 +1,6 @@
 using Quizr.Domain;
 using Telegram.Bot;
+using Telegram.Bot.Exceptions;
 using Telegram.Bot.Requests;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
@@ -19,6 +20,17 @@ public interface IMessageSender
     );
 
     Task EditAsync(
+        TelegramChatId chatId,
+        TelegramMessageId messageId,
+        string text,
+        InlineKeyboardMarkup? keyboard,
+        CancellationToken ct
+    );
+
+    // Bypasses the debouncer and reports whether the message still exists to edit — the
+    // Board (BoardService) needs that answer synchronously, to know whether to repost,
+    // which a fire-and-forget debounced edit can never give it.
+    Task<bool> TryEditImmediatelyAsync(
         TelegramChatId chatId,
         TelegramMessageId messageId,
         string text,
@@ -66,4 +78,39 @@ public sealed class MessageSender : IMessageSender
         InlineKeyboardMarkup? keyboard,
         CancellationToken ct
     ) => _debouncer.ScheduleAsync(chatId, messageId, text, keyboard, ct);
+
+    public async Task<bool> TryEditImmediatelyAsync(
+        TelegramChatId chatId,
+        TelegramMessageId messageId,
+        string text,
+        InlineKeyboardMarkup? keyboard,
+        CancellationToken ct
+    )
+    {
+        try
+        {
+            await _bot.SendRequest(
+                new EditMessageTextRequest
+                {
+                    ChatId = chatId.Value,
+                    MessageId = (int)messageId.Value,
+                    Text = text,
+                    ParseMode = ParseMode.Html,
+                    ReplyMarkup = keyboard,
+                },
+                ct
+            );
+            return true;
+        }
+        catch (ApiRequestException ex) when (IsMessageGone(ex))
+        {
+            return false;
+        }
+    }
+
+    // Telegram's description for editing a deleted message; there's no dedicated error code
+    // for it, just this text on a 400.
+    private static bool IsMessageGone(ApiRequestException ex) =>
+        ex.Message.Contains("message to edit not found", StringComparison.OrdinalIgnoreCase)
+        || ex.Message.Contains("MESSAGE_ID_INVALID", StringComparison.OrdinalIgnoreCase);
 }

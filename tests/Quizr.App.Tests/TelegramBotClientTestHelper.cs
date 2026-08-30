@@ -51,4 +51,7 @@ internal static class TelegramBotClientTestHelper
             .Where(request => request.ShowAlert)
             .Select(request => request.Text)
             .ToList();
+
+    public static int PinCallCount(this ITelegramBotClient bot) =>
+        bot.ReceivedCalls().Select(call => call.GetArguments()[0]).OfType<PinChatMessageRequest>().Count();
 }

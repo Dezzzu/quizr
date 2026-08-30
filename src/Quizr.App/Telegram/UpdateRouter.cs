@@ -29,6 +29,7 @@ public sealed class UpdateRouter
     private readonly TeamGuard _teamGuard;
     private readonly ISignupService _signups;
     private readonly AnnouncementService _announcements;
+    private readonly BoardService _board;
     private readonly TimeProvider _clock;
     private readonly ILogger<UpdateRouter> _logger;
 
@@ -42,6 +43,7 @@ public sealed class UpdateRouter
         TeamGuard teamGuard,
         ISignupService signups,
         AnnouncementService announcements,
+        BoardService board,
         TimeProvider clock,
         ILogger<UpdateRouter> logger
     )
@@ -55,6 +57,7 @@ public sealed class UpdateRouter
         _teamGuard = teamGuard;
         _signups = signups;
         _announcements = announcements;
+        _board = board;
         _clock = clock;
         _logger = logger;
     }
@@ -174,6 +177,10 @@ public sealed class UpdateRouter
         await _db.SaveChangesAsync(ct);
 
         await _sender.SendAsync(chatId, strings.Text("Setup.TimeZoneSet", new { TimeZoneId = argument }), null, ct);
+
+        // The team is now operational — invariant 12 says only the Board is ever pinned, so
+        // it earns its pin from the moment the team can have games, not from the first one.
+        await _board.RefreshAsync(team, ct);
     }
 
     private async Task HandleNewGameAsync(
