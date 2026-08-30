@@ -17,10 +17,9 @@ public class AnnouncementRendererTests
         var alice = Player(1, "Alice");
         var bob = Player(2, "Bob");
         var game = GameWithCapacity(2);
-        var roster = new RosterSplit([Signup(1, alice.Id), Signup(2, bob.Id)], []);
-        var players = new Dictionary<PlayerId, Player> { [alice.Id] = alice, [bob.Id] = bob };
+        var roster = new RosterSplit([Signup(1, alice), Signup(2, bob)], []);
 
-        var text = AnnouncementRenderer.RenderText(game, roster, players, "Europe/Berlin", Strings);
+        var text = AnnouncementRenderer.RenderText(game, roster, "Europe/Berlin", Strings);
 
         text.Should().Contain("Playing (2/2)");
         text.IndexOf("Alice", StringComparison.Ordinal)
@@ -35,13 +34,7 @@ public class AnnouncementRendererTests
         game.StartsAt = new DateTimeOffset(2026, 3, 6, 18, 5, 0, TimeSpan.Zero); // 19:05 in Berlin
         var roster = new RosterSplit([], []);
 
-        var text = AnnouncementRenderer.RenderText(
-            game,
-            roster,
-            new Dictionary<PlayerId, Player>(),
-            "Europe/Berlin",
-            Strings
-        );
+        var text = AnnouncementRenderer.RenderText(game, roster, "Europe/Berlin", Strings);
 
         text.Should().Contain("Fri, 6 Mar, 19:05");
     }
@@ -51,10 +44,9 @@ public class AnnouncementRendererTests
     {
         var alice = Player(1, "Alice");
         var game = GameWithCapacity(1);
-        var roster = new RosterSplit([Signup(1, alice.Id)], []);
-        var players = new Dictionary<PlayerId, Player> { [alice.Id] = alice };
+        var roster = new RosterSplit([Signup(1, alice)], []);
 
-        var text = AnnouncementRenderer.RenderText(game, roster, players, "Europe/Berlin", Strings);
+        var text = AnnouncementRenderer.RenderText(game, roster, "Europe/Berlin", Strings);
 
         text.Should().NotContain("Reserve");
     }
@@ -64,10 +56,9 @@ public class AnnouncementRendererTests
     {
         var alice = Player(1, "<b>Alice</b>");
         var game = GameWithCapacity(1);
-        var roster = new RosterSplit([Signup(1, alice.Id)], []);
-        var players = new Dictionary<PlayerId, Player> { [alice.Id] = alice };
+        var roster = new RosterSplit([Signup(1, alice)], []);
 
-        var text = AnnouncementRenderer.RenderText(game, roster, players, "Europe/Berlin", Strings);
+        var text = AnnouncementRenderer.RenderText(game, roster, "Europe/Berlin", Strings);
 
         text.Should().NotContain("<b>Alice</b>");
         text.Should().Contain("&lt;b&gt;Alice&lt;/b&gt;");
@@ -83,12 +74,12 @@ public class AnnouncementRendererTests
             Id = new SignupId(1),
             GameId = GameId,
             InvitedByPlayerId = alice.Id,
+            InvitedByPlayer = alice,
             CreatedAt = DateTimeOffset.UtcNow,
         };
         var roster = new RosterSplit([guest], []);
-        var players = new Dictionary<PlayerId, Player> { [alice.Id] = alice };
 
-        var text = AnnouncementRenderer.RenderText(game, roster, players, "Europe/Berlin", Strings);
+        var text = AnnouncementRenderer.RenderText(game, roster, "Europe/Berlin", Strings);
 
         text.Should().Contain("Alice's guest");
     }
@@ -103,13 +94,13 @@ public class AnnouncementRendererTests
             Id = new SignupId(1),
             GameId = GameId,
             InvitedByPlayerId = alice.Id,
+            InvitedByPlayer = alice,
             GuestName = "Sasha",
             CreatedAt = DateTimeOffset.UtcNow,
         };
         var roster = new RosterSplit([guest], []);
-        var players = new Dictionary<PlayerId, Player> { [alice.Id] = alice };
 
-        var text = AnnouncementRenderer.RenderText(game, roster, players, "Europe/Berlin", Strings);
+        var text = AnnouncementRenderer.RenderText(game, roster, "Europe/Berlin", Strings);
 
         text.Should().Contain("Sasha").And.Contain("guest of Alice");
     }
@@ -127,13 +118,7 @@ public class AnnouncementRendererTests
         };
         var roster = new RosterSplit([guest], []);
 
-        var text = AnnouncementRenderer.RenderText(
-            game,
-            roster,
-            new Dictionary<PlayerId, Player>(),
-            "Europe/Berlin",
-            Strings
-        );
+        var text = AnnouncementRenderer.RenderText(game, roster, "Europe/Berlin", Strings);
 
         text.Should().Contain("Sasha").And.Contain("team guest");
     }
@@ -147,12 +132,13 @@ public class AnnouncementRendererTests
             CreatedAt = DateTimeOffset.UtcNow,
         };
 
-    private static Signup Signup(long id, PlayerId playerId) =>
+    private static Signup Signup(long id, Player player) =>
         new()
         {
             Id = new SignupId(id),
             GameId = GameId,
-            PlayerId = playerId,
+            PlayerId = player.Id,
+            Player = player,
             CreatedAt = DateTimeOffset.UtcNow.AddMinutes(id),
         };
 

@@ -49,27 +49,17 @@ public sealed class AnnouncementService
     )
     {
         var signups = await _db
-            .Signups.AsNoTracking()
+            .Signups.Include(s => s.Player)
+            .Include(s => s.InvitedByPlayer)
+            .AsNoTracking()
             .Where(s => s.GameId == game.Id && s.CancelledAt == null)
             .ToListAsync(ct);
         var roster = Roster.Split(signups, game.Capacity);
 
-        var playerIds = signups
-            .Select(s => s.PlayerId)
-            .Concat(signups.Select(s => s.InvitedByPlayerId))
-            .Where(id => id is not null)
-            .Select(id => id!.Value)
-            .Distinct()
-            .ToList();
-        var players = await _db
-            .Players.AsNoTracking()
-            .Where(p => playerIds.Contains(p.Id))
-            .ToDictionaryAsync(p => p.Id, ct);
-
         var strings = _strings.For(team.Locale);
 
         return (
-            AnnouncementRenderer.RenderText(game, roster, players, team.TimeZoneId!, strings),
+            AnnouncementRenderer.RenderText(game, roster, team.TimeZoneId!, strings),
             AnnouncementRenderer.RenderKeyboard(game, strings)
         );
     }

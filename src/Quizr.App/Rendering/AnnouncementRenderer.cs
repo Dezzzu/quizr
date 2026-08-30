@@ -5,6 +5,7 @@ using Quizr.App.Telegram;
 using Quizr.App.Time;
 using Quizr.Domain;
 using Quizr.Domain.Entities;
+using Quizr.Domain.Extensions;
 using Telegram.Bot.Types.ReplyMarkups;
 
 namespace Quizr.App.Rendering;
@@ -13,20 +14,14 @@ namespace Quizr.App.Rendering;
 // HTML parse mode throughout (CLAUDE.md) — every piece of user-supplied text is encoded.
 internal static class AnnouncementRenderer
 {
-    public static string RenderText(
-        Game game,
-        RosterSplit roster,
-        IReadOnlyDictionary<PlayerId, Player> players,
-        string teamTimeZoneId,
-        IStringsFor strings
-    )
+    public static string RenderText(Game game, RosterSplit roster, string teamTimeZoneId, IStringsFor strings)
     {
         var local = TeamTime.ConvertToLocal(game.StartsAt, teamTimeZoneId);
         var text = new StringBuilder();
 
         text.Append("<b>").Append(WebUtility.HtmlEncode(game.Title)).Append("</b>\n");
 
-        if (game.FinishedAt is not null)
+        if (game.IsFinished)
         {
             text.Append(strings.Text("Announcement.Finished")).Append('\n');
         }
@@ -54,14 +49,14 @@ internal static class AnnouncementRenderer
             strings.Text("Announcement.PlayingHeader", new { Count = roster.Playing.Count, Capacity = game.Capacity })
         );
         text.Append('\n');
-        AppendRoster(text, roster.Playing, players, strings);
+        AppendRoster(text, roster.Playing, strings);
 
         if (roster.Reserve.Count > 0)
         {
             text.Append('\n');
             text.Append(strings.Text("Announcement.ReserveHeader", new { Count = roster.Reserve.Count }));
             text.Append('\n');
-            AppendRoster(text, roster.Reserve, players, strings);
+            AppendRoster(text, roster.Reserve, strings);
         }
 
         return text.ToString().TrimEnd();
@@ -71,7 +66,7 @@ internal static class AnnouncementRenderer
     // left for a button to do.
     public static InlineKeyboardMarkup? RenderKeyboard(Game game, IStringsFor strings)
     {
-        if (game.FinishedAt is not null)
+        if (game.IsFinished)
         {
             return null;
         }
@@ -103,12 +98,7 @@ internal static class AnnouncementRenderer
         ]);
     }
 
-    private static void AppendRoster(
-        StringBuilder text,
-        IReadOnlyList<Signup> signups,
-        IReadOnlyDictionary<PlayerId, Player> players,
-        IStringsFor strings
-    )
+    private static void AppendRoster(StringBuilder text, IReadOnlyList<Signup> signups, IStringsFor strings)
     {
         if (signups.Count == 0)
         {
@@ -118,35 +108,37 @@ internal static class AnnouncementRenderer
 
         for (var i = 0; i < signups.Count; i++)
         {
-            text.Append(i + 1).Append(". ").Append(NameOf(signups[i], players, strings)).Append('\n');
+            text.Append(i + 1).Append(". ").Append(NameOf(signups[i], strings)).Append('\n');
         }
     }
 
-    private static string NameOf(Signup signup, IReadOnlyDictionary<PlayerId, Player> players, IStringsFor strings)
+    // IsMember/IsGuest read from PlayerId — the stored fact — never from whether the
+    // Player/InvitedByPlayer navigation happens to be populated. A signup whose Player wasn't
+    // Included would otherwise silently read as an anonymous guest instead of a missing load.
+    private static string NameOf(Signup signup, IStringsFor strings)
     {
-        if (signup.PlayerId is { } playerId)
+        if (signup.IsMember)
         {
-            return WebUtility.HtmlEncode(players[playerId].DisplayName);
+            return WebUtility.HtmlEncode(signup.Player!.DisplayName);
         }
 
         if (signup.GuestName is { } guestName)
         {
             var encodedName = WebUtility.HtmlEncode(guestName);
 
-            return signup.InvitedByPlayerId is { } namedInviterId
+            return signup.InvitedByPlayerId is not null
                 ? strings.Text(
                     "Announcement.NamedGuest",
-                    new { Name = encodedName, Inviter = WebUtility.HtmlEncode(players[namedInviterId].DisplayName) }
+                    new { Name = encodedName, Inviter = WebUtility.HtmlEncode(signup.InvitedByPlayer!.DisplayName) }
                 )
                 : strings.Text("Announcement.TeamGuest", new { Name = encodedName });
         }
 
         // Invariant 5: an unnamed guest never survives without an inviter, so this always
         // has one.
-        var inviterId = signup.InvitedByPlayerId!.Value;
         return strings.Text(
             "Announcement.AnonymousGuest",
-            new { Inviter = WebUtility.HtmlEncode(players[inviterId].DisplayName) }
+            new { Inviter = WebUtility.HtmlEncode(signup.InvitedByPlayer!.DisplayName) }
         );
     }
 }

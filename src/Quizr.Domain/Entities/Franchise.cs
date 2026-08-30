@@ -5,6 +5,10 @@ public sealed class Franchise
 {
     public FranchiseId Id { get; set; }
     public required TeamId TeamId { get; set; }
+
+    // Requires .Include(f => f.Team); null only means "not loaded".
+    public Team Team { get; set; } = null!;
+
     public required string Name { get; set; }
     public required string DefaultVenue { get; set; }
     public int DefaultCapacity { get; set; }
@@ -15,4 +19,6 @@ public sealed class Franchise
 
     public DateTimeOffset? ArchivedAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
+
+    public List<Game> Games { get; set; } = [];
 }

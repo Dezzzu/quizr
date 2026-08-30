@@ -13,10 +13,10 @@ internal sealed class GameConfiguration : IEntityTypeConfiguration<Game>
 
         builder.Property(g => g.TeamId).HasConversion(IdConverters.Team);
         builder.HasIndex(g => g.TeamId);
-        builder.HasOne<Team>().WithMany().HasForeignKey(g => g.TeamId);
+        builder.HasOne(g => g.Team).WithMany(t => t.Games).HasForeignKey(g => g.TeamId);
 
         builder.Property(g => g.FranchiseId).HasConversion(IdConverters.Franchise);
-        builder.HasOne<Franchise>().WithMany().HasForeignKey(g => g.FranchiseId);
+        builder.HasOne(g => g.Franchise).WithMany(f => f.Games).HasForeignKey(g => g.FranchiseId);
 
         builder.Property(g => g.AnnouncementMessageId).HasConversion(IdConverters.TelegramMessage);
 

@@ -13,7 +13,7 @@ internal sealed class MembershipConfiguration : IEntityTypeConfiguration<Members
         builder.Property(m => m.TeamId).HasConversion(IdConverters.Team);
         builder.Property(m => m.PlayerId).HasConversion(IdConverters.Player);
 
-        builder.HasOne<Team>().WithMany().HasForeignKey(m => m.TeamId);
-        builder.HasOne<Player>().WithMany().HasForeignKey(m => m.PlayerId);
+        builder.HasOne(m => m.Team).WithMany(t => t.Memberships).HasForeignKey(m => m.TeamId);
+        builder.HasOne(m => m.Player).WithMany(p => p.Memberships).HasForeignKey(m => m.PlayerId);
     }
 }

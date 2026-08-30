@@ -193,7 +193,7 @@ public class SchedulerServiceTests : IClassFixture<PostgresFixture>
         await SeedSignupAsync(db, game, reserve, startsAt.AddDays(-3).AddMinutes(1), ct);
         await SeedMembershipAsync(db, team, playing, ReminderChannel.Off, ct);
         await SeedMembershipAsync(db, team, reserve, ReminderChannel.Group, ct, remindWhenReserve: true);
-        var (scheduler, bot) = CreateScheduler(db, new DateTimeOffset(2026, 3, 5, 19, 0, 0, TimeSpan.Zero));
+        var (scheduler, _) = CreateScheduler(db, new DateTimeOffset(2026, 3, 5, 19, 0, 0, TimeSpan.Zero));
 
         await scheduler.RunTickAsync(ct);
 
@@ -277,7 +277,7 @@ public class SchedulerServiceTests : IClassFixture<PostgresFixture>
     {
         var ct = TestContext.Current.CancellationToken;
         await using var db = _fixture.CreateContext();
-        var team = await SeedTeamAsync(db, chatId: 9018, ct);
+        _ = await SeedTeamAsync(db, chatId: 9018, ct);
         var (scheduler, bot) = CreateScheduler(db, DateTimeOffset.UtcNow);
 
         await scheduler.RunTickAsync(ct);

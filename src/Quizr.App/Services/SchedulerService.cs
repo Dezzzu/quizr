@@ -7,6 +7,7 @@ using Quizr.App.Telegram;
 using Quizr.App.Time;
 using Quizr.Domain;
 using Quizr.Domain.Entities;
+using Quizr.Domain.Extensions;
 
 namespace Quizr.App.Services;
 
@@ -116,7 +117,7 @@ public sealed class SchedulerService
                 {
                     GameId = game.Id,
                     PlayerId = signup.PlayerId,
-                    Name = signup.PlayerId is null ? signup.GuestName : null,
+                    Name = signup.IsGuest ? signup.GuestName : null,
                     Kind = ParticipationKindOf(signup),
                     Played = playingIds.Contains(signup.Id),
                     // Invariant 9: attended defaults true, the ordinary case needing zero input.
@@ -134,12 +135,12 @@ public sealed class SchedulerService
 
     private static ParticipationKind ParticipationKindOf(Signup signup)
     {
-        if (signup.PlayerId is not null)
+        if (signup.IsMember)
         {
             return ParticipationKind.Member;
         }
 
-        return signup.InvitedByPlayerId is not null ? ParticipationKind.Guest : ParticipationKind.TeamGuest;
+        return signup.IsTeamGuest ? ParticipationKind.TeamGuest : ParticipationKind.Guest;
     }
 
     private async Task SendDueRemindersAsync(Team team, Game game, DateTimeOffset now, CancellationToken ct)
@@ -190,33 +191,28 @@ public sealed class SchedulerService
             return;
         }
 
+        // Filtered ThenInclude: only the membership for this team comes back, so a signup's
+        // Player.Memberships collection here is at most one row, not every team they're in.
         var liveSignups = await _db
-            .Signups.AsNoTracking()
+            .Signups.Include(s => s.Player!)
+                .ThenInclude(p => p.Memberships.Where(m => m.TeamId == team.Id))
+            .AsNoTracking()
             .Where(s => s.GameId == game.Id && s.CancelledAt == null)
             .ToListAsync(ct);
-        var memberSignups = liveSignups.Where(s => s.PlayerId is not null).ToList();
+        var memberSignups = liveSignups.Where(s => s.IsMember).ToList();
         if (memberSignups.Count == 0)
         {
             return;
         }
 
         var playingIds = Roster.Split(liveSignups, game.Capacity).Playing.Select(s => s.Id).ToHashSet();
-        var playerIds = memberSignups.Select(s => s.PlayerId!.Value).ToList();
-        var memberships = await _db
-            .Memberships.AsNoTracking()
-            .Where(m => m.TeamId == team.Id && playerIds.Contains(m.PlayerId))
-            .ToDictionaryAsync(m => m.PlayerId, ct);
-        var players = await _db
-            .Players.AsNoTracking()
-            .Where(p => playerIds.Contains(p.Id))
-            .ToDictionaryAsync(p => p.Id, ct);
 
         var groupRecipients = new List<Player>();
 
         foreach (var signup in memberSignups)
         {
-            var playerId = signup.PlayerId!.Value;
-            if (!memberships.TryGetValue(playerId, out var membership))
+            var membership = signup.Player!.Memberships.SingleOrDefault();
+            if (membership is null)
             {
                 continue; // no membership yet — nothing to read a preference from
             }
@@ -235,7 +231,7 @@ public sealed class SchedulerService
                 continue;
             }
 
-            var player = players[playerId];
+            var player = signup.Player;
 
             if (channel == ReminderChannel.Dm)
             {

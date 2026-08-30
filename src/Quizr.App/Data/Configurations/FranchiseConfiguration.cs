@@ -13,7 +13,7 @@ internal sealed class FranchiseConfiguration : IEntityTypeConfiguration<Franchis
 
         builder.Property(f => f.TeamId).HasConversion(IdConverters.Team);
         builder.HasIndex(f => new { f.TeamId, f.Name }).IsUnique();
-        builder.HasOne<Team>().WithMany().HasForeignKey(f => f.TeamId);
+        builder.HasOne(f => f.Team).WithMany(t => t.Franchises).HasForeignKey(f => f.TeamId);
 
         builder
             .Property(f => f.Schedule)

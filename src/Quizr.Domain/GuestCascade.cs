@@ -1,4 +1,5 @@
 using Quizr.Domain.Entities;
+using Quizr.Domain.Extensions;
 
 namespace Quizr.Domain;
 
@@ -11,7 +12,7 @@ public static class GuestCascade
 {
     public static GuestCascadeSplit ForInviterDrop(IEnumerable<Signup> signups, PlayerId inviterId)
     {
-        var liveGuests = signups.Where(s => s.CancelledAt is null && s.InvitedByPlayerId == inviterId).ToList();
+        var liveGuests = signups.Where(s => s.IsLive && s.InvitedByPlayerId == inviterId).ToList();
 
         return new GuestCascadeSplit(
             liveGuests.Where(s => s.GuestName is null).ToList(),

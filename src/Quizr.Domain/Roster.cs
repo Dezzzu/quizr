@@ -1,4 +1,5 @@
 using Quizr.Domain.Entities;
+using Quizr.Domain.Extensions;
 
 namespace Quizr.Domain;
 
@@ -19,11 +20,7 @@ public static class Roster
     {
         // Id breaks ties on identical CreatedAt: it's assigned in insertion
         // order, so it recovers the ordering a timestamp alone can't.
-        var queue = signups
-            .Where(s => s.CancelledAt is null)
-            .OrderBy(s => s.CreatedAt)
-            .ThenBy(s => s.Id.Value)
-            .ToList();
+        var queue = signups.Where(s => s.IsLive).OrderBy(s => s.CreatedAt).ThenBy(s => s.Id.Value).ToList();
 
         return new RosterSplit(queue.Take(capacity).ToList(), queue.Skip(capacity).ToList());
     }

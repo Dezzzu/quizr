@@ -25,4 +25,8 @@ public sealed class Team
     public DateTimeOffset? DeactivatedAt { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; }
+
+    public List<Game> Games { get; set; } = [];
+    public List<Membership> Memberships { get; set; } = [];
+    public List<Franchise> Franchises { get; set; } = [];
 }

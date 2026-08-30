@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Quizr.App.Data;
 using Quizr.Domain;
 using Quizr.Domain.Entities;
+using Quizr.Domain.Extensions;
 
 namespace Quizr.App.Services;
 
@@ -124,12 +125,12 @@ public sealed class SignupService : ISignupService
     )
     {
         var guest = await _db.Signups.FirstOrDefaultAsync(s => s.Id == guestSignupId, ct);
-        if (guest is null || guest.PlayerId is not null || guest.InvitedByPlayerId != requestingPlayerId)
+        if (guest is null || guest.IsMember || guest.InvitedByPlayerId != requestingPlayerId)
         {
             return new BusinessError.NotYourGuest();
         }
 
-        if (guest.CancelledAt is not null)
+        if (guest.IsCancelled)
         {
             return new BusinessError.GuestAlreadyResolved();
         }
@@ -186,7 +187,7 @@ public sealed class SignupService : ISignupService
             return new BusinessError.NotYourGuest();
         }
 
-        if (guest.CancelledAt is not null || guest.GuestName is null)
+        if (guest.IsCancelled || guest.GuestName is null)
         {
             return new BusinessError.GuestAlreadyResolved();
         }
@@ -229,7 +230,7 @@ public sealed class SignupService : ISignupService
             return new BusinessError.NotYourGuest();
         }
 
-        if (guest.CancelledAt is not null)
+        if (guest.IsCancelled)
         {
             return new BusinessError.GuestAlreadyResolved();
         }
@@ -288,11 +289,11 @@ public sealed class SignupService : ISignupService
 
     private static Result<Unit> RegistrationGuard(Game game)
     {
-        if (game.FinishedAt is not null)
+        if (game.IsFinished)
         {
             return new BusinessError.GameAlreadyFinished();
         }
 
-        return game.DeclinedAt is not null ? new BusinessError.RegistrationClosed() : new Unit();
+        return game.IsDeclined ? new BusinessError.RegistrationClosed() : new Unit();
     }
 }

@@ -12,8 +12,14 @@ public sealed class Game
     public GameId Id { get; set; }
     public required TeamId TeamId { get; set; }
 
+    // Requires .Include(g => g.Team); null only means "not loaded".
+    public Team Team { get; set; } = null!;
+
     // Null for a one-off game.
     public FranchiseId? FranchiseId { get; set; }
+    public Franchise? Franchise { get; set; }
+
+    public List<Signup> Signups { get; set; } = [];
 
     public required string Title { get; set; }
     public required string Venue { get; set; }

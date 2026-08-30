@@ -13,15 +13,15 @@ internal sealed class SignupConfiguration : IEntityTypeConfiguration<Signup>
 
         builder.Property(s => s.GameId).HasConversion(IdConverters.Game);
         builder.HasIndex(s => new { s.GameId, s.CreatedAt });
-        builder.HasOne<Game>().WithMany().HasForeignKey(s => s.GameId);
+        builder.HasOne(s => s.Game).WithMany(g => g.Signups).HasForeignKey(s => s.GameId);
 
         builder.Property(s => s.PlayerId).HasConversion(IdConverters.Player);
-        builder.HasOne<Player>().WithMany().HasForeignKey(s => s.PlayerId);
+        builder.HasOne(s => s.Player).WithMany().HasForeignKey(s => s.PlayerId);
 
         builder.Property(s => s.InvitedByPlayerId).HasConversion(IdConverters.Player);
-        builder.HasOne<Player>().WithMany().HasForeignKey(s => s.InvitedByPlayerId);
+        builder.HasOne(s => s.InvitedByPlayer).WithMany().HasForeignKey(s => s.InvitedByPlayerId);
 
         builder.Property(s => s.CancelledByPlayerId).HasConversion(IdConverters.Player);
-        builder.HasOne<Player>().WithMany().HasForeignKey(s => s.CancelledByPlayerId);
+        builder.HasOne(s => s.CancelledByPlayer).WithMany().HasForeignKey(s => s.CancelledByPlayerId);
     }
 }

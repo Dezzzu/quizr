@@ -15,4 +15,8 @@ public sealed class Player
     public bool DmEnabled { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; }
+
+    // A person may belong to several teams — never a single Membership. Requires
+    // .Include(p => p.Memberships), optionally filtered to one team.
+    public List<Membership> Memberships { get; set; } = [];
 }
