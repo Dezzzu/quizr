@@ -8,7 +8,10 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - quizr-postgres:/var/lib/postgresql/data
+      # Single top-level mount, not .../data — postgres 18's image switched to a
+      # pg_ctlcluster-compatible, version-namespaced layout under /var/lib/postgresql
+      # and refuses to start against the old .../data-style mount point.
+      - quizr-postgres:/var/lib/postgresql
 
 volumes:
   quizr-postgres:

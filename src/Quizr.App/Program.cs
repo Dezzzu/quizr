@@ -1,5 +1,6 @@
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -15,7 +16,40 @@ using Telegram.Bot;
 // in phase 1. See STACK.md before adding anything here.
 var builder = Host.CreateApplicationBuilder(args);
 
-builder.Logging.AddJsonConsole();
+// Host.CreateApplicationBuilder only auto-loads user secrets when EnvironmentName is
+// "Development", which needs DOTNET_ENVIRONMENT set — easy to forget locally, unlike
+// WebApplication.CreateBuilder's ASPNETCORE_ENVIRONMENT default. Added explicitly so
+// CLAUDE.md's "user secrets locally" actually works without that extra env var. Optional:
+// the secrets file won't exist in a real deployment, where env vars are used instead.
+builder.Configuration.AddUserSecrets<Program>(optional: true);
+
+// A human at an interactive terminal wants readable text; a log aggregator ingesting
+// captured/piped stdout (Docker, systemd, CI) wants structured JSON it can parse.
+// Console.IsOutputRedirected tells the two apart without an extra environment variable
+// to remember — DOTNET_ENVIRONMENT quietly defaults to Production even when run locally,
+// same footgun as the user-secrets loading above.
+if (Console.IsOutputRedirected)
+{
+    builder.Logging.AddJsonConsole(options => options.IncludeScopes = true);
+}
+else
+{
+    builder.Logging.AddSimpleConsole(options =>
+    {
+        options.IncludeScopes = true;
+        options.SingleLine = true;
+        options.TimestampFormat = "HH:mm:ss ";
+    });
+}
+
+// EF Core's per-command SQL, the Telegram HTTP client's per-request tracing, and Polly's
+// per-attempt success logs are Information-level noise that floods every single update —
+// and the HTTP client's logs include the bot token in the request URI on every line.
+// Only warnings and actual failures need to surface here; CLAUDE.md's own structured
+// LogInformation calls at application call sites are untouched by this.
+builder.Logging.AddFilter("Microsoft.EntityFrameworkCore.Database.Command", LogLevel.Warning);
+builder.Logging.AddFilter("System.Net.Http.HttpClient", LogLevel.Warning);
+builder.Logging.AddFilter("Polly", LogLevel.Warning);
 
 var botToken =
     builder.Configuration["QUIZR_BOT_TOKEN"] ?? throw new InvalidOperationException("QUIZR_BOT_TOKEN is not set.");
