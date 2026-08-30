@@ -29,6 +29,16 @@ public interface ISignupService
         bool keep,
         CancellationToken ct
     );
+
+    // Un-inviting a guest at any time — not just the post-drop cascade, and not
+    // conditional on them being named, unlike ResolveGuestChoiceAsync.
+    Task<Result<GuestRemovalOutcome>> RemoveGuestAsync(
+        SignupId guestSignupId,
+        PlayerId requestingPlayerId,
+        CancellationToken ct
+    );
+
+    Task<IReadOnlyList<Signup>> LoadLiveGuestsAsync(Game game, PlayerId inviterId, CancellationToken ct);
 }
 
 // Invariant 5's cascade: unnamed guests cancel automatically with the inviter; named ones
@@ -41,6 +51,8 @@ public sealed record DropOutcome(
 );
 
 public sealed record GuestChoiceOutcome(Signup Guest, bool Kept, IReadOnlyList<Signup> NewlyPromoted);
+
+public sealed record GuestRemovalOutcome(Signup Guest, IReadOnlyList<Signup> NewlyPromoted);
 
 public sealed class SignupService : ISignupService
 {
@@ -204,6 +216,43 @@ public sealed class SignupService : ISignupService
 
         return new GuestChoiceOutcome(guest, keep, promoted);
     }
+
+    public async Task<Result<GuestRemovalOutcome>> RemoveGuestAsync(
+        SignupId guestSignupId,
+        PlayerId requestingPlayerId,
+        CancellationToken ct
+    )
+    {
+        var guest = await _db.Signups.FirstOrDefaultAsync(s => s.Id == guestSignupId, ct);
+        if (guest is null || guest.InvitedByPlayerId != requestingPlayerId)
+        {
+            return new BusinessError.NotYourGuest();
+        }
+
+        if (guest.CancelledAt is not null)
+        {
+            return new BusinessError.GuestAlreadyResolved();
+        }
+
+        var game = await _db.Games.FirstAsync(g => g.Id == guest.GameId, ct);
+        var before = await LoadRosterAsync(game, ct);
+
+        guest.CancelledAt = _clock.GetUtcNow();
+        guest.CancelledByPlayerId = requestingPlayerId;
+        await _db.SaveChangesAsync(ct);
+
+        var after = await LoadRosterAsync(game, ct);
+        var promoted = await RecordPromotionsAsync(before, after, ct);
+
+        return new GuestRemovalOutcome(guest, promoted);
+    }
+
+    public async Task<IReadOnlyList<Signup>> LoadLiveGuestsAsync(Game game, PlayerId inviterId, CancellationToken ct) =>
+        await _db
+            .Signups.AsNoTracking()
+            .Where(s => s.GameId == game.Id && s.InvitedByPlayerId == inviterId && s.CancelledAt == null)
+            .OrderBy(s => s.CreatedAt)
+            .ToListAsync(ct);
 
     private async Task<RosterSplit> LoadRosterAsync(Game game, CancellationToken ct)
     {

@@ -74,6 +74,10 @@ internal static class AnnouncementRenderer
                     strings.Text("Announcement.GuestButton"),
                     CallbackData.Format(CallbackData.Guest, gameId)
                 ),
+                InlineKeyboardButton.WithCallbackData(
+                    strings.Text("Announcement.MyGuestsButton"),
+                    CallbackData.Format(CallbackData.MyGuests, gameId)
+                ),
             ],
             [
                 InlineKeyboardButton.WithCallbackData(

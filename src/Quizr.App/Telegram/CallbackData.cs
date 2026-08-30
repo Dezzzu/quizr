@@ -14,11 +14,13 @@ internal static class CallbackData
     public const char Drop = 'd';
     public const char ConfirmDrop = 'D';
     public const char Stay = 'b';
+    public const char MyGuests = 'm';
 
     // Guest-scoped follow-ups — carry a SignupId.
     public const char SkipGuestName = 'N';
     public const char KeepGuest = 'K';
     public const char RemoveGuestToo = 'X';
+    public const char RemoveGuest = 'R';
 
     public static string Format(char verb, GameId gameId) => Format(verb, gameId.Value);
 

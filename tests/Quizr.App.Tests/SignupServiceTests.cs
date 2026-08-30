@@ -165,9 +165,12 @@ public class SignupServiceTests : IClassFixture<PostgresFixture>
         result.IsSuccess.Should().BeTrue();
         result.Value.NewlyPromoted.Should().ContainSingle(s => s.PlayerId == reserve.Id);
 
+        // Scoped to this signup, not the whole table — PostgresFixture shares one database
+        // across every test in the class, so an unscoped count picks up other tests' rows.
+        var promotedSignupId = result.Value.NewlyPromoted.Single().Id;
         var notifications = await db
             .Notifications.AsNoTracking()
-            .Where(n => n.Kind == NotificationKind.ReservePromotion)
+            .Where(n => n.SignupId == promotedSignupId)
             .ToListAsync(ct);
         notifications.Should().ContainSingle();
     }
@@ -268,6 +271,96 @@ public class SignupServiceTests : IClassFixture<PostgresFixture>
 
         result.IsSuccess.Should().BeFalse();
         result.Error.Should().BeOfType<BusinessError.NotYourGuest>();
+    }
+
+    [Fact]
+    public async Task RemoveGuestAsyncCancelsAnUnnamedGuestWithoutTouchingTheInvitersOwnSignup()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 5015, capacity: 5, ct);
+        var inviter = await SeedPlayerAsync(db, telegramUserId: 5015, ct);
+        var service = new SignupService(db, new FakeTimeProvider());
+        await service.JoinAsync(game, inviter.Id, ct);
+        var guest = (await service.BringGuestAsync(game, inviter.Id, ct)).Value;
+
+        var result = await service.RemoveGuestAsync(guest.Id, inviter.Id, ct);
+
+        result.IsSuccess.Should().BeTrue();
+        (await db.Signups.AsNoTracking().SingleAsync(s => s.Id == guest.Id, ct)).CancelledAt.Should().NotBeNull();
+        (await db.Signups.AsNoTracking().SingleAsync(s => s.PlayerId == inviter.Id, ct)).CancelledAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task RemoveGuestAsyncCanPromoteAReserve()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 5016, capacity: 1, ct);
+        var inviter = await SeedPlayerAsync(db, telegramUserId: 5016, ct);
+        var reserve = await SeedPlayerAsync(db, telegramUserId: 50160, ct);
+        var service = new SignupService(db, new FakeTimeProvider());
+        var guest = (await service.BringGuestAsync(game, inviter.Id, ct)).Value; // takes the one seat
+        await service.JoinAsync(game, reserve.Id, ct); // lands in reserve
+
+        var result = await service.RemoveGuestAsync(guest.Id, inviter.Id, ct);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.NewlyPromoted.Should().ContainSingle(s => s.PlayerId == reserve.Id);
+    }
+
+    [Fact]
+    public async Task RemoveGuestAsyncRejectsAnyoneButTheInviter()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 5017, capacity: 5, ct);
+        var inviter = await SeedPlayerAsync(db, telegramUserId: 5017, ct);
+        var stranger = await SeedPlayerAsync(db, telegramUserId: 50170, ct);
+        var service = new SignupService(db, new FakeTimeProvider());
+        var guest = (await service.BringGuestAsync(game, inviter.Id, ct)).Value;
+
+        var result = await service.RemoveGuestAsync(guest.Id, stranger.Id, ct);
+
+        result.IsSuccess.Should().BeFalse();
+        result.Error.Should().BeOfType<BusinessError.NotYourGuest>();
+    }
+
+    [Fact]
+    public async Task RemoveGuestAsyncRejectsAnAlreadyCancelledGuest()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 5018, capacity: 5, ct);
+        var inviter = await SeedPlayerAsync(db, telegramUserId: 5018, ct);
+        var service = new SignupService(db, new FakeTimeProvider());
+        var guest = (await service.BringGuestAsync(game, inviter.Id, ct)).Value;
+        await service.RemoveGuestAsync(guest.Id, inviter.Id, ct);
+
+        var result = await service.RemoveGuestAsync(guest.Id, inviter.Id, ct);
+
+        result.IsSuccess.Should().BeFalse();
+        result.Error.Should().BeOfType<BusinessError.GuestAlreadyResolved>();
+    }
+
+    [Fact]
+    public async Task LoadLiveGuestsAsyncReturnsOnlyThatPlayersLiveGuestsInQueueOrder()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 5019, capacity: 5, ct);
+        var inviter = await SeedPlayerAsync(db, telegramUserId: 5019, ct);
+        var someoneElse = await SeedPlayerAsync(db, telegramUserId: 50190, ct);
+        var service = new SignupService(db, new FakeTimeProvider());
+        var first = (await service.BringGuestAsync(game, inviter.Id, ct)).Value;
+        var second = (await service.BringGuestAsync(game, inviter.Id, ct)).Value;
+        var cancelled = (await service.BringGuestAsync(game, inviter.Id, ct)).Value;
+        await service.RemoveGuestAsync(cancelled.Id, inviter.Id, ct);
+        await service.BringGuestAsync(game, someoneElse.Id, ct);
+
+        var guests = await service.LoadLiveGuestsAsync(game, inviter.Id, ct);
+
+        guests.Select(g => g.Id).Should().Equal(first.Id, second.Id);
     }
 
     private static async Task<Player> SeedPlayerAsync(QuizrDb db, long telegramUserId, CancellationToken ct)

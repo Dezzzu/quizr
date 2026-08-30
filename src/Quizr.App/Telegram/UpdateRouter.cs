@@ -262,12 +262,14 @@ public sealed class UpdateRouter
             case CallbackData.Drop:
             case CallbackData.ConfirmDrop:
             case CallbackData.Stay:
+            case CallbackData.MyGuests:
                 await HandleGameCallbackAsync(verb, callbackQuery, ct);
                 break;
 
             case CallbackData.SkipGuestName:
             case CallbackData.KeepGuest:
             case CallbackData.RemoveGuestToo:
+            case CallbackData.RemoveGuest:
                 await HandleGuestCallbackAsync(verb, callbackQuery, ct);
                 break;
 
@@ -314,6 +316,10 @@ public sealed class UpdateRouter
 
             case CallbackData.Stay:
                 await HandleStayAsync(callbackQuery, strings, ct);
+                break;
+
+            case CallbackData.MyGuests:
+                await HandleMyGuestsAsync(game, player, callbackQuery, strings, ct);
                 break;
         }
     }
@@ -506,18 +512,110 @@ public sealed class UpdateRouter
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
+    private async Task HandleMyGuestsAsync(
+        Game game,
+        Player player,
+        CallbackQuery callbackQuery,
+        IStringsFor strings,
+        CancellationToken ct
+    )
+    {
+        var guests = await _signups.LoadLiveGuestsAsync(game, player.Id, ct);
+        var chatId = new TelegramChatId(callbackQuery.Message!.Chat.Id);
+        var (text, keyboard) = BuildMyGuestsView(game, guests, strings);
+
+        await _sender.SendAsync(chatId, text, keyboard, ct);
+        await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
+    }
+
+    private static (string Text, InlineKeyboardMarkup Keyboard) BuildMyGuestsView(
+        Game game,
+        IReadOnlyList<Signup> guests,
+        IStringsFor strings
+    )
+    {
+        var encodedTitle = WebUtility.HtmlEncode(game.Title);
+        var text =
+            guests.Count == 0
+                ? strings.Text("MyGuests.Empty", new { Title = encodedTitle })
+                : strings.Text("MyGuests.Header", new { Title = encodedTitle });
+
+        var rows = new List<IEnumerable<InlineKeyboardButton>>();
+        for (var i = 0; i < guests.Count; i++)
+        {
+            var guest = guests[i];
+            var label = guest.GuestName is { } name
+                ? strings.Text("MyGuests.RemoveNamedButton", new { Name = name })
+                : strings.Text("MyGuests.RemoveAnonymousButton", new { Index = i + 1 });
+
+            rows.Add([
+                InlineKeyboardButton.WithCallbackData(label, CallbackData.Format(CallbackData.RemoveGuest, guest.Id)),
+            ]);
+        }
+
+        rows.Add([
+            InlineKeyboardButton.WithCallbackData(
+                strings.Text("MyGuests.AddAnotherButton"),
+                CallbackData.Format(CallbackData.Guest, game.Id)
+            ),
+        ]);
+
+        return (text, new InlineKeyboardMarkup(rows));
+    }
+
+    private async Task HandleRemoveGuestAsync(
+        SignupId guestSignupId,
+        Player player,
+        CallbackQuery callbackQuery,
+        CancellationToken ct
+    )
+    {
+        var chatId = new TelegramChatId(callbackQuery.Message!.Chat.Id);
+        var team = await _db.Teams.FirstAsync(t => t.ChatId == chatId, ct);
+        var strings = _strings.For(team.Locale);
+
+        var result = await _signups.RemoveGuestAsync(guestSignupId, player.Id, ct);
+        if (!result.IsSuccess)
+        {
+            await AnswerAlertAsync(callbackQuery, strings.Text(ErrorKey(result.Error)), ct);
+            return;
+        }
+
+        var outcome = result.Value;
+        var game = await _db.Games.FirstAsync(g => g.Id == outcome.Guest.GameId, ct);
+        await _announcements.RefreshAsync(game, team, ct);
+
+        var remaining = await _signups.LoadLiveGuestsAsync(game, player.Id, ct);
+        var (text, keyboard) = BuildMyGuestsView(game, remaining, strings);
+        await _sender.EditAsync(chatId, new TelegramMessageId(callbackQuery.Message.MessageId), text, keyboard, ct);
+        await _bot.AnswerCallbackQuery(callbackQuery.Id, strings.Text("MyGuests.Removed"), cancellationToken: ct);
+
+        foreach (var promoted in outcome.NewlyPromoted)
+        {
+            await SendPromotionMessageAsync(chatId, promoted, strings, ct);
+        }
+    }
+
     private async Task HandleGuestCallbackAsync(char verb, CallbackQuery callbackQuery, CancellationToken ct)
     {
         _ = CallbackData.TryParse(callbackQuery.Data!, out _, out SignupId signupId);
         var player = await _playerBootstrap.GetOrCreateAsync(callbackQuery.From, ct);
 
-        if (verb == CallbackData.SkipGuestName)
+        switch (verb)
         {
-            await HandleSkipGuestNameAsync(player, callbackQuery, ct);
-            return;
-        }
+            case CallbackData.SkipGuestName:
+                await HandleSkipGuestNameAsync(player, callbackQuery, ct);
+                break;
 
-        await HandleGuestChoiceAsync(signupId, verb == CallbackData.KeepGuest, player, callbackQuery, ct);
+            case CallbackData.KeepGuest:
+            case CallbackData.RemoveGuestToo:
+                await HandleGuestChoiceAsync(signupId, verb == CallbackData.KeepGuest, player, callbackQuery, ct);
+                break;
+
+            case CallbackData.RemoveGuest:
+                await HandleRemoveGuestAsync(signupId, player, callbackQuery, ct);
+                break;
+        }
     }
 
     private async Task HandleSkipGuestNameAsync(Player player, CallbackQuery callbackQuery, CancellationToken ct)

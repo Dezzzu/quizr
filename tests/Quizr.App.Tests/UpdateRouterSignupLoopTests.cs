@@ -93,7 +93,11 @@ public class UpdateRouterSignupLoopTests : IClassFixture<PostgresFixture>
         await router.RouteAsync(MessageUpdate(7003, 7003, "Alice", "Sasha"), ct);
         await FlushDebouncedEditsAsync(bot, clock, ct);
 
-        (await db.DialogStates.CountAsync(ct)).Should().Be(0);
+        // Scoped to this chat — PostgresFixture shares one database across every test in the
+        // class, so an unscoped count picks up other tests' dialogs too.
+        (await db.DialogStates.CountAsync(d => d.ChatId == new TelegramChatId(7003), ct))
+            .Should()
+            .Be(0);
         var guest = await db.Signups.AsNoTracking().SingleAsync(s => s.GameId == game.Id && s.PlayerId == null, ct);
         guest.GuestName.Should().Be("Sasha");
         bot.EditedTexts()
@@ -132,7 +136,7 @@ public class UpdateRouterSignupLoopTests : IClassFixture<PostgresFixture>
             ct
         );
 
-        (await db.DialogStates.CountAsync(ct)).Should().Be(0);
+        (await db.DialogStates.CountAsync(d => d.ChatId == new TelegramChatId(7004), ct)).Should().Be(0);
         (await db.Signups.AsNoTracking().SingleAsync(s => s.Id == guest.Id, ct)).GuestName.Should().BeNull();
     }
 
@@ -319,6 +323,95 @@ public class UpdateRouterSignupLoopTests : IClassFixture<PostgresFixture>
         var kept = await db.Signups.AsNoTracking().SingleAsync(s => s.Id == guest.Id, ct);
         kept.CancelledAt.Should().BeNull();
         kept.InvitedByPlayerId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task AGuestCanBeRemovedWithoutDroppingTheInviter()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 7010, capacity: 5, ct);
+        var (router, bot, _) = CreateRouter(db);
+        await router.RouteAsync(
+            CallbackUpdate(
+                7010,
+                7010,
+                "Alice",
+                CallbackData.Format(CallbackData.Join, game.Id),
+                announcementMessageId: 1
+            ),
+            ct
+        );
+        await router.RouteAsync(
+            CallbackUpdate(
+                7010,
+                7010,
+                "Alice",
+                CallbackData.Format(CallbackData.Guest, game.Id),
+                announcementMessageId: 1
+            ),
+            ct
+        );
+        var guest = await db.Signups.AsNoTracking().SingleAsync(s => s.GameId == game.Id && s.PlayerId == null, ct);
+
+        await router.RouteAsync(
+            CallbackUpdate(
+                7010,
+                7010,
+                "Alice",
+                CallbackData.Format(CallbackData.MyGuests, game.Id),
+                announcementMessageId: 1
+            ),
+            ct
+        );
+        bot.SentTexts().Should().Contain(text => text.Contains("Your guests", StringComparison.Ordinal));
+
+        await router.RouteAsync(
+            CallbackUpdate(
+                7010,
+                7010,
+                "Alice",
+                CallbackData.Format(CallbackData.RemoveGuest, guest.Id),
+                announcementMessageId: 3
+            ),
+            ct
+        );
+
+        (await db.Signups.AsNoTracking().SingleAsync(s => s.Id == guest.Id, ct)).CancelledAt.Should().NotBeNull();
+        (await db.Signups.AsNoTracking().SingleAsync(s => s.PlayerId != null, ct)).CancelledAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task AddingASecondGuestFromTheMyGuestsViewWorksJustLikeTheAnnouncementButton()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 7011, capacity: 5, ct);
+        var (router, _, _) = CreateRouter(db);
+        await router.RouteAsync(
+            CallbackUpdate(
+                7011,
+                7011,
+                "Alice",
+                CallbackData.Format(CallbackData.Guest, game.Id),
+                announcementMessageId: 1
+            ),
+            ct
+        );
+
+        // The "Add another guest" button on the My guests view reuses the same Guest verb.
+        await router.RouteAsync(
+            CallbackUpdate(
+                7011,
+                7011,
+                "Alice",
+                CallbackData.Format(CallbackData.Guest, game.Id),
+                announcementMessageId: 1
+            ),
+            ct
+        );
+
+        (await db.Signups.AsNoTracking().CountAsync(s => s.GameId == game.Id && s.PlayerId == null, ct)).Should().Be(2);
     }
 
     private static (UpdateRouter Router, ITelegramBotClient Bot, FakeTimeProvider Clock) CreateRouter(QuizrDb db)

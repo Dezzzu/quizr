@@ -20,6 +20,7 @@
   "Announcement.TeamGuest": "{Name} (team guest)",
   "Announcement.JoinButton": "✅ I'm in",
   "Announcement.GuestButton": "➕ Bring a friend",
+  "Announcement.MyGuestsButton": "👥 My guests",
   "Announcement.DropButton": "❌ Can't make it",
   "Announcement.Joined": "You're in!",
   "Announcement.GuestAdded": "Guest added!",
@@ -39,6 +40,13 @@
   "Guest.RemoveButton": "Remove {Name} too",
   "Guest.Kept": "{Name} is staying as a team guest.",
   "Guest.Removed": "{Name} has been removed too.",
+
+  "MyGuests.Header": "Your guests for {Title}:",
+  "MyGuests.Empty": "You haven't brought any guests to {Title} yet.",
+  "MyGuests.RemoveNamedButton": "❌ Remove {Name}",
+  "MyGuests.RemoveAnonymousButton": "❌ Remove guest #{Index}",
+  "MyGuests.AddAnotherButton": "➕ Add another guest",
+  "MyGuests.Removed": "Removed.",
 
   "Promotion.Message": "🎉 {Who} moved up to Playing!",
 
