@@ -22,6 +22,11 @@ internal static class IdConverters
 
     public static readonly ValueConverter<SignupId, long> Signup = new(id => id.Value, value => new SignupId(value));
 
+    public static readonly ValueConverter<ParticipationId, long> Participation = new(
+        id => id.Value,
+        value => new ParticipationId(value)
+    );
+
     public static readonly ValueConverter<TelegramUserId, long> TelegramUser = new(
         id => id.Value,
         value => new TelegramUserId(value)

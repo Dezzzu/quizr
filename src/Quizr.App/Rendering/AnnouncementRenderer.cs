@@ -62,16 +62,24 @@ internal static class AnnouncementRenderer
         return text.ToString().TrimEnd();
     }
 
-    // Null once a game has finished (invariant 8) — self-serve is over, so there's nothing
-    // left for a button to do.
-    public static InlineKeyboardMarkup? RenderKeyboard(Game game, IStringsFor strings)
+    // Self-serve buttons before a game finishes (invariant 8); after, just the captain-only
+    // door into the Manage roster view (design decision #4) replaces them.
+    public static InlineKeyboardMarkup RenderKeyboard(Game game, IStringsFor strings)
     {
+        var gameId = game.Id;
+
         if (game.IsFinished)
         {
-            return null;
+            return new([
+                [
+                    InlineKeyboardButton.WithCallbackData(
+                        strings.Text("Announcement.ManageRosterButton"),
+                        CallbackData.Format(CallbackData.ManageRoster, gameId)
+                    ),
+                ],
+            ]);
         }
 
-        var gameId = game.Id;
         return new([
             [
                 InlineKeyboardButton.WithCallbackData(
@@ -93,6 +101,10 @@ internal static class AnnouncementRenderer
                 InlineKeyboardButton.WithCallbackData(
                     strings.Text("Announcement.DropButton"),
                     CallbackData.Format(CallbackData.Drop, gameId)
+                ),
+                InlineKeyboardButton.WithCallbackData(
+                    strings.Text("Announcement.NudgeButton"),
+                    CallbackData.Format(CallbackData.Nudge, gameId)
                 ),
             ],
         ]);

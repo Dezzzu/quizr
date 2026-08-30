@@ -12,6 +12,8 @@ public readonly record struct GameId(long Value);
 
 public readonly record struct SignupId(long Value);
 
+public readonly record struct ParticipationId(long Value);
+
 public readonly record struct TelegramUserId(long Value);
 
 public readonly record struct TelegramChatId(long Value);

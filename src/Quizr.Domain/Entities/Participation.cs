@@ -4,11 +4,15 @@ namespace Quizr.Domain.Entities;
 // never signups. See CLAUDE.md invariants 9-11.
 public sealed class Participation
 {
-    public long Id { get; set; }
+    public ParticipationId Id { get; set; }
     public required GameId GameId { get; set; }
+
+    // Requires .Include(p => p.Game); null only means "not loaded".
+    public Game Game { get; set; } = null!;
 
     // Null for guests and venue-assigned.
     public PlayerId? PlayerId { get; set; }
+    public Player? Player { get; set; }
 
     // For rows with no player.
     public string? Name { get; set; }

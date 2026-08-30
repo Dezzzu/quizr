@@ -61,7 +61,7 @@ public class UpdateRouterTests : IClassFixture<PostgresFixture>
     }
 
     [Fact]
-    public async Task NewGameIsAcceptedAsAStubOnceATimeZoneIsSet()
+    public async Task NewGameOffersTheBranchChoiceOnceATimeZoneIsSet()
     {
         var ct = TestContext.Current.CancellationToken;
         await using var db = _fixture.CreateContext();
@@ -72,7 +72,10 @@ public class UpdateRouterTests : IClassFixture<PostgresFixture>
 
         await router.RouteAsync(MessageUpdate(4004, 4004, "/newgame"), ct);
 
-        bot.SentTexts().Should().ContainSingle(text => text.Contains("isn't built yet", StringComparison.Ordinal));
+        bot.SentTexts().Should().ContainSingle(text => text.Contains("franchise", StringComparison.OrdinalIgnoreCase));
+        (await db.DialogStates.SingleOrDefaultAsync(d => d.ChatId == new TelegramChatId(4004), ct))
+            .Should()
+            .NotBeNull();
     }
 
     [Fact]
@@ -114,6 +117,9 @@ public class UpdateRouterTests : IClassFixture<PostgresFixture>
         var playerBootstrap = new PlayerBootstrapService(db, clock);
         var teamGuard = new TeamGuard(db, bot);
         var signups = new SignupService(db, clock);
+        var franchises = new FranchiseService(db, clock);
+        var games = new GameService(db, clock);
+        var participations = new ParticipationService(db, clock);
         var announcements = new AnnouncementService(db, sender, strings);
         var board = new BoardService(db, sender, bot, strings);
 
@@ -126,6 +132,9 @@ public class UpdateRouterTests : IClassFixture<PostgresFixture>
             playerBootstrap,
             teamGuard,
             signups,
+            franchises,
+            games,
+            participations,
             announcements,
             board,
             clock,

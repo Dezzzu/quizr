@@ -51,7 +51,6 @@ public class StringsTests
             "Setup.TimeZoneInvalid",
             "NewGame.NeedsTimeZone",
             "NewGame.NotCaptain",
-            "NewGame.NotBuiltYet",
             "Error.Generic",
         };
 

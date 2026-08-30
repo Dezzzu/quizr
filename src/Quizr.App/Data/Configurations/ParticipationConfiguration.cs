@@ -9,13 +9,13 @@ internal sealed class ParticipationConfiguration : IEntityTypeConfiguration<Part
     public void Configure(EntityTypeBuilder<Participation> builder)
     {
         builder.HasKey(p => p.Id);
-        builder.Property(p => p.Id).ValueGeneratedOnAdd();
+        builder.Property(p => p.Id).HasConversion(IdConverters.Participation).ValueGeneratedOnAdd();
 
         builder.Property(p => p.GameId).HasConversion(IdConverters.Game);
         builder.HasIndex(p => p.GameId);
-        builder.HasOne<Game>().WithMany().HasForeignKey(p => p.GameId);
+        builder.HasOne(p => p.Game).WithMany(g => g.Participations).HasForeignKey(p => p.GameId);
 
         builder.Property(p => p.PlayerId).HasConversion(IdConverters.Player);
-        builder.HasOne<Player>().WithMany().HasForeignKey(p => p.PlayerId);
+        builder.HasOne(p => p.Player).WithMany().HasForeignKey(p => p.PlayerId);
     }
 }

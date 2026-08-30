@@ -20,6 +20,7 @@ public sealed class Game
     public Franchise? Franchise { get; set; }
 
     public List<Signup> Signups { get; set; } = [];
+    public List<Participation> Participations { get; set; } = [];
 
     public required string Title { get; set; }
     public required string Venue { get; set; }

@@ -26,4 +26,13 @@ public abstract record BusinessError
     // The guest is already cancelled, already has an owner, or was never a named guest
     // awaiting a keep-or-drop decision.
     public sealed record GuestAlreadyResolved : BusinessError;
+
+    // Nudge has a 5-minute cooldown (CLAUDE.md's ~20 messages/minute/group limit) — not
+    // deduplication, so a captain can always send another once it's passed.
+    public sealed record NudgeOnCooldown : BusinessError;
+
+    // Participation rows only exist once a game is finished (invariant 10) — before that,
+    // the roster is derived from signups, and there's nothing here to add a venue-assigned
+    // row to.
+    public sealed record GameNotFinished : BusinessError;
 }

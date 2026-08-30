@@ -426,6 +426,9 @@ public class UpdateRouterSignupLoopTests : IClassFixture<PostgresFixture>
         var playerBootstrap = new PlayerBootstrapService(db, clock);
         var teamGuard = new TeamGuard(db, bot);
         var signups = new SignupService(db, clock);
+        var franchises = new FranchiseService(db, clock);
+        var games = new GameService(db, clock);
+        var participations = new ParticipationService(db, clock);
         var announcements = new AnnouncementService(db, sender, strings);
         var board = new BoardService(db, sender, bot, strings);
 
@@ -438,6 +441,9 @@ public class UpdateRouterSignupLoopTests : IClassFixture<PostgresFixture>
             playerBootstrap,
             teamGuard,
             signups,
+            franchises,
+            games,
+            participations,
             announcements,
             board,
             clock,
