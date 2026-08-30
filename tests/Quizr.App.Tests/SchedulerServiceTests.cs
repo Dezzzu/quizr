@@ -297,6 +297,64 @@ public class SchedulerServiceTests
         bot.SentTexts(9018).Should().ContainSingle(t => t.Contains("No upcoming games yet", StringComparison.Ordinal));
     }
 
+    [Test]
+    public async Task ADialogUntouchedForTwentyMinutesIsExpired()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 9021, ct);
+        var player = await SeedPlayerAsync(db, telegramUserId: 9021, ct);
+        var now = DateTimeOffset.UtcNow;
+        db.DialogStates.Add(
+            new DialogState
+            {
+                TeamId = team.Id,
+                PlayerId = player.Id,
+                ChatId = team.ChatId,
+                Kind = DialogKinds.NewFranchise,
+                Step = "",
+                Data = "{}",
+                CreatedAt = now.AddMinutes(-25),
+                UpdatedAt = now.AddMinutes(-21),
+            }
+        );
+        await db.SaveChangesAsync(ct);
+        var (scheduler, _) = CreateScheduler(db, now);
+
+        await scheduler.RunTickAsync(ct);
+
+        (await db.DialogStates.CountAsync(d => d.TeamId == team.Id, ct)).Should().Be(0);
+    }
+
+    [Test]
+    public async Task ADialogUpdatedRecentlySurvivesTheTick()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 9022, ct);
+        var player = await SeedPlayerAsync(db, telegramUserId: 9022, ct);
+        var now = DateTimeOffset.UtcNow;
+        db.DialogStates.Add(
+            new DialogState
+            {
+                TeamId = team.Id,
+                PlayerId = player.Id,
+                ChatId = team.ChatId,
+                Kind = DialogKinds.NewFranchise,
+                Step = "",
+                Data = "{}",
+                CreatedAt = now.AddMinutes(-5),
+                UpdatedAt = now.AddMinutes(-5),
+            }
+        );
+        await db.SaveChangesAsync(ct);
+        var (scheduler, _) = CreateScheduler(db, now);
+
+        await scheduler.RunTickAsync(ct);
+
+        (await db.DialogStates.CountAsync(d => d.TeamId == team.Id, ct)).Should().Be(1);
+    }
+
     // Telegram permanently invalidates a group's chat id the moment it's upgraded to a
     // supergroup — every send against the old id then fails with exactly this, forever, with
     // no way to recover on its own unless the stored id gets corrected.

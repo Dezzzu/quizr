@@ -80,6 +80,205 @@ public class UpdateRouterTests
             .NotBeNull();
     }
 
+    // "skip" is the path every real user actually has — Telegram clients won't let you send a
+    // truly empty message, so a blank reply is only reachable from a test or API client.
+    [Test]
+    public async Task NewFranchiseAcceptsSkipForVenueCapacityAndSchedule()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedCaptainedTeamAsync(db, chatId: 4025, telegramUserId: 4025, ct);
+        var (router, _) = CreateRouter(db);
+
+        await router.RouteAsync(MessageUpdate(4025, 4025, "/newfranchise"), ct);
+        await router.RouteAsync(MessageUpdate(4025, 4025, "Travelling Quiz"), ct);
+        await router.RouteAsync(MessageUpdate(4025, 4025, "skip"), ct); // no venue
+        await router.RouteAsync(MessageUpdate(4025, 4025, "SKIP"), ct); // no capacity
+        await router.RouteAsync(MessageUpdate(4025, 4025, "skip"), ct); // no price
+        await router.RouteAsync(MessageUpdate(4025, 4025, "skip"), ct); // no schedule
+
+        var franchise = await db.Franchises.AsNoTracking().SingleAsync(f => f.TeamId == team.Id, ct);
+        franchise.DefaultVenue.Should().BeNull();
+        franchise.DefaultCapacity.Should().BeNull();
+        franchise.Schedule.Should().BeEmpty();
+    }
+
+    // Taps the actual rendered Skip button rather than typing the word — proves the button is
+    // really wired to the same skip behavior, not just that the keyword works.
+    [Test]
+    public async Task TappingTheSkipButtonSkipsTheVenuePrompt()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedCaptainedTeamAsync(db, chatId: 4029, telegramUserId: 4029, ct);
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(MessageUpdate(4029, 4029, "/newfranchise"), ct);
+        await router.RouteAsync(MessageUpdate(4029, 4029, "Travelling Quiz"), ct);
+
+        var skipData = bot.LastSentKeyboard(4029)!
+            .InlineKeyboard.SelectMany(row => row)
+            .Single(b => b.CallbackData!.StartsWith($"{CallbackData.Skip}:", StringComparison.Ordinal))
+            .CallbackData!;
+        await router.RouteAsync(CallbackUpdate(4029, 4029, skipData), ct);
+        await router.RouteAsync(MessageUpdate(4029, 4029, "20"), ct); // capacity
+        await router.RouteAsync(MessageUpdate(4029, 4029, "skip"), ct); // price
+        await router.RouteAsync(MessageUpdate(4029, 4029, "skip"), ct); // schedule
+
+        var franchise = await db.Franchises.AsNoTracking().SingleAsync(f => f.TeamId == team.Id, ct);
+        franchise.DefaultVenue.Should().BeNull();
+        franchise.DefaultCapacity.Should().Be(20);
+    }
+
+    // Venue and capacity overrides on the confirm screen aren't skippable — Confirm requires
+    // both, so the prompt must not offer a way to clear them back to unset.
+    [Test]
+    public async Task TheVenueOverridePromptHasCancelButNoSkipButton()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedCaptainedTeamAsync(db, chatId: 4030, telegramUserId: 4030, ct);
+        team.TimeZoneId = "Europe/Berlin";
+        await db.SaveChangesAsync(ct);
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(MessageUpdate(4030, 4030, "/newgame"), ct);
+        await router.RouteAsync(CallbackUpdate(4030, 4030, CallbackData.Format(CallbackData.OneOff, 0L)), ct);
+        await router.RouteAsync(MessageUpdate(4030, 4030, "One-off quiz"), ct);
+        await router.RouteAsync(MessageUpdate(4030, 4030, "The Pub"), ct);
+        await router.RouteAsync(MessageUpdate(4030, 4030, "2026-09-12"), ct);
+        await router.RouteAsync(MessageUpdate(4030, 4030, "19:00"), ct);
+        await router.RouteAsync(MessageUpdate(4030, 4030, "20"), ct);
+        await router.RouteAsync(MessageUpdate(4030, 4030, "skip"), ct); // price -> lands on Confirm
+
+        await router.RouteAsync(
+            CallbackUpdate(4030, 4030, CallbackData.Format(CallbackData.EditField, NewGameDialogData.OverrideVenue)),
+            ct
+        );
+
+        var buttons = bot.LastSentKeyboard(4030)!.InlineKeyboard.SelectMany(row => row).ToList();
+        buttons
+            .Should()
+            .ContainSingle(b => b.CallbackData!.StartsWith($"{CallbackData.CancelDialog}:", StringComparison.Ordinal));
+        buttons.Should().NotContain(b => b.CallbackData!.StartsWith($"{CallbackData.Skip}:", StringComparison.Ordinal));
+    }
+
+    // Tapping Cancel abandons the whole creation, from any step — not just the confirm screen.
+    [Test]
+    public async Task CancelButtonAbandonsANewGameMidWizard()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedCaptainedTeamAsync(db, chatId: 4031, telegramUserId: 4031, ct);
+        team.TimeZoneId = "Europe/Berlin";
+        await db.SaveChangesAsync(ct);
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(MessageUpdate(4031, 4031, "/newgame"), ct);
+        await router.RouteAsync(CallbackUpdate(4031, 4031, CallbackData.Format(CallbackData.OneOff, 0L)), ct);
+        await router.RouteAsync(MessageUpdate(4031, 4031, "One-off quiz"), ct);
+
+        var cancelData = bot.LastSentKeyboard(4031)!
+            .InlineKeyboard.SelectMany(row => row)
+            .Single(b => b.CallbackData!.StartsWith($"{CallbackData.CancelDialog}:", StringComparison.Ordinal))
+            .CallbackData!;
+        await router.RouteAsync(CallbackUpdate(4031, 4031, cancelData), ct);
+
+        (await db.DialogStates.CountAsync(d => d.ChatId == new TelegramChatId(4031), ct)).Should().Be(0);
+        (await db.Games.CountAsync(g => g.TeamId == team.Id, ct)).Should().Be(0);
+    }
+
+    // Covers both new capabilities together: a franchise with no fixed schedule needs a
+    // custom date (there are no predefined ones to pick from), and one with no default
+    // venue/capacity must have both filled in as overrides before Confirm is allowed to
+    // create anything.
+    [Test]
+    public async Task NewGameFromAFranchiseWithNoDefaultsNeedsACustomDateAndBothOverridesBeforeCreating()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedCaptainedTeamAsync(db, chatId: 4026, telegramUserId: 4026, ct);
+        team.TimeZoneId = "Europe/Berlin";
+        var franchise = new Franchise
+        {
+            TeamId = team.Id,
+            Name = "Travelling Quiz",
+            DefaultVenue = null,
+            DefaultCapacity = null,
+            Schedule = [],
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+        db.Franchises.Add(franchise);
+        await db.SaveChangesAsync(ct);
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(MessageUpdate(4026, 4026, "/newgame"), ct);
+        await router.RouteAsync(
+            CallbackUpdate(4026, 4026, CallbackData.Format(CallbackData.PickFranchise, franchise.Id)),
+            ct
+        );
+        await router.RouteAsync(CallbackUpdate(4026, 4026, CallbackData.Format(CallbackData.CustomDate, 0L)), ct);
+        await router.RouteAsync(MessageUpdate(4026, 4026, "2026-09-12"), ct);
+        await router.RouteAsync(MessageUpdate(4026, 4026, "19:00"), ct);
+
+        // Confirm is rejected — neither Venue nor Capacity is set yet.
+        var confirmData = CallbackData.Format(CallbackData.Confirm, 0L);
+        await router.RouteAsync(CallbackUpdate(4026, 4026, confirmData), ct);
+        bot.AnsweredCallbackAlerts().Should().ContainSingle();
+        (await db.Games.CountAsync(g => g.TeamId == team.Id, ct)).Should().Be(0);
+
+        await router.RouteAsync(
+            CallbackUpdate(4026, 4026, CallbackData.Format(CallbackData.EditField, NewGameDialogData.OverrideVenue)),
+            ct
+        );
+        await router.RouteAsync(MessageUpdate(4026, 4026, "The Travelling Pub"), ct);
+        await router.RouteAsync(
+            CallbackUpdate(4026, 4026, CallbackData.Format(CallbackData.EditField, NewGameDialogData.OverrideCapacity)),
+            ct
+        );
+        await router.RouteAsync(MessageUpdate(4026, 4026, "15"), ct);
+
+        await router.RouteAsync(CallbackUpdate(4026, 4026, confirmData), ct);
+
+        var game = await db.Games.AsNoTracking().SingleAsync(g => g.TeamId == team.Id, ct);
+        game.Venue.Should().Be("The Travelling Pub");
+        game.Capacity.Should().Be(15);
+    }
+
+    [Test]
+    public async Task CancelCommandClearsAnInProgressFranchiseWizard()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedCaptainedTeamAsync(db, chatId: 4027, telegramUserId: 4027, ct);
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(MessageUpdate(4027, 4027, "/newfranchise"), ct);
+        await router.RouteAsync(MessageUpdate(4027, 4027, "Abandoned Franchise"), ct);
+        (await db.DialogStates.CountAsync(d => d.ChatId == new TelegramChatId(4027), ct)).Should().Be(1);
+
+        await router.RouteAsync(MessageUpdate(4027, 4027, "/cancel"), ct);
+
+        (await db.DialogStates.CountAsync(d => d.ChatId == new TelegramChatId(4027), ct)).Should().Be(0);
+        (await db.Franchises.CountAsync(f => f.TeamId == team.Id, ct)).Should().Be(0);
+        bot.SentTexts(4027).Should().Contain(text => text.Contains("Cancelled", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Test]
+    public async Task CancelCommandWithNoActiveDialogSaysSo()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        await SeedCaptainedTeamAsync(db, chatId: 4028, telegramUserId: 4028, ct);
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(MessageUpdate(4028, 4028, "/cancel"), ct);
+
+        bot.SentTexts(4028)
+            .Should()
+            .ContainSingle(text => text.Contains("Nothing", StringComparison.OrdinalIgnoreCase));
+    }
+
     [Test]
     public async Task SetLanguageRejectsAnUnsupportedCode()
     {
@@ -447,6 +646,24 @@ public class UpdateRouterTests
                 From = new User { Id = telegramUserId, FirstName = "Test" },
                 Text = text,
                 Date = DateTime.UtcNow,
+            },
+        };
+
+    private static Update CallbackUpdate(long chatId, long telegramUserId, string data) =>
+        new()
+        {
+            Id = 1,
+            CallbackQuery = new CallbackQuery
+            {
+                Id = "cq1",
+                From = new User { Id = telegramUserId, FirstName = "Test" },
+                Data = data,
+                Message = new Message
+                {
+                    Id = 1,
+                    Chat = new Chat { Id = chatId },
+                    Date = DateTime.UtcNow,
+                },
             },
         };
 }

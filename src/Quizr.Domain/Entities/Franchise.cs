@@ -10,8 +10,12 @@ public sealed class Franchise
     public Team Team { get; set; } = null!;
 
     public required string Name { get; set; }
-    public required string DefaultVenue { get; set; }
-    public int DefaultCapacity { get; set; }
+
+    // Venue and capacity are optional the way price already was — a captain may not know
+    // them yet, or the franchise may not have a fixed one. A game created from a franchise
+    // with either unset must have it filled in as an override before it can be created.
+    public string? DefaultVenue { get; set; }
+    public int? DefaultCapacity { get; set; }
     public decimal? DefaultPrice { get; set; }
 
     // An absent day is one the franchise doesn't run.

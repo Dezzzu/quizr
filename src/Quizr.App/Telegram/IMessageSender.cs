@@ -7,8 +7,13 @@ using Telegram.Bot.Types.ReplyMarkups;
 
 namespace Quizr.App.Telegram;
 
-// The one place that sends or edits a chat message. Sends go straight through; edits go
-// through the debouncer so a burst of changes becomes one edit. HTML parse mode
+// The one place that sends or edits a chat message. Sends go straight through. Of every
+// edited message, only the game announcement can have several different people's edits
+// land on it at once (everyone joining/dropping/bringing a guest to the same game) — that's
+// the one edit that goes through the debouncer (AnnouncementService.RefreshAsync is its sole
+// caller). Every other edited message belongs to a single dialog or menu that only its own
+// opener can ever tap into, so it uses TryEditImmediatelyAsync instead — there's no burst
+// from anyone else to coalesce, so debouncing there would only add latency. HTML parse mode
 // throughout — CLAUDE.md: MarkdownV2's escaping rules eventually break on somebody's name.
 public interface IMessageSender
 {
@@ -27,9 +32,10 @@ public interface IMessageSender
         CancellationToken ct
     );
 
-    // Bypasses the debouncer and reports whether the message still exists to edit — the
-    // Board (BoardService) needs that answer synchronously, to know whether to repost,
-    // which a fire-and-forget debounced edit can never give it.
+    // Bypasses the debouncer and reports whether the message still exists to edit. Board
+    // needs that answer synchronously, to know whether to repost. Every private dialog/menu
+    // edit in UpdateRouter uses this too — same reasoning, plus it means those edits land
+    // without the debounce window's delay.
     Task<bool> TryEditImmediatelyAsync(
         TelegramChatId chatId,
         TelegramMessageId messageId,

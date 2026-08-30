@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Quizr.App.Data;
@@ -12,9 +13,11 @@ using Quizr.App.Data;
 namespace Quizr.App.Data.Migrations
 {
     [DbContext(typeof(QuizrDb))]
-    partial class QuizrDbModelSnapshot : ModelSnapshot
+    [Migration("20260830185944_FilterFranchiseNameIndexToLiveOnly")]
+    partial class FilterFranchiseNameIndexToLiveOnly
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -126,13 +129,14 @@ namespace Quizr.App.Data.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<int?>("DefaultCapacity")
+                    b.Property<int>("DefaultCapacity")
                         .HasColumnType("integer");
 
                     b.Property<decimal?>("DefaultPrice")
                         .HasColumnType("numeric");
 
                     b.Property<string>("DefaultVenue")
+                        .IsRequired()
                         .HasColumnType("text");
 
                     b.Property<string>("Name")

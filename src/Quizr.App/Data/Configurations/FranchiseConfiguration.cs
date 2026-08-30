@@ -12,7 +12,11 @@ internal sealed class FranchiseConfiguration : IEntityTypeConfiguration<Franchis
         builder.Property(f => f.Id).HasConversion(IdConverters.Franchise).ValueGeneratedOnAdd();
 
         builder.Property(f => f.TeamId).HasConversion(IdConverters.Team);
-        builder.HasIndex(f => new { f.TeamId, f.Name }).IsUnique();
+
+        // Filtered so an archived franchise's name is free to reuse (nothing is ever deleted
+        // — invariant 7 — but an archived name shouldn't block a live one). Only live
+        // franchises need to be unique against each other.
+        builder.HasIndex(f => new { f.TeamId, f.Name }).IsUnique().HasFilter("\"ArchivedAt\" IS NULL");
         builder.HasOne(f => f.Team).WithMany(t => t.Franchises).HasForeignKey(f => f.TeamId);
 
         builder

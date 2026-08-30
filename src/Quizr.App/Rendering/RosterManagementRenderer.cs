@@ -36,7 +36,11 @@ internal static class RosterManagementRenderer
         return text.ToString().TrimEnd();
     }
 
-    public static InlineKeyboardMarkup RenderKeyboard(IReadOnlyList<Participation> participations, IStringsFor strings)
+    public static InlineKeyboardMarkup RenderKeyboard(
+        Game game,
+        IReadOnlyList<Participation> participations,
+        IStringsFor strings
+    )
     {
         var rows = new List<IEnumerable<InlineKeyboardButton>>();
 
@@ -61,9 +65,10 @@ internal static class RosterManagementRenderer
         rows.Add([
             InlineKeyboardButton.WithCallbackData(
                 strings.Text("Roster.AddPlayerButton"),
-                CallbackData.Format(CallbackData.AddPlayer, 0L)
+                CallbackData.Format(CallbackData.AddPlayer, game.Id)
             ),
         ]);
+        rows.Add(DoneButton.Row(strings));
 
         return new InlineKeyboardMarkup(rows);
     }

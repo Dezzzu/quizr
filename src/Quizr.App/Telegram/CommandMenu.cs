@@ -23,6 +23,7 @@ internal static class CommandMenu
     public static readonly (string Command, string DescriptionKey)[] EveryoneCommands =
     [
         ("help", "Commands.Help"),
+        ("cancel", "Commands.Cancel"),
         ("mylanguage", "Commands.MyLanguage"),
         ("myreminders", "Commands.MyReminders"),
     ];

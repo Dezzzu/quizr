@@ -114,9 +114,9 @@ public class QuizrDbTests
             TeamId = team.Id,
             FranchiseId = franchise.Id,
             Title = "Квиз, плиз! #1",
-            Venue = franchise.DefaultVenue,
+            Venue = franchise.DefaultVenue!,
             StartsAt = DateTimeOffset.UtcNow.AddDays(1),
-            Capacity = franchise.DefaultCapacity,
+            Capacity = franchise.DefaultCapacity!.Value,
             CreatedAt = DateTimeOffset.UtcNow,
             CreatedByPlayerId = creator.Id,
         };

@@ -34,9 +34,18 @@ internal static class FranchiseRenderer
             text.Append(strings.Text("Franchise.Archived")).Append('\n');
         }
 
-        text.Append(strings.Text("Franchise.Venue", new { Venue = WebUtility.HtmlEncode(franchise.DefaultVenue) }))
+        text.Append(
+                franchise.DefaultVenue is { } venue
+                    ? strings.Text("Franchise.Venue", new { Venue = WebUtility.HtmlEncode(venue) })
+                    : strings.Text("Franchise.NoVenue")
+            )
             .Append('\n');
-        text.Append(strings.Text("Franchise.Capacity", new { Capacity = franchise.DefaultCapacity })).Append('\n');
+        text.Append(
+                franchise.DefaultCapacity is { } capacity
+                    ? strings.Text("Franchise.Capacity", new { Capacity = capacity })
+                    : strings.Text("Franchise.NoCapacity")
+            )
+            .Append('\n');
         text.Append(
                 franchise.DefaultPrice is { } price
                     ? strings.Text("Franchise.Price", new { Price = price })
@@ -91,6 +100,7 @@ internal static class FranchiseRenderer
                     CallbackData.Format(CallbackData.ArchiveFranchise, franchise.Id)
                 ),
             ],
+            DoneButton.Row(strings),
         ]);
 
     private static string FormatSchedule(Dictionary<DayOfWeek, TimeOnly> schedule)

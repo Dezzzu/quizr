@@ -2,6 +2,7 @@ using NSubstitute;
 using Telegram.Bot;
 using Telegram.Bot.Requests;
 using Telegram.Bot.Types;
+using Telegram.Bot.Types.ReplyMarkups;
 
 namespace Quizr.App.Tests;
 
@@ -74,6 +75,17 @@ internal static class TelegramBotClientTestHelper
 
     public static int PinCallCount(this ITelegramBotClient bot) =>
         bot.ReceivedCalls().Select(call => call.GetArguments()[0]).OfType<PinChatMessageRequest>().Count();
+
+    // The real keyboard the bot most recently sent to a chat — for asserting against a
+    // button's actual callback data rather than one a test reconstructs independently, which
+    // would pass even if the render itself encoded the wrong id.
+    public static InlineKeyboardMarkup? LastSentKeyboard(this ITelegramBotClient bot, long chatId) =>
+        bot.ReceivedCalls()
+            .Select(call => call.GetArguments()[0])
+            .OfType<SendMessageRequest>()
+            .Where(request => request.ChatId.Identifier == chatId)
+            .Select(request => request.ReplyMarkup as InlineKeyboardMarkup)
+            .LastOrDefault();
 
     public static IReadOnlyList<EditMessageReplyMarkupRequest> ClearedKeyboards(this ITelegramBotClient bot) =>
         bot.ReceivedCalls()

@@ -25,6 +25,14 @@ internal sealed record NewGameDialogData(
     public const string ChooseBranch = "ChooseBranch";
     public const string PickDate = "PickDate";
 
+    // A franchise-linked game on a date outside its schedule (or a franchise with no
+    // schedule at all — invariant: an absent day is one it doesn't run, and an empty
+    // schedule means none of them are fixed) — same date/time text prompts as the one-off
+    // walk below, just landing on Confirm instead of continuing into Capacity/Price, since
+    // those already came from the franchise's defaults (or wait as overrides on Confirm).
+    public const string FranchiseCustomDate = "FranchiseCustomDate";
+    public const string FranchiseCustomTime = "FranchiseCustomTime";
+
     public const string OneOffTitle = "OneOffTitle";
     public const string OneOffVenue = "OneOffVenue";
     public const string OneOffDate = "OneOffDate";

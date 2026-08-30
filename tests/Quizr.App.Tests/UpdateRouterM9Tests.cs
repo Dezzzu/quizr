@@ -307,6 +307,23 @@ public class UpdateRouterM9Tests
         bot.SentTexts().Should().ContainSingle(text => text.Contains("captain", StringComparison.OrdinalIgnoreCase));
     }
 
+    // /managecaptains was another view with no way to end the interaction — found while
+    // building a shared Done row for the views that already had one.
+    [Test]
+    public async Task DoneClearsTheManageCaptainsKeyboard()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 8021, ct);
+        await SeedCaptainAsync(db, team.Id, telegramUserId: 8021, ct);
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(MessageUpdate(8021, 8021, "/managecaptains"), ct);
+        await router.RouteAsync(CallbackUpdate(8021, 8021, CallbackData.Format(CallbackData.CloseView, 0L)), ct);
+
+        bot.ClearedKeyboards().Should().ContainSingle();
+    }
+
     // Editing a finished game's roster (invariant 11's second half) is also a captain action
     // that affects someone else's record — added to invariant 13's list after the first pass
     // at audit logging turned out to have missed it.
@@ -344,13 +361,47 @@ public class UpdateRouterM9Tests
         await router.RouteAsync(CallbackUpdate(8011, 80111, CallbackData.Format(CallbackData.AddPlayer, game.Id)), ct);
         await router.RouteAsync(MessageUpdate(8011, 80111, "Walk-in Wendy"), ct);
 
-        var added = await db.Participations.AsNoTracking().SingleAsync(p => p.Name == "Walk-in Wendy", ct);
+        var added = await db
+            .Participations.AsNoTracking()
+            .SingleAsync(p => p.GameId == game.Id && p.Name == "Walk-in Wendy", ct);
         added.Kind.Should().Be(ParticipationKind.VenueAssigned);
         var entry = await db.AuditEntries.SingleAsync(
             e => e.GameId == game.Id && e.Action == AuditActions.VenuePlayerAdded,
             ct
         );
         entry.ActorPlayerId.Should().Be(captain.Id);
+    }
+
+    // The roster view's own "Add player" button used to hardcode GameId 0 rather than the
+    // actual game — every prior test (including the one above) built its own correct callback
+    // data by hand instead of tapping the real rendered button, so nothing caught it. This one
+    // taps the button as actually sent.
+    [Test]
+    public async Task TappingAddPlayerFromTheActualRosterKeyboardTargetsTheRightGame()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var (game, _) = await SeedFinishedGameWithParticipationAsync(db, chatId: 8022, ct);
+        await SeedCaptainAsync(db, game.TeamId, telegramUserId: 80221, ct);
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(
+            CallbackUpdate(8022, 80221, CallbackData.Format(CallbackData.ManageRoster, game.Id)),
+            ct
+        );
+
+        var addPlayerData = bot.LastSentKeyboard(8022)!
+            .InlineKeyboard.SelectMany(row => row)
+            .Single(b => b.CallbackData!.StartsWith($"{CallbackData.AddPlayer}:", StringComparison.Ordinal))
+            .CallbackData!;
+        addPlayerData.Should().Be(CallbackData.Format(CallbackData.AddPlayer, game.Id));
+
+        await router.RouteAsync(CallbackUpdate(8022, 80221, addPlayerData), ct);
+        await router.RouteAsync(MessageUpdate(8022, 80221, "Walk-in Wendy"), ct);
+
+        (await db.Participations.AsNoTracking().SingleAsync(p => p.GameId == game.Id && p.Name == "Walk-in Wendy", ct))
+            .Kind.Should()
+            .Be(ParticipationKind.VenueAssigned);
     }
 
     // Manage guests (captain-only): a captain can add a team guest and remove anyone's guest —
@@ -494,6 +545,71 @@ public class UpdateRouterM9Tests
 
         bot.AnsweredCallbackAlerts().Should().ContainSingle();
         (await db.DialogStates.CountAsync(d => d.ChatId == new TelegramChatId(8017), ct)).Should().Be(0);
+    }
+
+    // The field-picker keyboard shown right after /newfranchise finishes is the same one
+    // /editfranchise shows, and its buttons only mean something with an EditFranchise dialog
+    // behind them — a regression test for the one that was missing right after creation.
+    [Test]
+    public async Task TheFieldButtonsShownAfterCreatingAFranchiseActuallyEditIt()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 8019, ct);
+        await SeedCaptainAsync(db, team.Id, telegramUserId: 8019, ct);
+        var (router, _) = CreateRouter(db);
+
+        await router.RouteAsync(MessageUpdate(8019, 8019, "/newfranchise"), ct);
+        await router.RouteAsync(MessageUpdate(8019, 8019, "Quiz Masters"), ct);
+        await router.RouteAsync(MessageUpdate(8019, 8019, "The Original Pub"), ct);
+        await router.RouteAsync(MessageUpdate(8019, 8019, "20"), ct);
+        await router.RouteAsync(MessageUpdate(8019, 8019, "skip"), ct);
+        await router.RouteAsync(MessageUpdate(8019, 8019, "Mon-Fri: 19:00, Sat: 16:00, Sun: 16:00"), ct);
+
+        await router.RouteAsync(
+            CallbackUpdate(8019, 8019, CallbackData.Format(CallbackData.EditField, EditFranchiseDialogData.Venue)),
+            ct
+        );
+        await router.RouteAsync(MessageUpdate(8019, 8019, "The New Pub"), ct);
+
+        (await db.Franchises.AsNoTracking().SingleAsync(f => f.TeamId == team.Id, ct))
+            .DefaultVenue.Should()
+            .Be("The New Pub");
+
+        // A second edit in the same sitting — the field-picker keyboard shown after applying
+        // an edit only means anything while its EditFranchise dialog is still alive, so this
+        // one only passes if that dialog survives the first edit rather than being torn down.
+        await router.RouteAsync(
+            CallbackUpdate(8019, 8019, CallbackData.Format(CallbackData.EditField, EditFranchiseDialogData.Capacity)),
+            ct
+        );
+        await router.RouteAsync(MessageUpdate(8019, 8019, "30"), ct);
+
+        (await db.Franchises.AsNoTracking().SingleAsync(f => f.TeamId == team.Id, ct)).DefaultCapacity.Should().Be(30);
+    }
+
+    [Test]
+    public async Task DoneClearsTheFranchiseEditKeyboardAndTheDialogBehindIt()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 8020, ct);
+        var captain = await SeedCaptainAsync(db, team.Id, telegramUserId: 8020, ct);
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(MessageUpdate(8020, 8020, "/newfranchise"), ct);
+        await router.RouteAsync(MessageUpdate(8020, 8020, "Quiz Masters"), ct);
+        await router.RouteAsync(MessageUpdate(8020, 8020, "The Original Pub"), ct);
+        await router.RouteAsync(MessageUpdate(8020, 8020, "20"), ct);
+        await router.RouteAsync(MessageUpdate(8020, 8020, "skip"), ct);
+        await router.RouteAsync(MessageUpdate(8020, 8020, "Mon-Fri: 19:00, Sat: 16:00, Sun: 16:00"), ct);
+
+        await router.RouteAsync(CallbackUpdate(8020, 8020, CallbackData.Format(CallbackData.CloseView, 0L)), ct);
+
+        bot.ClearedKeyboards().Should().ContainSingle();
+        (await db.DialogStates.CountAsync(d => d.ChatId == new TelegramChatId(8020) && d.PlayerId == captain.Id, ct))
+            .Should()
+            .Be(0);
     }
 
     private static (UpdateRouter Router, ITelegramBotClient Bot) CreateRouter(QuizrDb db)

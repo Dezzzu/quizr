@@ -38,6 +38,16 @@ public class GameServiceTests
             );
     }
 
+    // Regression: an empty schedule used to loop until DateOnly overflowed, since no day of
+    // the week could ever match.
+    [Test]
+    public void NextCandidateDatesReturnsNoneForAnEmptySchedule()
+    {
+        var dates = GameService.NextCandidateDates(new DateOnly(2026, 8, 31), new Dictionary<DayOfWeek, TimeOnly>(), 8);
+
+        dates.Should().BeEmpty();
+    }
+
     [Test]
     public async Task PreviewFranchiseTitleAsyncNumbersSequentially()
     {
@@ -52,8 +62,9 @@ public class GameServiceTests
             franchise,
             $"{franchise.Name} #1",
             new DateOnly(2026, 9, 7),
-            franchise.DefaultVenue,
-            franchise.DefaultCapacity,
+            franchise.Schedule[DayOfWeek.Monday],
+            franchise.DefaultVenue!,
+            franchise.DefaultCapacity!.Value,
             franchise.DefaultPrice,
             null,
             [],
@@ -78,8 +89,9 @@ public class GameServiceTests
             franchise,
             "Квиз, плиз! #1",
             new DateOnly(2026, 9, 7),
-            franchise.DefaultVenue,
-            franchise.DefaultCapacity,
+            franchise.Schedule[DayOfWeek.Monday],
+            franchise.DefaultVenue!,
+            franchise.DefaultCapacity!.Value,
             franchise.DefaultPrice,
             null,
             [],
@@ -90,6 +102,36 @@ public class GameServiceTests
 
         game.FranchiseId.Should().Be(franchise.Id);
         game.StartsAt.Should().Be(new DateTimeOffset(2026, 9, 7, 17, 0, 0, TimeSpan.Zero));
+    }
+
+    // Regression: CreateFromFranchiseAsync used to look the time up from the franchise's own
+    // schedule by day of week, which threw for any custom date/time a captain typed in that
+    // the schedule doesn't cover (invariant: an absent day is one the franchise doesn't run).
+    [Test]
+    public async Task CreateFromFranchiseAsyncAcceptsATimeTheScheduleDoesNotCover()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var (team, franchise, creator) = await SeedFranchiseAsync(db, chatId: 6111, ct);
+        var service = new GameService(db, new FakeTimeProvider());
+
+        // 2026-09-08 is a Tuesday — the franchise only plays Mondays.
+        var game = await service.CreateFromFranchiseAsync(
+            franchise,
+            "Special Tuesday edition",
+            new DateOnly(2026, 9, 8),
+            new TimeOnly(20, 30),
+            franchise.DefaultVenue!,
+            franchise.DefaultCapacity!.Value,
+            franchise.DefaultPrice,
+            null,
+            [],
+            creator.Id,
+            team.TimeZoneId!,
+            ct
+        );
+
+        game.StartsAt.Should().Be(new DateTimeOffset(2026, 9, 8, 18, 30, 0, TimeSpan.Zero));
     }
 
     [Test]

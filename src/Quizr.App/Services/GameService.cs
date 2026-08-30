@@ -22,6 +22,7 @@ public interface IGameService
         Franchise franchise,
         string title,
         DateOnly gameDate,
+        TimeOnly time,
         string venue,
         int capacity,
         decimal? price,
@@ -95,6 +96,14 @@ public sealed class GameService : IGameService
         int count
     )
     {
+        // An empty schedule (a franchise with no fixed days) has no day of the week to ever
+        // match — without this, the loop below would run until DateOnly overflows. Zero
+        // candidates is correct here: the date picker falls back to its own custom-date entry.
+        if (schedule.Count == 0)
+        {
+            return [];
+        }
+
         var dates = new List<DateOnly>();
         var date = from;
         while (dates.Count < count)
@@ -129,6 +138,7 @@ public sealed class GameService : IGameService
         Franchise franchise,
         string title,
         DateOnly gameDate,
+        TimeOnly time,
         string venue,
         int capacity,
         decimal? price,
@@ -139,8 +149,6 @@ public sealed class GameService : IGameService
         CancellationToken ct
     )
     {
-        var time = franchise.Schedule[gameDate.DayOfWeek];
-
         var game = new Game
         {
             TeamId = franchise.TeamId,

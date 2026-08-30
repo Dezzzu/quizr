@@ -180,6 +180,10 @@ public sealed class UpdateRouter
                 await _sender.SendAsync(chatId, BuildHelpText(_strings.For(helpLocale)), null, ct);
                 break;
 
+            case "/cancel" when team is not null && player is not null:
+                await HandleCancelCommandAsync(team, player, chatId, ct);
+                break;
+
             case "/settimezone" when team is not null && player is not null && message.From is not null:
                 await HandleSetTimeZoneAsync(
                     team,
@@ -471,6 +475,7 @@ public sealed class UpdateRouter
                     CallbackData.Format(CallbackData.OneOff, 0L)
                 ),
             },
+            CancelButton.Row(strings),
         };
 
         await _sender.SendAsync(chatId, strings.Text("NewGame.ChooseBranch"), new InlineKeyboardMarkup(keyboard), ct);
@@ -501,7 +506,7 @@ public sealed class UpdateRouter
             ct
         );
 
-        await _sender.SendAsync(chatId, strings.Text("Franchise.AskName"), null, ct);
+        await _sender.SendAsync(chatId, strings.Text("Franchise.AskName"), CancelButton.Keyboard(strings), ct);
     }
 
     private async Task HandleEditFranchiseCommandAsync(
@@ -701,15 +706,16 @@ public sealed class UpdateRouter
                     },
                     ct
                 );
-                await _sender.SendAsync(chatId, strings.Text("Franchise.AskVenue"), null, ct);
+                await _sender.SendAsync(
+                    chatId,
+                    strings.Text("Franchise.AskVenue"),
+                    SkipButton.KeyboardWithCancel(strings),
+                    ct
+                );
                 break;
 
             case NewFranchiseDialogData.AskVenue:
-                if (!FieldParsing.TryParseText(input, out var venue, out var venueError))
-                {
-                    await _sender.SendAsync(chatId, strings.Text(venueError!), null, ct);
-                    return;
-                }
+                _ = FieldParsing.TryParseOptionalText(input, out var venue, out _);
 
                 await SaveDialogDataAsync(
                     dialog,
@@ -720,11 +726,16 @@ public sealed class UpdateRouter
                     },
                     ct
                 );
-                await _sender.SendAsync(chatId, strings.Text("Franchise.AskCapacity"), null, ct);
+                await _sender.SendAsync(
+                    chatId,
+                    strings.Text("Franchise.AskCapacity"),
+                    SkipButton.KeyboardWithCancel(strings),
+                    ct
+                );
                 break;
 
             case NewFranchiseDialogData.AskCapacity:
-                if (!FieldParsing.TryParseCapacity(input, out var capacity, out var capacityError))
+                if (!FieldParsing.TryParseOptionalCapacity(input, out var capacity, out var capacityError))
                 {
                     await _sender.SendAsync(chatId, strings.Text(capacityError!), null, ct);
                     return;
@@ -739,7 +750,12 @@ public sealed class UpdateRouter
                     },
                     ct
                 );
-                await _sender.SendAsync(chatId, strings.Text("Franchise.AskPrice"), null, ct);
+                await _sender.SendAsync(
+                    chatId,
+                    strings.Text("Franchise.AskPrice"),
+                    SkipButton.KeyboardWithCancel(strings),
+                    ct
+                );
                 break;
 
             case NewFranchiseDialogData.AskPrice:
@@ -758,7 +774,12 @@ public sealed class UpdateRouter
                     },
                     ct
                 );
-                await _sender.SendAsync(chatId, strings.Text("Franchise.AskSchedule"), null, ct);
+                await _sender.SendAsync(
+                    chatId,
+                    strings.Text("Franchise.AskSchedule"),
+                    SkipButton.KeyboardWithCancel(strings),
+                    ct
+                );
                 break;
 
             case NewFranchiseDialogData.AskSchedule:
@@ -768,19 +789,42 @@ public sealed class UpdateRouter
                     return;
                 }
 
-                var franchise = await _franchises.CreateAsync(
+                var createResult = await _franchises.CreateAsync(
                     team.Id,
                     data.Name!,
-                    data.Venue!,
-                    data.Capacity!.Value,
+                    data.Venue,
+                    data.Capacity,
                     data.Price,
                     schedule,
                     ct
                 );
-                _db.DialogStates.Remove(dialog);
-                await _db.SaveChangesAsync(ct);
+                if (!createResult.IsSuccess)
+                {
+                    // The wizard has no "go back and change an earlier answer" — the name was
+                    // collected steps ago, and leaving the dialog at AskSchedule would
+                    // misinterpret a retried name as a schedule. Clearing it sends the captain
+                    // back to a clean /newfranchise instead.
+                    _db.DialogStates.Remove(dialog);
+                    await _db.SaveChangesAsync(ct);
+                    await _sender.SendAsync(chatId, strings.Text(ErrorKey(createResult.Error)), null, ct);
+                    return;
+                }
 
+                var franchise = createResult.Value;
                 await _sender.SendAsync(chatId, strings.Text("Franchise.Created"), null, ct);
+
+                // The field-picker keyboard below is the same one /editfranchise shows, and its
+                // buttons (besides Archive, which is self-sufficient) only mean something while
+                // an EditFranchise dialog is active — without starting one here, they'd tap into
+                // nothing.
+                await StartDialogAsync(
+                    team.Id,
+                    dialog.PlayerId,
+                    chatId,
+                    DialogKinds.EditFranchise,
+                    new EditFranchiseDialogData(franchise.Id, null),
+                    ct
+                );
                 await _sender.SendAsync(
                     chatId,
                     FranchiseRenderer.RenderSummary(franchise, strings),
@@ -813,19 +857,18 @@ public sealed class UpdateRouter
             case EditFranchiseDialogData.Name:
                 if (FieldParsing.TryParseText(input, out var name, out errorKey))
                 {
-                    await _franchises.SetNameAsync(franchise, name, ct);
+                    var nameResult = await _franchises.SetNameAsync(franchise, name, ct);
+                    errorKey = nameResult.IsSuccess ? null : ErrorKey(nameResult.Error);
                 }
                 break;
 
             case EditFranchiseDialogData.Venue:
-                if (FieldParsing.TryParseText(input, out var venue, out errorKey))
-                {
-                    await _franchises.SetVenueAsync(franchise, venue, ct);
-                }
+                _ = FieldParsing.TryParseOptionalText(input, out var venue, out errorKey);
+                await _franchises.SetVenueAsync(franchise, venue, ct);
                 break;
 
             case EditFranchiseDialogData.Capacity:
-                if (FieldParsing.TryParseCapacity(input, out var capacity, out errorKey))
+                if (FieldParsing.TryParseOptionalCapacity(input, out var capacity, out errorKey))
                 {
                     await _franchises.SetCapacityAsync(franchise, capacity, ct);
                 }
@@ -855,8 +898,11 @@ public sealed class UpdateRouter
             return;
         }
 
-        _db.DialogStates.Remove(dialog);
-        await _db.SaveChangesAsync(ct);
+        // Reset FieldIndex rather than removing the dialog — the field-picker keyboard below
+        // is about to be shown again, and its buttons (besides Archive) only mean something
+        // with an EditFranchise dialog behind them. Removing it here left every edit after the
+        // first tapping into nothing. The dialog only ends via the picker's own Done button.
+        await SaveDialogDataAsync(dialog, data with { FieldIndex = null }, ct);
 
         await _sender.SendAsync(chatId, strings.Text("Franchise.Updated"), null, ct);
         await _sender.SendAsync(
@@ -879,6 +925,37 @@ public sealed class UpdateRouter
 
         switch (data.Step)
         {
+            case NewGameDialogData.FranchiseCustomDate:
+                if (!FieldParsing.TryParseDate(input, out var customDate, out var customDateError))
+                {
+                    await _sender.SendAsync(chatId, strings.Text(customDateError!), null, ct);
+                    return;
+                }
+
+                await SaveDialogDataAsync(
+                    dialog,
+                    data with
+                    {
+                        Step = NewGameDialogData.FranchiseCustomTime,
+                        Date = customDate,
+                    },
+                    ct
+                );
+                await _sender.SendAsync(chatId, strings.Text("NewGame.AskTime"), CancelButton.Keyboard(strings), ct);
+                break;
+
+            case NewGameDialogData.FranchiseCustomTime:
+                if (!FieldParsing.TryParseTime(input, out var customTime, out var customTimeError))
+                {
+                    await _sender.SendAsync(chatId, strings.Text(customTimeError!), null, ct);
+                    return;
+                }
+
+                var customConfirmData = data with { Step = NewGameDialogData.Confirm, Time = customTime };
+                await SaveDialogDataAsync(dialog, customConfirmData, ct);
+                await SendConfirmScreenAsync(chatId, customConfirmData, strings, ct);
+                break;
+
             case NewGameDialogData.OneOffTitle:
                 if (!FieldParsing.TryParseText(input, out var title, out var titleError))
                 {
@@ -895,7 +972,7 @@ public sealed class UpdateRouter
                     },
                     ct
                 );
-                await _sender.SendAsync(chatId, strings.Text("NewGame.AskVenue"), null, ct);
+                await _sender.SendAsync(chatId, strings.Text("NewGame.AskVenue"), CancelButton.Keyboard(strings), ct);
                 break;
 
             case NewGameDialogData.OneOffVenue:
@@ -906,7 +983,7 @@ public sealed class UpdateRouter
                 }
 
                 await SaveDialogDataAsync(dialog, data with { Step = NewGameDialogData.OneOffDate, Venue = venue }, ct);
-                await _sender.SendAsync(chatId, strings.Text("NewGame.AskDate"), null, ct);
+                await _sender.SendAsync(chatId, strings.Text("NewGame.AskDate"), CancelButton.Keyboard(strings), ct);
                 break;
 
             case NewGameDialogData.OneOffDate:
@@ -925,7 +1002,7 @@ public sealed class UpdateRouter
                     },
                     ct
                 );
-                await _sender.SendAsync(chatId, strings.Text("NewGame.AskTime"), null, ct);
+                await _sender.SendAsync(chatId, strings.Text("NewGame.AskTime"), CancelButton.Keyboard(strings), ct);
                 break;
 
             case NewGameDialogData.OneOffTime:
@@ -944,7 +1021,12 @@ public sealed class UpdateRouter
                     },
                     ct
                 );
-                await _sender.SendAsync(chatId, strings.Text("NewGame.AskCapacity"), null, ct);
+                await _sender.SendAsync(
+                    chatId,
+                    strings.Text("NewGame.AskCapacity"),
+                    CancelButton.Keyboard(strings),
+                    ct
+                );
                 break;
 
             case NewGameDialogData.OneOffCapacity:
@@ -963,7 +1045,12 @@ public sealed class UpdateRouter
                     },
                     ct
                 );
-                await _sender.SendAsync(chatId, strings.Text("NewGame.AskPrice"), null, ct);
+                await _sender.SendAsync(
+                    chatId,
+                    strings.Text("NewGame.AskPrice"),
+                    SkipButton.KeyboardWithCancel(strings),
+                    ct
+                );
                 break;
 
             case NewGameDialogData.OneOffPrice:
@@ -1295,6 +1382,7 @@ public sealed class UpdateRouter
             case CallbackData.ArchiveFranchise:
             case CallbackData.OneOff:
             case CallbackData.PickDate:
+            case CallbackData.CustomDate:
             case CallbackData.EditField:
             case CallbackData.Confirm:
             case CallbackData.CancelDialog:
@@ -1333,6 +1421,10 @@ public sealed class UpdateRouter
 
             case CallbackData.CloseView:
                 await HandleCloseViewAsync(callbackQuery, ct);
+                break;
+
+            case CallbackData.Skip:
+                await HandleSkipAsync(callbackQuery, ct);
                 break;
 
             default:
@@ -1572,7 +1664,7 @@ public sealed class UpdateRouter
         await _announcements.RefreshAsync(game, team, ct);
 
         var chatId = new TelegramChatId(callbackQuery.Message!.Chat.Id);
-        await _sender.EditAsync(
+        await _sender.TryEditImmediatelyAsync(
             chatId,
             new TelegramMessageId(callbackQuery.Message.MessageId),
             strings.Text("Drop.Cancelled"),
@@ -1593,7 +1685,7 @@ public sealed class UpdateRouter
     private async Task HandleStayAsync(CallbackQuery callbackQuery, IStringsFor strings, CancellationToken ct)
     {
         var chatId = new TelegramChatId(callbackQuery.Message!.Chat.Id);
-        await _sender.EditAsync(
+        await _sender.TryEditImmediatelyAsync(
             chatId,
             new TelegramMessageId(callbackQuery.Message.MessageId),
             strings.Text("Drop.StillIn"),
@@ -1650,12 +1742,7 @@ public sealed class UpdateRouter
                 CallbackData.Format(CallbackData.Guest, game.Id)
             ),
         ]);
-        rows.Add([
-            InlineKeyboardButton.WithCallbackData(
-                strings.Text("MyGuests.DoneButton"),
-                CallbackData.Format(CallbackData.CloseView, 0L)
-            ),
-        ]);
+        rows.Add(DoneButton.Row(strings));
 
         return (text, new InlineKeyboardMarkup(rows));
     }
@@ -1684,7 +1771,13 @@ public sealed class UpdateRouter
 
         var remaining = await _signups.LoadLiveGuestsAsync(game, player.Id, ct);
         var (text, keyboard) = BuildMyGuestsView(game, remaining, strings);
-        await _sender.EditAsync(chatId, new TelegramMessageId(callbackQuery.Message.MessageId), text, keyboard, ct);
+        await _sender.TryEditImmediatelyAsync(
+            chatId,
+            new TelegramMessageId(callbackQuery.Message.MessageId),
+            text,
+            keyboard,
+            ct
+        );
         await _bot.AnswerCallbackQuery(callbackQuery.Id, strings.Text("MyGuests.Removed"), cancellationToken: ct);
 
         await SendPromotionMessagesAsync(chatId, outcome.NewlyPromoted, strings, ct);
@@ -1727,7 +1820,7 @@ public sealed class UpdateRouter
 
         var team = await _db.Teams.SingleAsync(t => t.ChatId == chatId, ct);
         var strings = _strings.For(team.Locale);
-        await _sender.EditAsync(
+        await _sender.TryEditImmediatelyAsync(
             chatId,
             new TelegramMessageId(callbackQuery.Message.MessageId),
             strings.Text("Guest.SkippedName"),
@@ -1758,7 +1851,7 @@ public sealed class UpdateRouter
 
         var outcome = result.Value;
         var encodedName = WebUtility.HtmlEncode(outcome.Guest.GuestName);
-        await _sender.EditAsync(
+        await _sender.TryEditImmediatelyAsync(
             chatId,
             new TelegramMessageId(callbackQuery.Message.MessageId),
             strings.Text(keep ? "Guest.Kept" : "Guest.Removed", new { Name = encodedName }),
@@ -1836,6 +1929,10 @@ public sealed class UpdateRouter
 
             case CallbackData.PickDate:
                 await HandlePickDateAsync(dialog, chatId, (int)value, callbackQuery, strings, ct);
+                break;
+
+            case CallbackData.CustomDate:
+                await HandleCustomDateAsync(dialog, chatId, callbackQuery, strings, ct);
                 break;
 
             case CallbackData.EditField:
@@ -1939,8 +2036,8 @@ public sealed class UpdateRouter
         };
         await SaveDialogDataAsync(dialog, updated, ct);
 
-        var keyboard = new InlineKeyboardMarkup(
-            candidateDates.Select(
+        var rows = candidateDates
+            .Select(
                 (date, index) =>
                     new[]
                     {
@@ -1950,8 +2047,42 @@ public sealed class UpdateRouter
                         ),
                     }
             )
-        );
-        await _sender.SendAsync(chatId, strings.Text("NewGame.PickDate"), keyboard, ct);
+            .ToList();
+        rows.Add([
+            InlineKeyboardButton.WithCallbackData(
+                strings.Text("NewGame.CustomDateButton"),
+                CallbackData.Format(CallbackData.CustomDate, 0L)
+            ),
+        ]);
+        rows.Add(CancelButton.Row(strings));
+
+        await _sender.SendAsync(chatId, strings.Text("NewGame.PickDate"), new InlineKeyboardMarkup(rows), ct);
+        await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
+    }
+
+    private async Task HandleCustomDateAsync(
+        DialogState? dialog,
+        TelegramChatId chatId,
+        CallbackQuery callbackQuery,
+        IStringsFor strings,
+        CancellationToken ct
+    )
+    {
+        if (dialog is not { Kind: DialogKinds.NewGame })
+        {
+            await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
+            return;
+        }
+
+        var data = JsonSerializer.Deserialize<NewGameDialogData>(dialog.Data)!;
+        if (data.Step != NewGameDialogData.PickDate)
+        {
+            await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
+            return;
+        }
+
+        await SaveDialogDataAsync(dialog, data with { Step = NewGameDialogData.FranchiseCustomDate }, ct);
+        await _sender.SendAsync(chatId, strings.Text("NewGame.AskDate"), CancelButton.Keyboard(strings), ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
@@ -1971,7 +2102,7 @@ public sealed class UpdateRouter
         }
 
         await _franchises.ArchiveAsync(franchise, ct);
-        await _sender.EditAsync(
+        await _sender.TryEditImmediatelyAsync(
             chatId,
             new TelegramMessageId(callbackQuery.Message!.MessageId),
             strings.Text("Franchise.ArchivedConfirm", new { Name = WebUtility.HtmlEncode(franchise.Name) }),
@@ -2003,7 +2134,7 @@ public sealed class UpdateRouter
         }
 
         await SaveDialogDataAsync(dialog, data with { Step = NewGameDialogData.OneOffTitle }, ct);
-        await _sender.SendAsync(chatId, strings.Text("NewGame.AskTitle"), null, ct);
+        await _sender.SendAsync(chatId, strings.Text("NewGame.AskTitle"), CancelButton.Keyboard(strings), ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
@@ -2058,7 +2189,14 @@ public sealed class UpdateRouter
             {
                 var data = JsonSerializer.Deserialize<EditFranchiseDialogData>(dialog.Data)!;
                 await SaveDialogDataAsync(dialog, data with { FieldIndex = fieldIndex }, ct);
-                await _sender.SendAsync(chatId, strings.Text(FranchiseFieldPromptKey(fieldIndex)), null, ct);
+                await _sender.SendAsync(
+                    chatId,
+                    strings.Text(FranchiseFieldPromptKey(fieldIndex)),
+                    IsFranchiseFieldSkippable(fieldIndex)
+                        ? SkipButton.KeyboardWithCancel(strings)
+                        : CancelButton.Keyboard(strings),
+                    ct
+                );
                 break;
             }
 
@@ -2067,7 +2205,14 @@ public sealed class UpdateRouter
                 var data = JsonSerializer.Deserialize<NewGameDialogData>(dialog.Data)!;
                 var updated = data with { Step = NewGameDialogData.EditingField, EditingFieldIndex = fieldIndex };
                 await SaveDialogDataAsync(dialog, updated, ct);
-                await _sender.SendAsync(chatId, strings.Text(NewGameFieldPromptKey(fieldIndex)), null, ct);
+                await _sender.SendAsync(
+                    chatId,
+                    strings.Text(NewGameFieldPromptKey(fieldIndex)),
+                    IsNewGameOverrideSkippable(fieldIndex)
+                        ? SkipButton.KeyboardWithCancel(strings)
+                        : CancelButton.Keyboard(strings),
+                    ct
+                );
                 break;
             }
 
@@ -2075,7 +2220,14 @@ public sealed class UpdateRouter
             {
                 var data = JsonSerializer.Deserialize<EditGameDialogData>(dialog.Data)!;
                 await SaveDialogDataAsync(dialog, data with { FieldIndex = fieldIndex }, ct);
-                await _sender.SendAsync(chatId, strings.Text(EditGameFieldPromptKey(fieldIndex)), null, ct);
+                await _sender.SendAsync(
+                    chatId,
+                    strings.Text(EditGameFieldPromptKey(fieldIndex)),
+                    IsEditGameFieldSkippable(fieldIndex)
+                        ? SkipButton.KeyboardWithCancel(strings)
+                        : CancelButton.Keyboard(strings),
+                    ct
+                );
                 break;
             }
         }
@@ -2126,6 +2278,29 @@ public sealed class UpdateRouter
             _ => throw new ArgumentOutOfRangeException(nameof(fieldIndex), fieldIndex, "Unknown EditGame field index"),
         };
 
+    // Name isn't skippable — every franchise needs one. Venue, capacity, price, and schedule
+    // all are.
+    private static bool IsFranchiseFieldSkippable(int fieldIndex) =>
+        fieldIndex
+            is EditFranchiseDialogData.Venue
+                or EditFranchiseDialogData.Capacity
+                or EditFranchiseDialogData.Price
+                or EditFranchiseDialogData.Schedule;
+
+    // Venue and capacity aren't skippable here — Confirm requires both set (invariant: every
+    // Game needs a concrete capacity to derive playing/reserve from), so an override on either
+    // must replace it with something, not clear it.
+    private static bool IsNewGameOverrideSkippable(int fieldIndex) =>
+        fieldIndex
+            is NewGameDialogData.OverridePrice
+                or NewGameDialogData.OverrideNotes
+                or NewGameDialogData.OverrideTags;
+
+    // Title, venue, capacity, and start time all keep a live game valid — none are skippable.
+    // Price, notes, and tags are.
+    private static bool IsEditGameFieldSkippable(int fieldIndex) =>
+        fieldIndex is EditGameDialogData.Price or EditGameDialogData.Notes or EditGameDialogData.Tags;
+
     private async Task HandleConfirmNewGameAsync(
         DialogState? dialog,
         Team team,
@@ -2149,6 +2324,14 @@ public sealed class UpdateRouter
             return;
         }
 
+        if (data.Venue is null || data.Capacity is null)
+        {
+            // Only reachable when a franchise left venue or capacity unset — the one-off flow
+            // always collects both before Confirm is even shown.
+            await AnswerAlertAsync(callbackQuery, strings.Text("NewGame.MissingRequiredFields"), ct);
+            return;
+        }
+
         Game game;
         if (data.FranchiseId is { } franchiseId)
         {
@@ -2157,6 +2340,7 @@ public sealed class UpdateRouter
                 franchise,
                 data.Title!,
                 data.Date!.Value,
+                data.Time!.Value,
                 data.Venue!,
                 data.Capacity!.Value,
                 data.Price,
@@ -2200,7 +2384,7 @@ public sealed class UpdateRouter
         await _db.SaveChangesAsync(ct);
         await _board.RefreshAsync(team, ct);
 
-        await _sender.EditAsync(
+        await _sender.TryEditImmediatelyAsync(
             chatId,
             new TelegramMessageId(callbackQuery.Message!.MessageId),
             strings.Text("NewGame.Created"),
@@ -2226,7 +2410,7 @@ public sealed class UpdateRouter
             await _db.SaveChangesAsync(ct);
         }
 
-        await _sender.EditAsync(
+        await _sender.TryEditImmediatelyAsync(
             chatId,
             new TelegramMessageId(callbackQuery.Message!.MessageId),
             strings.Text(key),
@@ -2234,6 +2418,29 @@ public sealed class UpdateRouter
             ct
         );
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
+    }
+
+    // Text-command escape hatch for the plain-text wizard steps (/newfranchise's Name->
+    // Schedule walk, /newgame's one-off Title->Price walk) — those have no button to attach
+    // a Cancel to the way the confirm screen and Nudge picker do, and an abandoned dialog
+    // would otherwise silently swallow whatever the captain sends next.
+    private async Task HandleCancelCommandAsync(Team team, Player player, TelegramChatId chatId, CancellationToken ct)
+    {
+        var strings = _strings.For(team.Locale);
+        var dialog = await _db.DialogStates.SingleOrDefaultAsync(
+            d => d.ChatId == chatId && d.PlayerId == player.Id,
+            ct
+        );
+        if (dialog is null)
+        {
+            await _sender.SendAsync(chatId, strings.Text("Cancel.NothingToCancel"), null, ct);
+            return;
+        }
+
+        var key = dialog.Kind == DialogKinds.Nudge ? "Nudge.Cancelled" : "NewGame.Cancelled";
+        _db.DialogStates.Remove(dialog);
+        await _db.SaveChangesAsync(ct);
+        await _sender.SendAsync(chatId, strings.Text(key), null, ct);
     }
 
     private async Task HandlePickGameToEditAsync(
@@ -2340,7 +2547,7 @@ public sealed class UpdateRouter
         await _sender.SendAsync(
             chatId,
             RosterManagementRenderer.RenderText(game, participations, strings),
-            RosterManagementRenderer.RenderKeyboard(participations, strings),
+            RosterManagementRenderer.RenderKeyboard(game, participations, strings),
             ct
         );
     }
@@ -2418,11 +2625,11 @@ public sealed class UpdateRouter
 
         var game = participation.Game;
         var participations = await LoadParticipationsAsync(game, ct);
-        await _sender.EditAsync(
+        await _sender.TryEditImmediatelyAsync(
             chatId,
             new TelegramMessageId(callbackQuery.Message!.MessageId),
             RosterManagementRenderer.RenderText(game, participations, strings),
-            RosterManagementRenderer.RenderKeyboard(participations, strings),
+            RosterManagementRenderer.RenderKeyboard(game, participations, strings),
             ct
         );
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
@@ -2527,10 +2734,7 @@ public sealed class UpdateRouter
                 strings.Text("Nudge.SendButton"),
                 CallbackData.Format(CallbackData.SendNudge, game.Id)
             ),
-            InlineKeyboardButton.WithCallbackData(
-                strings.Text("Nudge.CancelButton"),
-                CallbackData.Format(CallbackData.CancelDialog, 0L)
-            ),
+            .. CancelButton.Row(strings),
         ]);
 
         return (text, new InlineKeyboardMarkup(rows));
@@ -2605,7 +2809,13 @@ public sealed class UpdateRouter
 
         var playing = (await _games.LoadPlayingMembersAsync(game, ct)).Where(m => m.PlayerId != actorId).ToList();
         var (text, keyboard) = BuildNudgeView(game, playing, selected, strings);
-        await _sender.EditAsync(chatId, new TelegramMessageId(callbackQuery.Message!.MessageId), text, keyboard, ct);
+        await _sender.TryEditImmediatelyAsync(
+            chatId,
+            new TelegramMessageId(callbackQuery.Message!.MessageId),
+            text,
+            keyboard,
+            ct
+        );
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
@@ -2645,7 +2855,7 @@ public sealed class UpdateRouter
             null,
             ct
         );
-        await _sender.EditAsync(
+        await _sender.TryEditImmediatelyAsync(
             chatId,
             new TelegramMessageId(callbackQuery.Message!.MessageId),
             strings.Text("Nudge.PickerClosed"),
@@ -2752,7 +2962,7 @@ public sealed class UpdateRouter
         await _announcements.RefreshAsync(game, team, ct);
         await _board.RefreshAsync(team, ct);
 
-        await _sender.EditAsync(
+        await _sender.TryEditImmediatelyAsync(
             chatId,
             new TelegramMessageId(callbackQuery.Message.MessageId),
             strings.Text("Decline.Declined"),
@@ -2765,7 +2975,7 @@ public sealed class UpdateRouter
     private async Task HandleCancelDeclineAsync(CallbackQuery callbackQuery, IStringsFor strings, CancellationToken ct)
     {
         var chatId = new TelegramChatId(callbackQuery.Message!.Chat.Id);
-        await _sender.EditAsync(
+        await _sender.TryEditImmediatelyAsync(
             chatId,
             new TelegramMessageId(callbackQuery.Message!.MessageId),
             strings.Text("Decline.Cancelled"),
@@ -2922,7 +3132,7 @@ public sealed class UpdateRouter
         }
 
         var statuses = await _games.LoadMemberStatusesAsync(game, ct);
-        await _sender.EditAsync(
+        await _sender.TryEditImmediatelyAsync(
             chatId,
             new TelegramMessageId(callbackQuery.Message!.MessageId),
             ManagePlayersRenderer.RenderText(game, statuses, strings),
@@ -3010,12 +3220,7 @@ public sealed class UpdateRouter
                 CallbackData.Format(CallbackData.AddTeamGuest, game.Id)
             ),
         ]);
-        rows.Add([
-            InlineKeyboardButton.WithCallbackData(
-                strings.Text("ManageGuests.DoneButton"),
-                CallbackData.Format(CallbackData.CloseView, 0L)
-            ),
-        ]);
+        rows.Add(DoneButton.Row(strings));
 
         return (text, new InlineKeyboardMarkup(rows));
     }
@@ -3075,7 +3280,13 @@ public sealed class UpdateRouter
 
         var remaining = await _signups.LoadAllLiveGuestsAsync(game, ct);
         var (text, keyboard) = BuildManageGuestsView(game, remaining, strings);
-        await _sender.EditAsync(chatId, new TelegramMessageId(callbackQuery.Message!.MessageId), text, keyboard, ct);
+        await _sender.TryEditImmediatelyAsync(
+            chatId,
+            new TelegramMessageId(callbackQuery.Message!.MessageId),
+            text,
+            keyboard,
+            ct
+        );
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
 
         await SendPromotionMessagesAsync(chatId, outcome.NewlyPromoted, strings, ct);
@@ -3118,7 +3329,13 @@ public sealed class UpdateRouter
         await _db.SaveChangesAsync(ct);
 
         var (text, keyboard) = BuildReminderSettingsView(membership, strings);
-        await _sender.EditAsync(chatId, new TelegramMessageId(callbackQuery.Message!.MessageId), text, keyboard, ct);
+        await _sender.TryEditImmediatelyAsync(
+            chatId,
+            new TelegramMessageId(callbackQuery.Message!.MessageId),
+            text,
+            keyboard,
+            ct
+        );
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
@@ -3161,12 +3378,7 @@ public sealed class UpdateRouter
                     CallbackData.Format(CallbackData.ToggleReserveReminder, 0L)
                 ),
             ],
-            [
-                InlineKeyboardButton.WithCallbackData(
-                    strings.Text("Reminders.DoneButton"),
-                    CallbackData.Format(CallbackData.CloseView, 0L)
-                ),
-            ],
+            DoneButton.Row(strings),
         ]);
 
         return (strings.Text("Reminders.Header"), keyboard);
@@ -3264,7 +3476,13 @@ public sealed class UpdateRouter
 
         var members = await LoadMembersAsync(team.Id, ct);
         var (text, keyboard) = BuildManageCaptainsView(members, strings);
-        await _sender.EditAsync(chatId, new TelegramMessageId(callbackQuery.Message!.MessageId), text, keyboard, ct);
+        await _sender.TryEditImmediatelyAsync(
+            chatId,
+            new TelegramMessageId(callbackQuery.Message!.MessageId),
+            text,
+            keyboard,
+            ct
+        );
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
@@ -3291,6 +3509,7 @@ public sealed class UpdateRouter
                 }
             )
             .ToList();
+        rows.Add(DoneButton.Row(strings));
 
         return (strings.Text("Captains.Header"), new InlineKeyboardMarkup(rows));
     }
@@ -3366,6 +3585,56 @@ public sealed class UpdateRouter
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
+    // A tap-to-skip alternative to typing "skip" on any optional text prompt — Telegram
+    // clients won't let a captain send a genuinely empty message, so typing the word is the
+    // only reliable fallback, but a button is faster and needs no locale-specific keyword.
+    // Reuses whichever step-reply handler a real "skip" reply would hit, by building the
+    // exact same synthetic input those handlers already read (message.Chat.Id, message.Text)
+    // — no separate skip logic to keep in sync with each field's own parser.
+    private async Task HandleSkipAsync(CallbackQuery callbackQuery, CancellationToken ct)
+    {
+        var chatId = new TelegramChatId(callbackQuery.Message!.Chat.Id);
+        var player = await _playerBootstrap.GetOrCreateAsync(callbackQuery.From, ct);
+        var dialog = await _db.DialogStates.SingleOrDefaultAsync(
+            d => d.ChatId == chatId && d.PlayerId == player.Id,
+            ct
+        );
+        if (dialog is null)
+        {
+            await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
+            return;
+        }
+
+        var syntheticReply = new Message
+        {
+            Id = callbackQuery.Message.MessageId,
+            Chat = callbackQuery.Message.Chat,
+            Date = DateTime.UtcNow,
+            Text = "skip",
+        };
+
+        switch (dialog.Kind)
+        {
+            case DialogKinds.NewFranchise:
+                await HandleNewFranchiseReplyAsync(dialog, syntheticReply, ct);
+                break;
+
+            case DialogKinds.EditFranchise:
+                await HandleEditFranchiseReplyAsync(dialog, syntheticReply, ct);
+                break;
+
+            case DialogKinds.NewGame:
+                await HandleNewGameReplyAsync(dialog, syntheticReply, ct);
+                break;
+
+            case DialogKinds.EditGame:
+                await HandleEditGameReplyAsync(dialog, syntheticReply, ct);
+                break;
+        }
+
+        await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
+    }
+
     private static string ErrorKey(BusinessError error) =>
         error switch
         {
@@ -3379,6 +3648,7 @@ public sealed class UpdateRouter
             BusinessError.NotCaptain => "NewGame.NotCaptain",
             BusinessError.NudgeOnCooldown => "Nudge.OnCooldown",
             BusinessError.GameNotFinished => "Roster.GameNotFinished",
+            BusinessError.FranchiseNameTaken => "Franchise.NameTaken",
             _ => "Error.Generic",
         };
 

@@ -35,4 +35,9 @@ public abstract record BusinessError
     // the roster is derived from signups, and there's nothing here to add a venue-assigned
     // row to.
     public sealed record GameNotFinished : BusinessError;
+
+    // The (TeamId, Name) unique index only covers live franchises (ArchivedAt IS NULL) — an
+    // archived franchise's name is free to reuse. This is what a name collision with a live
+    // one becomes instead of an unhandled unique-constraint exception.
+    public sealed record FranchiseNameTaken : BusinessError;
 }

@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 
 namespace Quizr.App.Validation;
@@ -79,21 +80,23 @@ internal static class FieldParsing
     }
 
     // Unlike TryParseText, an empty reply is valid here — it clears the field (Notes on a
-    // game, e.g.) rather than being rejected.
+    // game, e.g.) rather than being rejected. "skip" (case-insensitive) does the same —
+    // Telegram clients won't let you actually send an empty message, so it's the only
+    // reliable way to skip a text field, not just a courtesy like it is for price/capacity.
     public static bool TryParseOptionalText(string? input, out string? value, out string? errorKey)
     {
         var trimmed = input?.Trim();
-        value = string.IsNullOrEmpty(trimmed) ? null : trimmed;
+        value = IsBlankOrSkip(trimmed) ? null : trimmed;
         errorKey = null;
         return true;
     }
 
     // "music, detective theme" -> two tags. Always succeeds, like TryParseOptionalText — an
-    // empty reply clears the tags rather than being rejected.
+    // empty reply, or "skip", clears the tags rather than being rejected.
     public static bool TryParseTags(string? input, out List<string> value, out string? errorKey)
     {
         var trimmed = input?.Trim();
-        value = string.IsNullOrEmpty(trimmed)
+        value = IsBlankOrSkip(trimmed)
             ? []
             : trimmed.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToList();
         errorKey = null;
@@ -113,12 +116,34 @@ internal static class FieldParsing
         return true;
     }
 
+    // "skip", or an empty reply, means no default capacity — the franchise doesn't have a
+    // fixed one, so every game created from it must set its own as an override.
+    public static bool TryParseOptionalCapacity(string? input, out int? value, out string? errorKey)
+    {
+        var trimmed = input?.Trim();
+        if (IsBlankOrSkip(trimmed))
+        {
+            value = null;
+            errorKey = null;
+            return true;
+        }
+
+        if (!TryParseCapacity(trimmed, out var parsed, out errorKey))
+        {
+            value = null;
+            return false;
+        }
+
+        value = parsed;
+        return true;
+    }
+
     // "skip" (case-insensitive), or an empty reply, means no price — CLAUDE.md: price is a
     // display field, never tracked.
     public static bool TryParsePrice(string? input, out decimal? value, out string? errorKey)
     {
         var trimmed = input?.Trim();
-        if (string.IsNullOrEmpty(trimmed) || trimmed.Equals("skip", StringComparison.OrdinalIgnoreCase))
+        if (IsBlankOrSkip(trimmed))
         {
             value = null;
             errorKey = null;
@@ -136,6 +161,12 @@ internal static class FieldParsing
         errorKey = null;
         return true;
     }
+
+    // Telegram clients won't let you send an empty message, so an empty/whitespace-only reply
+    // is only reachable from a handful of API-level tests — "skip" (case-insensitive) is the
+    // one every real user actually has, and every optional-field parser here accepts it.
+    private static bool IsBlankOrSkip([NotNullWhen(false)] string? trimmedInput) =>
+        string.IsNullOrEmpty(trimmedInput) || trimmedInput.Equals("skip", StringComparison.OrdinalIgnoreCase);
 
     public static bool TryParseDate(string? input, out DateOnly value, out string? errorKey)
     {
@@ -203,7 +234,9 @@ internal static class FieldParsing
 
     // "Mon-Fri:19:00, Sat:16:00, Sun:16:00" — comma-separated day-or-range:time pairs. An
     // absent day is one the franchise doesn't run (Franchise.Schedule's own doc comment). Day
-    // names are read in the team's own language first, falling back to English.
+    // names are read in the team's own language first, falling back to English. An empty
+    // reply is valid — like TryParseOptionalText, it clears the schedule rather than being
+    // rejected, for a franchise with no fixed days (every game from it needs its own date).
     public static bool TryParseSchedule(
         string? input,
         string locale,
@@ -213,10 +246,10 @@ internal static class FieldParsing
     {
         value = [];
         var trimmed = input?.Trim();
-        if (string.IsNullOrEmpty(trimmed))
+        if (IsBlankOrSkip(trimmed))
         {
-            errorKey = "Validation.ScheduleInvalid";
-            return false;
+            errorKey = null;
+            return true;
         }
 
         foreach (
@@ -245,13 +278,6 @@ internal static class FieldParsing
             {
                 value[day] = time;
             }
-        }
-
-        if (value.Count == 0)
-        {
-            value = [];
-            errorKey = "Validation.ScheduleInvalid";
-            return false;
         }
 
         errorKey = null;

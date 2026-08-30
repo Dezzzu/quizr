@@ -55,12 +55,7 @@ internal static class ManagePlayersRenderer
             )
             .ToList();
 
-        rows.Add([
-            InlineKeyboardButton.WithCallbackData(
-                strings.Text("ManagePlayers.DoneButton"),
-                CallbackData.Format(CallbackData.CloseView, 0L)
-            ),
-        ]);
+        rows.Add(DoneButton.Row(strings));
 
         return new InlineKeyboardMarkup(rows);
     }

@@ -32,6 +32,7 @@ internal static class CallbackData
     public const char ArchiveFranchise = 'z'; // carries FranchiseId
     public const char OneOff = 'o'; // dummy id
     public const char PickDate = 'a'; // carries an index into the dialog's stored candidate dates
+    public const char CustomDate = 'J'; // dummy id — a franchise game on a date its schedule doesn't cover
     public const char EditField = 'q'; // carries a field index, meaning scoped by the active dialog
     public const char Confirm = 'c'; // dummy id
     public const char CancelDialog = 'x'; // dummy id

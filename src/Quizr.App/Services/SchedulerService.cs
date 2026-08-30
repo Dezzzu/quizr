@@ -21,6 +21,10 @@ public sealed class SchedulerService
     // Invariant 8.
     private static readonly TimeSpan AutoFinishAfter = TimeSpan.FromHours(4);
 
+    // Long enough that a captain distracted mid-wizard isn't cut off, short enough that a
+    // dialog abandoned entirely doesn't sit around swallowing an unrelated message for hours.
+    private static readonly TimeSpan DialogExpiryAfter = TimeSpan.FromMinutes(20);
+
     private readonly QuizrDb _db;
     private readonly IMessageSender _sender;
     private readonly IStrings _strings;
@@ -53,6 +57,18 @@ public sealed class SchedulerService
 
     public async Task RunTickAsync(CancellationToken ct)
     {
+        try
+        {
+            // Team-agnostic (a dialog can exist before a team even sets a timezone), and kept
+            // out of the per-team loop below so a failure here can never block reminders or
+            // auto-finish for every team's tick.
+            await ExpireStaleDialogsAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Scheduler failed to expire stale dialogs");
+        }
+
         // A timezone is required for every reminder/finish calculation below, and a team
         // can't have games without one (CLAUDE.md's Team bootstrap) — nothing to do here yet.
         var teams = await _db.Teams.Where(t => t.DeactivatedAt == null && t.TimeZoneId != null).ToListAsync(ct);
@@ -75,6 +91,15 @@ public sealed class SchedulerService
                 _logger.LogError(ex, "Scheduler tick failed for team {TeamId}", team.Id);
             }
         }
+    }
+
+    // Silent — no message to the captain who abandoned it. The failure mode this replaces
+    // (a stale dialog swallowing whatever that captain sends next, forever) was already
+    // confusing with no explanation either; this just bounds how long it can happen for.
+    private async Task ExpireStaleDialogsAsync(CancellationToken ct)
+    {
+        var cutoff = _clock.GetUtcNow() - DialogExpiryAfter;
+        await _db.DialogStates.Where(d => d.UpdatedAt < cutoff).ExecuteDeleteAsync(ct);
     }
 
     private async Task ProcessTeamAsync(Team team, CancellationToken ct)

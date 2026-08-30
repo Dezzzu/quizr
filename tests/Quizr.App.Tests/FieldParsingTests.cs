@@ -85,6 +85,36 @@ public class FieldParsingTests
     [Arguments("")]
     [Arguments("skip")]
     [Arguments("SKIP")]
+    public void TryParseOptionalCapacityTreatsSkipOrEmptyAsNoCapacity(string? input)
+    {
+        FieldParsing.TryParseOptionalCapacity(input, out var value, out var errorKey).Should().BeTrue();
+        value.Should().BeNull();
+        errorKey.Should().BeNull();
+    }
+
+    [Test]
+    public void TryParseOptionalCapacityAcceptsAPositiveInteger()
+    {
+        FieldParsing.TryParseOptionalCapacity("20", out var value, out var errorKey).Should().BeTrue();
+        value.Should().Be(20);
+        errorKey.Should().BeNull();
+    }
+
+    [Test]
+    [Arguments("0")]
+    [Arguments("-1")]
+    [Arguments("abc")]
+    public void TryParseOptionalCapacityRejectsNonPositiveOrNonNumericInput(string input)
+    {
+        FieldParsing.TryParseOptionalCapacity(input, out _, out var errorKey).Should().BeFalse();
+        errorKey.Should().Be("Validation.CapacityInvalid");
+    }
+
+    [Test]
+    [Arguments(null)]
+    [Arguments("")]
+    [Arguments("skip")]
+    [Arguments("SKIP")]
     public void TryParsePriceTreatsSkipOrEmptyAsNoPrice(string? input)
     {
         FieldParsing.TryParsePrice(input, out var value, out var errorKey).Should().BeTrue();
@@ -189,8 +219,6 @@ public class FieldParsingTests
     }
 
     [Test]
-    [Arguments(null)]
-    [Arguments("")]
     [Arguments("Someday: 19:00")]
     [Arguments("Mon 19:00")]
     [Arguments("Mon: 25:99")]
@@ -199,6 +227,18 @@ public class FieldParsingTests
         FieldParsing.TryParseSchedule(input, "en", out var value, out var errorKey).Should().BeFalse();
         value.Should().BeEmpty();
         errorKey.Should().Be("Validation.ScheduleInvalid");
+    }
+
+    // Like TryParseOptionalText — a franchise with no fixed days is valid, not an error.
+    [Test]
+    [Arguments(null)]
+    [Arguments("")]
+    [Arguments("   ")]
+    public void TryParseScheduleAcceptsAnEmptyReplyAsNoSchedule(string? input)
+    {
+        FieldParsing.TryParseSchedule(input, "en", out var value, out var errorKey).Should().BeTrue();
+        value.Should().BeEmpty();
+        errorKey.Should().BeNull();
     }
 
     [Test]

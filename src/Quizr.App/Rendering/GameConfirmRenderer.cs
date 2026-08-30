@@ -16,10 +16,20 @@ internal static class GameConfirmRenderer
     {
         var text = new StringBuilder();
         text.Append("<b>").Append(WebUtility.HtmlEncode(data.Title)).Append("</b>\n");
-        text.Append(strings.Text("NewGame.Venue", new { Venue = WebUtility.HtmlEncode(data.Venue) })).Append('\n');
+        text.Append(
+                data.Venue is { } venue
+                    ? strings.Text("NewGame.Venue", new { Venue = WebUtility.HtmlEncode(venue) })
+                    : strings.Text("NewGame.VenueNotSet")
+            )
+            .Append('\n');
         text.Append(strings.Text("NewGame.When", new { Date = data.Date!.Value, Time = data.Time!.Value }))
             .Append('\n');
-        text.Append(strings.Text("NewGame.Capacity", new { Capacity = data.Capacity })).Append('\n');
+        text.Append(
+                data.Capacity is { } capacity
+                    ? strings.Text("NewGame.Capacity", new { Capacity = capacity })
+                    : strings.Text("NewGame.CapacityNotSet")
+            )
+            .Append('\n');
         text.Append(
                 data.Price is { } price
                     ? strings.Text("NewGame.Price", new { Price = price })
@@ -77,10 +87,7 @@ internal static class GameConfirmRenderer
                     strings.Text("NewGame.ConfirmButton"),
                     CallbackData.Format(CallbackData.Confirm, 0L)
                 ),
-                InlineKeyboardButton.WithCallbackData(
-                    strings.Text("NewGame.CancelButton"),
-                    CallbackData.Format(CallbackData.CancelDialog, 0L)
-                ),
+                .. CancelButton.Row(strings),
             ],
         ]);
 }
