@@ -15,4 +15,15 @@ public abstract record BusinessError
 
     // The team hasn't set a timezone yet, so nothing that computes a game's start time can run.
     public sealed record TeamNotConfigured : BusinessError;
+
+    // Dropping, naming a guest, or resolving a guest's team-guest choice all require a live
+    // signup to act on.
+    public sealed record NotSignedUp : BusinessError;
+
+    // Naming a guest or deciding whether they stay is the inviter's call, not any player's.
+    public sealed record NotYourGuest : BusinessError;
+
+    // The guest is already cancelled, already has an owner, or was never a named guest
+    // awaiting a keep-or-drop decision.
+    public sealed record GuestAlreadyResolved : BusinessError;
 }

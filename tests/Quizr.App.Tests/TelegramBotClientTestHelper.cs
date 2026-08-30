@@ -43,4 +43,12 @@ internal static class TelegramBotClientTestHelper
             .OfType<EditMessageTextRequest>()
             .Select(request => request.Text)
             .ToList();
+
+    public static IReadOnlyList<string?> AnsweredCallbackAlerts(this ITelegramBotClient bot) =>
+        bot.ReceivedCalls()
+            .Select(call => call.GetArguments()[0])
+            .OfType<AnswerCallbackQueryRequest>()
+            .Where(request => request.ShowAlert)
+            .Select(request => request.Text)
+            .ToList();
 }

@@ -93,4 +93,35 @@ public class RosterTests
         first.Playing.Should().Equal(earlierInsert);
         second.Playing.Should().Equal(earlierInsert);
     }
+
+    [Fact]
+    public void LocatesAPlayingSignupByItsOneBasedPosition()
+    {
+        var signups = SignupBuilder.Queue(GameId, count: 3);
+        var roster = Roster.Split(signups, capacity: 3);
+
+        var placement = Roster.Locate(roster, signups[1].Id);
+
+        placement.Should().Be(new SignupPlacement(true, 2));
+    }
+
+    [Fact]
+    public void LocatesAReserveSignupByItsOneBasedPosition()
+    {
+        var signups = SignupBuilder.Queue(GameId, count: 3);
+        var roster = Roster.Split(signups, capacity: 1);
+
+        var placement = Roster.Locate(roster, signups[2].Id);
+
+        placement.Should().Be(new SignupPlacement(false, 2));
+    }
+
+    [Fact]
+    public void LocatingAnUnknownSignupReturnsNull()
+    {
+        var signups = SignupBuilder.Queue(GameId, count: 2);
+        var roster = Roster.Split(signups, capacity: 1);
+
+        Roster.Locate(roster, new SignupId(999)).Should().BeNull();
+    }
 }

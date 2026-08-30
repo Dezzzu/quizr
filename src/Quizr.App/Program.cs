@@ -49,6 +49,8 @@ builder.Services.AddSingleton<IAlertSender>(sp => new AlertSender(
 builder.Services.AddScoped<TeamGuard>();
 builder.Services.AddScoped<TeamBootstrapService>();
 builder.Services.AddScoped<PlayerBootstrapService>();
+builder.Services.AddScoped<ISignupService, SignupService>();
+builder.Services.AddScoped<AnnouncementService>();
 builder.Services.AddScoped<UpdateRouter>();
 builder.Services.AddSingleton<UpdateDispatcher>();
 builder.Services.AddHostedService<BotHostedService>();

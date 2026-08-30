@@ -7,5 +7,45 @@
   "NewGame.NeedsTimeZone": "This team doesn't have a timezone set yet. A captain should run /settimezone first.",
   "NewGame.NotCaptain": "Only a captain can do that.",
   "NewGame.NotBuiltYet": "Game creation isn't built yet — it's coming in a later milestone.",
-  "Error.Generic": "Something went wrong on my end. It's been logged — please try again."
+  "Error.Generic": "Something went wrong on my end. It's been logged — please try again.",
+
+  "Announcement.Venue": "📍 {Venue}",
+  "Announcement.When": "🕓 {When}",
+  "Announcement.Price": "💵 {Price}",
+  "Announcement.PlayingHeader": "Playing ({Count}/{Capacity}):",
+  "Announcement.ReserveHeader": "Reserve ({Count}):",
+  "Announcement.NoOneYet": "Nobody yet — be the first!",
+  "Announcement.NamedGuest": "{Name} (guest of {Inviter})",
+  "Announcement.AnonymousGuest": "{Inviter}'s guest",
+  "Announcement.TeamGuest": "{Name} (team guest)",
+  "Announcement.JoinButton": "✅ I'm in",
+  "Announcement.GuestButton": "➕ Bring a friend",
+  "Announcement.DropButton": "❌ Can't make it",
+  "Announcement.Joined": "You're in!",
+  "Announcement.GuestAdded": "Guest added!",
+
+  "Drop.ConfirmPrompt": "Drop out of {Title}? You'll lose your place in the queue — rejoining puts you at the back.",
+  "Drop.ConfirmYes": "Yes, I'm out",
+  "Drop.ConfirmNo": "No, I'm staying",
+  "Drop.Cancelled": "You're out. Your spot has been given up.",
+  "Drop.StillIn": "Okay, you're still in!",
+
+  "Guest.NamePrompt": "Want to give your guest a name? Reply with it, or skip to keep them anonymous.",
+  "Guest.SkipButton": "Skip",
+  "Guest.SkippedName": "Okay, they'll stay anonymous.",
+  "Guest.Named": "Got it — your guest is now down as {Name}.",
+  "Guest.KeepQuestion": "You're dropping out, but {Name} is named. Should they stay in the game as a team guest?",
+  "Guest.KeepButton": "Keep {Name} in",
+  "Guest.RemoveButton": "Remove {Name} too",
+  "Guest.Kept": "{Name} is staying as a team guest.",
+  "Guest.Removed": "{Name} has been removed too.",
+
+  "Promotion.Message": "🎉 {Who} moved up to Playing!",
+
+  "Signup.AlreadySignedUp": "You're already signed up for this game.",
+  "Signup.NotSignedUp": "You don't have a spot in this game.",
+  "Signup.NotYourGuest": "That's not your guest to manage.",
+  "Signup.GuestAlreadyResolved": "That guest has already been sorted out.",
+  "Signup.GameAlreadyFinished": "This game has already finished.",
+  "Signup.RegistrationClosed": "Sign-ups for this game are closed."
 }

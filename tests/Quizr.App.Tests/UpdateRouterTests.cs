@@ -113,6 +113,8 @@ public class UpdateRouterTests : IClassFixture<PostgresFixture>
         var teamBootstrap = new TeamBootstrapService(db, sender, strings, clock);
         var playerBootstrap = new PlayerBootstrapService(db, clock);
         var teamGuard = new TeamGuard(db, bot);
+        var signups = new SignupService(db, clock);
+        var announcements = new AnnouncementService(db, sender, strings);
 
         var router = new UpdateRouter(
             db,
@@ -122,6 +124,9 @@ public class UpdateRouterTests : IClassFixture<PostgresFixture>
             teamBootstrap,
             playerBootstrap,
             teamGuard,
+            signups,
+            announcements,
+            clock,
             NullLogger<UpdateRouter>.Instance
         );
 

@@ -11,6 +11,8 @@ internal sealed class SignupBuilder
     private readonly GameId _gameId;
     private long? _id;
     private PlayerId? _playerId = new(1);
+    private PlayerId? _invitedByPlayerId;
+    private string? _guestName;
     private DateTimeOffset _createdAt = DateTimeOffset.UtcNow;
     private DateTimeOffset? _cancelledAt;
 
@@ -40,6 +42,18 @@ internal sealed class SignupBuilder
         return this;
     }
 
+    public SignupBuilder InvitedBy(long playerId)
+    {
+        _invitedByPlayerId = new PlayerId(playerId);
+        return this;
+    }
+
+    public SignupBuilder Named(string guestName)
+    {
+        _guestName = guestName;
+        return this;
+    }
+
     public SignupBuilder Cancelled(DateTimeOffset cancelledAt)
     {
         _cancelledAt = cancelledAt;
@@ -52,6 +66,8 @@ internal sealed class SignupBuilder
             Id = new SignupId(_id ?? ++_nextId),
             GameId = _gameId,
             PlayerId = _playerId,
+            InvitedByPlayerId = _invitedByPlayerId,
+            GuestName = _guestName,
             CreatedAt = _createdAt,
             CancelledAt = _cancelledAt,
         };

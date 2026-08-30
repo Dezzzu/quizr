@@ -12,11 +12,23 @@ public class CallbackDataTests
     {
         var data = CallbackData.Format(CallbackData.Join, new GameId(142));
 
-        var parsed = CallbackData.TryParse(data, out var verb, out var gameId);
+        var parsed = CallbackData.TryParse(data, out var verb, out GameId gameId);
 
         parsed.Should().BeTrue();
         verb.Should().Be(CallbackData.Join);
         gameId.Should().Be(new GameId(142));
+    }
+
+    [Fact]
+    public void RoundTripsAFormattedSignupId()
+    {
+        var data = CallbackData.Format(CallbackData.KeepGuest, new SignupId(99));
+
+        var parsed = CallbackData.TryParse(data, out var verb, out SignupId signupId);
+
+        parsed.Should().BeTrue();
+        verb.Should().Be(CallbackData.KeepGuest);
+        signupId.Should().Be(new SignupId(99));
     }
 
     [Theory]
@@ -26,7 +38,7 @@ public class CallbackDataTests
     [InlineData(":142")]
     public void FailsToParseInvalidData(string data)
     {
-        var parsed = CallbackData.TryParse(data, out _, out _);
+        var parsed = CallbackData.TryParse(data, out _, out GameId _);
 
         parsed.Should().BeFalse();
     }
