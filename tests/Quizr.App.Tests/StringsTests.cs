@@ -7,13 +7,13 @@ public class StringsTests
 {
     private readonly Strings _strings = new();
 
-    [Fact]
+    [Test]
     public void RendersAKeyWithNoPlaceholders()
     {
         _strings.For("en").Text("Start.Greeting").Should().NotBeNullOrEmpty();
     }
 
-    [Fact]
+    [Test]
     public void InterpolatesArguments()
     {
         var text = _strings.For("en").Text("Setup.TimeZoneSet", new { TimeZoneId = "Europe/Berlin" });
@@ -21,7 +21,7 @@ public class StringsTests
         text.Should().Contain("Europe/Berlin");
     }
 
-    [Fact]
+    [Test]
     public void FallsBackToEnglishForALocaleWithNoFileOfItsOwn()
     {
         // "fr" isn't one of CLAUDE.md's three first-class locales, so it has no file — unlike
@@ -32,13 +32,13 @@ public class StringsTests
         french.Text("Start.Greeting").Should().Be(english.Text("Start.Greeting"));
     }
 
-    [Fact]
+    [Test]
     public void ReportsTheRequestedLocaleEvenWhenFallingBackToEnglishTemplates()
     {
         _strings.For("fr").Locale.Should().Be("fr");
     }
 
-    [Fact]
+    [Test]
     public void RussianAndGermanRenderTheirOwnText()
     {
         var russian = _strings.For("ru").Text("Start.Greeting");
@@ -49,7 +49,7 @@ public class StringsTests
         german.Should().NotBe(english);
     }
 
-    [Fact]
+    [Test]
     public void EveryKeyPresentInEnglishIsPresentInEveryOtherLoadedLocale()
     {
         // CLAUDE.md: "Test key parity — every key present in every locale file." Compares the

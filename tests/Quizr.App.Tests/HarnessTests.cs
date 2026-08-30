@@ -4,6 +4,6 @@ namespace Quizr.App.Tests;
 
 public class HarnessTests
 {
-    [Fact]
+    [Test]
     public void TestHarnessIsWiredUp() => true.Should().BeTrue();
 }

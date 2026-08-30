@@ -7,7 +7,7 @@ public class SignupExtensionsTests
 {
     private static readonly GameId GameId = new(1);
 
-    [Fact]
+    [Test]
     public void AMemberSignupIsMemberOnly()
     {
         var signup = new SignupBuilder(GameId).ByPlayer(1).Build();
@@ -17,7 +17,7 @@ public class SignupExtensionsTests
         signup.IsTeamGuest.Should().BeFalse();
     }
 
-    [Fact]
+    [Test]
     public void AGuestWithAnInviterIsGuestButNotTeamGuest()
     {
         var signup = new SignupBuilder(GameId).AsGuest().InvitedBy(1).Build();
@@ -28,7 +28,7 @@ public class SignupExtensionsTests
         signup.HasInviter.Should().BeTrue();
     }
 
-    [Fact]
+    [Test]
     public void AGuestWithNoInviterIsATeamGuest()
     {
         var signup = new SignupBuilder(GameId).AsGuest().Named("Sasha").Build();
@@ -38,7 +38,7 @@ public class SignupExtensionsTests
         signup.HasInviter.Should().BeFalse();
     }
 
-    [Fact]
+    [Test]
     public void ALiveSignupIsNotCancelled()
     {
         var signup = new SignupBuilder(GameId).Build();
@@ -47,7 +47,7 @@ public class SignupExtensionsTests
         signup.IsCancelled.Should().BeFalse();
     }
 
-    [Fact]
+    [Test]
     public void ACancelledSignupIsNotLive()
     {
         var signup = new SignupBuilder(GameId).Cancelled(DateTimeOffset.UtcNow).Build();

@@ -2076,18 +2076,16 @@ public sealed class UpdateRouter
         );
     }
 
-    private async Task<IReadOnlyList<Participation>> LoadParticipationsAsync(Game game, CancellationToken ct)
-    {
-        var rows = await _db
+    private async Task<IReadOnlyList<Participation>> LoadParticipationsAsync(Game game, CancellationToken ct) =>
+        await _db
             .Participations.AsNoTracking()
             .Include(p => p.Player)
             .Where(p => p.GameId == game.Id)
+            // Id breaks ties on identical CreatedAt (FinishGameAsync stamps a whole batch with
+            // the same instant) — same reasoning as Roster.Split.
+            .OrderBy(p => p.CreatedAt)
+            .ThenBy(p => p.Id)
             .ToListAsync(ct);
-
-        // Id breaks ties on identical CreatedAt (FinishGameAsync stamps a whole batch with the
-        // same instant) — same reasoning as Roster.Split.
-        return rows.OrderBy(p => p.CreatedAt).ThenBy(p => p.Id.Value).ToList();
-    }
 
     private async Task HandleRosterCallbackAsync(char verb, CallbackQuery callbackQuery, CancellationToken ct)
     {

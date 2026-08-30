@@ -16,16 +16,17 @@ namespace Quizr.App.Tests;
 // Builds a real DI container — the same registrations Program.cs uses — so this exercises
 // the genuine UpdateDispatcher -> UpdateRouter call path rather than a substitute standing
 // in for dispatch logic. Only the Telegram client and IAlertSender are faked.
-public class UpdateDispatcherTests : IClassFixture<PostgresFixture>
+[ClassDataSource<PostgresFixture>(Shared = SharedType.PerClass)]
+public class UpdateDispatcherTests
 {
     private readonly PostgresFixture _fixture;
 
     public UpdateDispatcherTests(PostgresFixture fixture) => _fixture = fixture;
 
-    [Fact]
+    [Test]
     public async Task ARouterFailureIsCaughtAlertedAndDoesNotPropagate()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
 
         var bot = Substitute.For<ITelegramBotClient>();
         bot.When(client => client.SendRequest(Arg.Any<SendMessageRequest>(), Arg.Any<CancellationToken>()))

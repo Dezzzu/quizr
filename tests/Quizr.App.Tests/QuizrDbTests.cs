@@ -6,13 +6,14 @@ using Quizr.Domain.Entities;
 
 namespace Quizr.App.Tests;
 
-public class QuizrDbTests : IClassFixture<PostgresFixture>
+[ClassDataSource<PostgresFixture>(Shared = SharedType.PerClass)]
+public class QuizrDbTests
 {
     private readonly PostgresFixture _fixture;
 
     public QuizrDbTests(PostgresFixture fixture) => _fixture = fixture;
 
-    [Fact]
+    [Test]
     public async Task WritesATeamFranchiseGameAndTwentySignupsAndReadsTheRosterBackInOrder()
     {
         await using var db = _fixture.CreateContext();
@@ -24,20 +25,20 @@ public class QuizrDbTests : IClassFixture<PostgresFixture>
             .Select(i => new Signup { GameId = game.Id, CreatedAt = start.AddMinutes(i) })
             .ToList();
         db.Signups.AddRange(signups);
-        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        await db.SaveChangesAsync(TestContext.Current!.Execution.CancellationToken);
 
         await using var readDb = _fixture.CreateContext();
         var roster = await readDb
             .Signups.AsNoTracking()
             .Where(s => s.GameId == game.Id)
             .OrderBy(s => s.CreatedAt)
-            .ToListAsync(TestContext.Current.CancellationToken);
+            .ToListAsync(TestContext.Current.Execution.CancellationToken);
 
         roster.Should().HaveCount(20);
         roster.Select(s => s.Id).Should().Equal(signups.Select(s => s.Id));
     }
 
-    [Fact]
+    [Test]
     public async Task TheUniqueConstraintOnSignupAndKindRejectsADuplicateNotification()
     {
         await using var db = _fixture.CreateContext();
@@ -45,7 +46,7 @@ public class QuizrDbTests : IClassFixture<PostgresFixture>
 
         var signup = new Signup { GameId = game.Id, CreatedAt = DateTimeOffset.UtcNow };
         db.Signups.Add(signup);
-        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        await db.SaveChangesAsync(TestContext.Current!.Execution.CancellationToken);
 
         db.Notifications.Add(
             new Notification
@@ -55,7 +56,7 @@ public class QuizrDbTests : IClassFixture<PostgresFixture>
                 SentAt = DateTimeOffset.UtcNow,
             }
         );
-        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        await db.SaveChangesAsync(TestContext.Current.Execution.CancellationToken);
 
         db.Notifications.Add(
             new Notification
@@ -70,7 +71,7 @@ public class QuizrDbTests : IClassFixture<PostgresFixture>
         // not db itself — db is disposed at the end of this method, and a
         // closure over it would outlive that as far as static analysis can
         // tell, even though AwesomeAssertions awaits it immediately.
-        var savingDuplicate = db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var savingDuplicate = db.SaveChangesAsync(TestContext.Current.Execution.CancellationToken);
 
         await FluentActions.Awaiting(() => savingDuplicate).Should().ThrowAsync<DbUpdateException>();
     }

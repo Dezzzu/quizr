@@ -13,16 +13,17 @@ using Telegram.Bot.Types;
 
 namespace Quizr.App.Tests;
 
-public class UpdateRouterTests : IClassFixture<PostgresFixture>
+[ClassDataSource<PostgresFixture>(Shared = SharedType.PerClass)]
+public class UpdateRouterTests
 {
     private readonly PostgresFixture _fixture;
 
     public UpdateRouterTests(PostgresFixture fixture) => _fixture = fixture;
 
-    [Fact]
+    [Test]
     public async Task SetTimeZoneRejectsAnUnrecognisedId()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var team = await SeedCaptainedTeamAsync(db, chatId: 4001, telegramUserId: 4001, ct);
         var (router, bot) = CreateRouter(db);
@@ -33,10 +34,10 @@ public class UpdateRouterTests : IClassFixture<PostgresFixture>
         bot.SentTexts().Should().ContainSingle(text => text.Contains("Nowhere/Fake", StringComparison.Ordinal));
     }
 
-    [Fact]
+    [Test]
     public async Task SetTimeZoneAcceptsAValidIanaId()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var team = await SeedCaptainedTeamAsync(db, chatId: 4002, telegramUserId: 4002, ct);
         var (router, bot) = CreateRouter(db);
@@ -47,10 +48,10 @@ public class UpdateRouterTests : IClassFixture<PostgresFixture>
         bot.SentTexts().Should().ContainSingle(text => text.Contains("Europe/Berlin", StringComparison.Ordinal));
     }
 
-    [Fact]
+    [Test]
     public async Task NewGameIsRefusedBeforeATimeZoneIsSet()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         await SeedCaptainedTeamAsync(db, chatId: 4003, telegramUserId: 4003, ct);
         var (router, bot) = CreateRouter(db);
@@ -60,10 +61,10 @@ public class UpdateRouterTests : IClassFixture<PostgresFixture>
         bot.SentTexts().Should().ContainSingle(text => text.Contains("timezone", StringComparison.OrdinalIgnoreCase));
     }
 
-    [Fact]
+    [Test]
     public async Task NewGameOffersTheBranchChoiceOnceATimeZoneIsSet()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var team = await SeedCaptainedTeamAsync(db, chatId: 4004, telegramUserId: 4004, ct);
         team.TimeZoneId = "Europe/Berlin";
@@ -78,10 +79,10 @@ public class UpdateRouterTests : IClassFixture<PostgresFixture>
             .NotBeNull();
     }
 
-    [Fact]
+    [Test]
     public async Task SetLanguageRejectsAnUnsupportedCode()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var team = await SeedCaptainedTeamAsync(db, chatId: 4010, telegramUserId: 4010, ct);
         var (router, bot) = CreateRouter(db);
@@ -92,10 +93,10 @@ public class UpdateRouterTests : IClassFixture<PostgresFixture>
         bot.SentTexts().Should().ContainSingle(text => text.Contains("fr", StringComparison.Ordinal));
     }
 
-    [Fact]
+    [Test]
     public async Task SetLanguageAcceptsASupportedCodeAndConfirmsInTheNewLanguage()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var team = await SeedCaptainedTeamAsync(db, chatId: 4011, telegramUserId: 4011, ct);
         var (router, bot) = CreateRouter(db);
@@ -106,24 +107,24 @@ public class UpdateRouterTests : IClassFixture<PostgresFixture>
         bot.SentTexts().Should().ContainSingle(text => text.Contains("ru", StringComparison.Ordinal));
     }
 
-    [Fact]
+    [Test]
     public async Task NonCaptainsCannotSetTheLanguage()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var team = await SeedTeamAsync(db, chatId: 4012, ct);
         var (router, bot) = CreateRouter(db);
 
-        await router.RouteAsync(MessageUpdate(4012, 1, "/setlanguage ru"), ct);
+        await router.RouteAsync(MessageUpdate(4012, 4012, "/setlanguage ru"), ct);
 
         (await db.Teams.AsNoTracking().SingleAsync(t => t.Id == team.Id, ct)).Locale.Should().Be("en");
         bot.SentTexts().Should().ContainSingle(text => text.Contains("captain", StringComparison.OrdinalIgnoreCase));
     }
 
-    [Fact]
+    [Test]
     public async Task MyLanguageSetsThePlayersOwnLocaleWithoutTouchingTheTeams()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var team = await SeedTeamAsync(db, chatId: 4013, ct);
         var (router, bot) = CreateRouter(db);
@@ -137,10 +138,10 @@ public class UpdateRouterTests : IClassFixture<PostgresFixture>
         bot.SentTexts().Should().ContainSingle();
     }
 
-    [Fact]
+    [Test]
     public async Task MyLanguageRejectsAnUnsupportedCode()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         await SeedTeamAsync(db, chatId: 4014, ct);
         var (router, bot) = CreateRouter(db);
@@ -153,23 +154,23 @@ public class UpdateRouterTests : IClassFixture<PostgresFixture>
         bot.SentTexts().Should().ContainSingle(text => text.Contains("klingon", StringComparison.Ordinal));
     }
 
-    [Fact]
+    [Test]
     public async Task NonCaptainsCannotSetTheTimeZone()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         await SeedTeamAsync(db, chatId: 4005, ct);
         var (router, bot) = CreateRouter(db);
 
-        await router.RouteAsync(MessageUpdate(4005, 1, "/settimezone Europe/Berlin"), ct);
+        await router.RouteAsync(MessageUpdate(4005, 4005, "/settimezone Europe/Berlin"), ct);
 
         bot.SentTexts().Should().ContainSingle(text => text.Contains("captain", StringComparison.OrdinalIgnoreCase));
     }
 
-    [Fact]
+    [Test]
     public async Task StartGreetsAndLazilyCreatesThePlayer()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         await SeedTeamAsync(db, chatId: 4006, ct);
         var (router, bot) = CreateRouter(db);

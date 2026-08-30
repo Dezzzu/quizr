@@ -5,9 +5,9 @@ namespace Quizr.App.Tests;
 
 public class FieldParsingTests
 {
-    [Theory]
-    [InlineData("The Pub")]
-    [InlineData("  The Pub  ")]
+    [Test]
+    [Arguments("The Pub")]
+    [Arguments("  The Pub  ")]
     public void TryParseTextAcceptsAndTrimsNonEmptyInput(string input)
     {
         FieldParsing.TryParseText(input, out var value, out var errorKey).Should().BeTrue();
@@ -15,17 +15,17 @@ public class FieldParsingTests
         errorKey.Should().BeNull();
     }
 
-    [Theory]
-    [InlineData(null)]
-    [InlineData("")]
-    [InlineData("   ")]
+    [Test]
+    [Arguments(null)]
+    [Arguments("")]
+    [Arguments("   ")]
     public void TryParseTextRejectsEmptyInput(string? input)
     {
         FieldParsing.TryParseText(input, out _, out var errorKey).Should().BeFalse();
         errorKey.Should().Be("Validation.Empty");
     }
 
-    [Fact]
+    [Test]
     public void TryParseOptionalTextTreatsEmptyInputAsClearingTheField()
     {
         FieldParsing.TryParseOptionalText("  ", out var value, out var errorKey).Should().BeTrue();
@@ -33,16 +33,16 @@ public class FieldParsingTests
         errorKey.Should().BeNull();
     }
 
-    [Fact]
+    [Test]
     public void TryParseOptionalTextTrimsNonEmptyInput()
     {
         FieldParsing.TryParseOptionalText("  Bring your own pen  ", out var value, out _).Should().BeTrue();
         value.Should().Be("Bring your own pen");
     }
 
-    [Theory]
-    [InlineData("10", 10)]
-    [InlineData(" 1 ", 1)]
+    [Test]
+    [Arguments("10", 10)]
+    [Arguments(" 1 ", 1)]
     public void TryParseCapacityAcceptsPositiveIntegers(string input, int expected)
     {
         FieldParsing.TryParseCapacity(input, out var value, out var errorKey).Should().BeTrue();
@@ -50,22 +50,22 @@ public class FieldParsingTests
         errorKey.Should().BeNull();
     }
 
-    [Theory]
-    [InlineData("0")]
-    [InlineData("-1")]
-    [InlineData("abc")]
-    [InlineData(null)]
+    [Test]
+    [Arguments("0")]
+    [Arguments("-1")]
+    [Arguments("abc")]
+    [Arguments(null)]
     public void TryParseCapacityRejectsNonPositiveOrNonNumericInput(string? input)
     {
         FieldParsing.TryParseCapacity(input, out _, out var errorKey).Should().BeFalse();
         errorKey.Should().Be("Validation.CapacityInvalid");
     }
 
-    [Theory]
-    [InlineData(null)]
-    [InlineData("")]
-    [InlineData("skip")]
-    [InlineData("SKIP")]
+    [Test]
+    [Arguments(null)]
+    [Arguments("")]
+    [Arguments("skip")]
+    [Arguments("SKIP")]
     public void TryParsePriceTreatsSkipOrEmptyAsNoPrice(string? input)
     {
         FieldParsing.TryParsePrice(input, out var value, out var errorKey).Should().BeTrue();
@@ -73,7 +73,7 @@ public class FieldParsingTests
         errorKey.Should().BeNull();
     }
 
-    [Fact]
+    [Test]
     public void TryParsePriceAcceptsANonNegativeNumber()
     {
         FieldParsing.TryParsePrice("12.50", out var value, out var errorKey).Should().BeTrue();
@@ -81,16 +81,16 @@ public class FieldParsingTests
         errorKey.Should().BeNull();
     }
 
-    [Theory]
-    [InlineData("-1")]
-    [InlineData("free")]
+    [Test]
+    [Arguments("-1")]
+    [Arguments("free")]
     public void TryParsePriceRejectsNegativeOrNonNumericInput(string input)
     {
         FieldParsing.TryParsePrice(input, out _, out var errorKey).Should().BeFalse();
         errorKey.Should().Be("Validation.PriceInvalid");
     }
 
-    [Fact]
+    [Test]
     public void TryParseDateAcceptsIsoFormat()
     {
         FieldParsing.TryParseDate("2026-09-12", out var value, out var errorKey).Should().BeTrue();
@@ -98,16 +98,16 @@ public class FieldParsingTests
         errorKey.Should().BeNull();
     }
 
-    [Theory]
-    [InlineData("12/09/2026")]
-    [InlineData("not a date")]
+    [Test]
+    [Arguments("12/09/2026")]
+    [Arguments("not a date")]
     public void TryParseDateRejectsOtherFormats(string input)
     {
         FieldParsing.TryParseDate(input, out _, out var errorKey).Should().BeFalse();
         errorKey.Should().Be("Validation.DateInvalid");
     }
 
-    [Fact]
+    [Test]
     public void TryParseTimeAcceptsTwentyFourHourFormat()
     {
         FieldParsing.TryParseTime("19:00", out var value, out var errorKey).Should().BeTrue();
@@ -115,16 +115,16 @@ public class FieldParsingTests
         errorKey.Should().BeNull();
     }
 
-    [Theory]
-    [InlineData("7pm")]
-    [InlineData("25:00")]
+    [Test]
+    [Arguments("7pm")]
+    [Arguments("25:00")]
     public void TryParseTimeRejectsOtherFormats(string input)
     {
         FieldParsing.TryParseTime(input, out _, out var errorKey).Should().BeFalse();
         errorKey.Should().Be("Validation.TimeInvalid");
     }
 
-    [Fact]
+    [Test]
     public void TryParseScheduleExpandsADayRangeAndSingleDays()
     {
         FieldParsing
@@ -141,7 +141,7 @@ public class FieldParsingTests
     }
 
     // A range wraps the week, same as any franchise that plays Friday through Monday.
-    [Fact]
+    [Test]
     public void TryParseScheduleWrapsARangeAcrossTheWeekBoundary()
     {
         FieldParsing.TryParseSchedule("Fri-Mon: 20:00", out var value, out _).Should().BeTrue();
@@ -151,12 +151,12 @@ public class FieldParsingTests
             .BeEquivalentTo(new[] { DayOfWeek.Friday, DayOfWeek.Saturday, DayOfWeek.Sunday, DayOfWeek.Monday });
     }
 
-    [Theory]
-    [InlineData(null)]
-    [InlineData("")]
-    [InlineData("Someday: 19:00")]
-    [InlineData("Mon 19:00")]
-    [InlineData("Mon: 25:99")]
+    [Test]
+    [Arguments(null)]
+    [Arguments("")]
+    [Arguments("Someday: 19:00")]
+    [Arguments("Mon 19:00")]
+    [Arguments("Mon: 25:99")]
     public void TryParseScheduleRejectsInvalidInput(string? input)
     {
         FieldParsing.TryParseSchedule(input, out var value, out var errorKey).Should().BeFalse();

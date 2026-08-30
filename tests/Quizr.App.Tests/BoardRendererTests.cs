@@ -12,7 +12,7 @@ public class BoardRendererTests
     private static readonly TelegramChatId BasicGroupChatId = new(-1234567890);
     private static readonly IStringsFor Strings = new Strings().For("en");
 
-    [Fact]
+    [Test]
     public void ShowsANoGamesMessageWhenNothingIsUpcoming()
     {
         var text = BoardRenderer.RenderText([], SupergroupChatId, "Europe/Berlin", Strings);
@@ -20,7 +20,7 @@ public class BoardRendererTests
         text.Should().Contain("No upcoming games yet");
     }
 
-    [Fact]
+    [Test]
     public void ListsGamesInTheOrderGiven()
     {
         var earlier = Game(1, "Квиз, плиз! #1", new DateTimeOffset(2026, 3, 6, 18, 0, 0, TimeSpan.Zero));
@@ -31,7 +31,7 @@ public class BoardRendererTests
         text.IndexOf("#1", StringComparison.Ordinal).Should().BeLessThan(text.IndexOf("#2", StringComparison.Ordinal));
     }
 
-    [Fact]
+    [Test]
     public void LinksToTheAnnouncementInASupergroup()
     {
         var game = Game(1, "Quiz Night", DateTimeOffset.UtcNow.AddDays(1), announcementMessageId: 42);
@@ -41,7 +41,7 @@ public class BoardRendererTests
         text.Should().Contain("""<a href="https://t.me/c/1234567890/42">Quiz Night</a>""");
     }
 
-    [Fact]
+    [Test]
     public void DoesNotLinkInABasicGroupSinceTelegramHasNoMessageLinkSchemeForThem()
     {
         var game = Game(1, "Quiz Night", DateTimeOffset.UtcNow.AddDays(1), announcementMessageId: 42);
@@ -52,7 +52,7 @@ public class BoardRendererTests
         text.Should().Contain("Quiz Night");
     }
 
-    [Fact]
+    [Test]
     public void DoesNotLinkWhenTheGameHasNoAnnouncementYet()
     {
         var game = Game(1, "Quiz Night", DateTimeOffset.UtcNow.AddDays(1));
@@ -63,7 +63,7 @@ public class BoardRendererTests
         text.Should().Contain("Quiz Night");
     }
 
-    [Fact]
+    [Test]
     public void HtmlEncodesTheTitle()
     {
         var game = Game(1, "<b>Quiz</b>", DateTimeOffset.UtcNow.AddDays(1));

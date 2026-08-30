@@ -7,16 +7,17 @@ using Quizr.Domain.Entities;
 
 namespace Quizr.App.Tests;
 
-public class ParticipationServiceTests : IClassFixture<PostgresFixture>
+[ClassDataSource<PostgresFixture>(Shared = SharedType.PerClass)]
+public class ParticipationServiceTests
 {
     private readonly PostgresFixture _fixture;
 
     public ParticipationServiceTests(PostgresFixture fixture) => _fixture = fixture;
 
-    [Fact]
+    [Test]
     public async Task ToggleAttendedAsyncFlipsAttended()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var (_, participation) = await SeedFinishedGameWithParticipationAsync(db, chatId: 6201, ct);
         var service = new ParticipationService(db, new FakeTimeProvider());
@@ -28,10 +29,10 @@ public class ParticipationServiceTests : IClassFixture<PostgresFixture>
         toggledOn.Attended.Should().BeTrue();
     }
 
-    [Fact]
+    [Test]
     public async Task TogglePlayedAsyncFlipsPlayed()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var (_, participation) = await SeedFinishedGameWithParticipationAsync(db, chatId: 6202, ct);
         var service = new ParticipationService(db, new FakeTimeProvider());
@@ -40,10 +41,10 @@ public class ParticipationServiceTests : IClassFixture<PostgresFixture>
         toggledOff.Played.Should().BeFalse();
     }
 
-    [Fact]
+    [Test]
     public async Task AddVenueAssignedAsyncInsertsARowOnAFinishedGame()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var (game, _) = await SeedFinishedGameWithParticipationAsync(db, chatId: 6203, ct);
         var service = new ParticipationService(db, new FakeTimeProvider());
@@ -57,10 +58,10 @@ public class ParticipationServiceTests : IClassFixture<PostgresFixture>
         result.Value.Attended.Should().BeTrue();
     }
 
-    [Fact]
+    [Test]
     public async Task AddVenueAssignedAsyncRejectsAGameThatHasNotFinished()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var team = new Team
         {

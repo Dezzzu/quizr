@@ -31,10 +31,8 @@ jobs:
       - name: Check formatting
         run: dotnet csharpier check .
 
-      # `dotnet test` reports "Zero tests ran" with xUnit v3 on this SDK — see
-      # STACK.md. The assemblies run their tests correctly when executed directly.
       - name: Domain tests
-        run: dotnet run --project tests/Quizr.Domain.Tests --no-build
+        run: dotnet test --project tests/Quizr.Domain.Tests --no-build
 
       - name: App tests
-        run: dotnet run --project tests/Quizr.App.Tests --no-build
+        run: dotnet test --project tests/Quizr.App.Tests --no-build

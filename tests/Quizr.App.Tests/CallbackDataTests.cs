@@ -7,7 +7,7 @@ namespace Quizr.App.Tests;
 
 public class CallbackDataTests
 {
-    [Fact]
+    [Test]
     public void RoundTripsAFormattedValue()
     {
         var data = CallbackData.Format(CallbackData.Join, new GameId(142));
@@ -19,7 +19,7 @@ public class CallbackDataTests
         gameId.Should().Be(new GameId(142));
     }
 
-    [Fact]
+    [Test]
     public void RoundTripsAFormattedSignupId()
     {
         var data = CallbackData.Format(CallbackData.KeepGuest, new SignupId(99));
@@ -31,11 +31,11 @@ public class CallbackDataTests
         signupId.Should().Be(new SignupId(99));
     }
 
-    [Theory]
-    [InlineData("no-colon")]
-    [InlineData("")]
-    [InlineData("j:notanumber")]
-    [InlineData(":142")]
+    [Test]
+    [Arguments("no-colon")]
+    [Arguments("")]
+    [Arguments("j:notanumber")]
+    [Arguments(":142")]
     public void FailsToParseInvalidData(string data)
     {
         var parsed = CallbackData.TryParse(data, out _, out GameId _);
@@ -43,7 +43,7 @@ public class CallbackDataTests
         parsed.Should().BeFalse();
     }
 
-    [Fact]
+    [Test]
     public void StaysUnderTheSixtyFourByteCallbackDataCap()
     {
         var data = CallbackData.Format(CallbackData.Drop, new GameId(long.MaxValue));

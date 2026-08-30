@@ -8,13 +8,14 @@ using Quizr.Domain.Entities;
 
 namespace Quizr.App.Tests;
 
-public class GameServiceTests : IClassFixture<PostgresFixture>
+[ClassDataSource<PostgresFixture>(Shared = SharedType.PerClass)]
+public class GameServiceTests
 {
     private readonly PostgresFixture _fixture;
 
     public GameServiceTests(PostgresFixture fixture) => _fixture = fixture;
 
-    [Fact]
+    [Test]
     public void NextCandidateDatesOnlyReturnsDaysTheScheduleRuns()
     {
         var schedule = new Dictionary<DayOfWeek, TimeOnly>
@@ -37,10 +38,10 @@ public class GameServiceTests : IClassFixture<PostgresFixture>
             );
     }
 
-    [Fact]
+    [Test]
     public async Task PreviewFranchiseTitleAsyncNumbersSequentially()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var (team, franchise, creator) = await SeedFranchiseAsync(db, chatId: 6101, ct);
         var service = new GameService(db, new FakeTimeProvider());
@@ -63,10 +64,10 @@ public class GameServiceTests : IClassFixture<PostgresFixture>
         (await service.PreviewFranchiseTitleAsync(franchise, ct)).Should().Be($"{franchise.Name} #2");
     }
 
-    [Fact]
+    [Test]
     public async Task CreateFromFranchiseAsyncComputesStartsAtFromTheScheduleTime()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var (team, franchise, creator) = await SeedFranchiseAsync(db, chatId: 6102, ct);
         var service = new GameService(db, new FakeTimeProvider());
@@ -89,10 +90,10 @@ public class GameServiceTests : IClassFixture<PostgresFixture>
         game.StartsAt.Should().Be(new DateTimeOffset(2026, 9, 7, 17, 0, 0, TimeSpan.Zero));
     }
 
-    [Fact]
+    [Test]
     public async Task CreateOneOffAsyncLeavesFranchiseIdNull()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var team = await SeedTeamAsync(db, chatId: 6103, ct);
         var creator = await SeedPlayerAsync(db, telegramUserId: 6103, ct);
@@ -115,10 +116,10 @@ public class GameServiceTests : IClassFixture<PostgresFixture>
         game.Title.Should().Be("One-off quiz");
     }
 
-    [Fact]
+    [Test]
     public async Task SetCapacityAsyncPromotesAReserveAndRecordsANotification()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var team = await SeedTeamAsync(db, chatId: 6104, ct);
         var creator = await SeedPlayerAsync(db, telegramUserId: 6104, ct);
@@ -149,10 +150,10 @@ public class GameServiceTests : IClassFixture<PostgresFixture>
         (await db.Notifications.CountAsync(n => n.SignupId == reserveSignup.Id, ct)).Should().Be(1);
     }
 
-    [Fact]
+    [Test]
     public async Task LoadMissingMembersAsyncExcludesEveryoneAlreadySignedUp()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var team = await SeedTeamAsync(db, chatId: 6105, ct);
         var creator = await SeedPlayerAsync(db, telegramUserId: 6105, ct);
@@ -180,10 +181,10 @@ public class GameServiceTests : IClassFixture<PostgresFixture>
         missingMembers.Select(m => m.PlayerId).Should().Equal(missing.Id);
     }
 
-    [Fact]
+    [Test]
     public async Task TryNudgeAsyncStampsLastNudgedAtOnFirstCallAndBlocksASecondWithinTheCooldown()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var team = await SeedTeamAsync(db, chatId: 6106, ct);
         var creator = await SeedPlayerAsync(db, telegramUserId: 6106, ct);

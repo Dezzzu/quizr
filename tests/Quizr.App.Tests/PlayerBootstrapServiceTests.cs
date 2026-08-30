@@ -8,16 +8,17 @@ using Telegram.Bot.Types;
 
 namespace Quizr.App.Tests;
 
-public class PlayerBootstrapServiceTests : IClassFixture<PostgresFixture>
+[ClassDataSource<PostgresFixture>(Shared = SharedType.PerClass)]
+public class PlayerBootstrapServiceTests
 {
     private readonly PostgresFixture _fixture;
 
     public PlayerBootstrapServiceTests(PostgresFixture fixture) => _fixture = fixture;
 
-    [Fact]
+    [Test]
     public async Task GetOrCreateAsyncCreatesAPlayerForAnUnknownTelegramUser()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var service = new PlayerBootstrapService(db, new FakeTimeProvider());
         var telegramUser = new User
@@ -40,10 +41,10 @@ public class PlayerBootstrapServiceTests : IClassFixture<PostgresFixture>
         (await db.Players.CountAsync(p => p.TelegramUserId == new TelegramUserId(3001), ct)).Should().Be(1);
     }
 
-    [Fact]
+    [Test]
     public async Task GetOrCreateAsyncIsIdempotentForTheSameTelegramUser()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var service = new PlayerBootstrapService(db, new FakeTimeProvider());
         var telegramUser = new User { Id = 3002, FirstName = "Bo" };
@@ -55,10 +56,10 @@ public class PlayerBootstrapServiceTests : IClassFixture<PostgresFixture>
         (await db.Players.CountAsync(p => p.TelegramUserId == new TelegramUserId(3002), ct)).Should().Be(1);
     }
 
-    [Fact]
+    [Test]
     public async Task EnsureMembershipAsyncIsIdempotent()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var service = new PlayerBootstrapService(db, new FakeTimeProvider());
 

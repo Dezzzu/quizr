@@ -19,8 +19,7 @@ in the repo today.
 | Hosting | `Microsoft.Extensions.Hosting` **10.0.11** | generic host; no web server in phase 1 |
 | Resilience | `Microsoft.Extensions.Http.Resilience` **10.9.0** | Polly 8; retries honouring `retry_after` |
 | Localization | `SmartFormat.NET` **3.6.1** | JSON string files |
-| Tests | `xunit.v3` **4.0.0**, `AwesomeAssertions` **9.6.0**, `NSubstitute` **6.2.0**, `Testcontainers.PostgreSql` **4.14.0**, `Microsoft.Extensions.TimeProvider.Testing` **10.9.0** | |
-| Test discovery | `xunit.runner.visualstudio` **4.0.0**, `Microsoft.NET.Test.Sdk` **18.9.0** | IDE runner only — see below |
+| Tests | `TUnit` **1.65.68**, `AwesomeAssertions` **9.6.0**, `NSubstitute` **6.2.0**, `Testcontainers.PostgreSql` **4.14.0**, `Microsoft.Extensions.TimeProvider.Testing` **10.9.0** | source-generated, native to Microsoft.Testing.Platform — see below |
 | Formatter | `csharpier` **1.3.0** | local tool; print width 120 |
 | Migrations CLI | `dotnet-ef` **10.0.11** | local tool |
 | Packaging | Docker | `tzdata` must be present in the image |
@@ -133,24 +132,41 @@ API separately" is an easy way to drift into it without noticing.
 ```bash
 dotnet tool restore                              # first checkout
 dotnet build
-dotnet run --project tests/Quizr.Domain.Tests    # fast
-dotnet run --project tests/Quizr.App.Tests       # needs Docker
+dotnet test                                      # both projects
+dotnet run --project tests/Quizr.Domain.Tests    # or just one — fast, no Docker
+dotnet run --project tests/Quizr.App.Tests       # or just one — needs Docker
 dotnet csharpier format .                        # or: check .
 ```
 
-### `dotnet test` does not work here
+### Testing on TUnit, not xUnit
 
-It reports **"Zero tests ran"** with xUnit v3 on SDK 10.0.111. This is not a problem with
-this repository — an untouched `dotnet new xunit3` template fails identically, while xUnit v2
-works fine. The MTP server-mode handshake between `dotnet test` and the test host dies during
-host construction; the test assemblies discover and run their tests correctly when executed
-directly.
+`global.json` pins `"test": { "runner": "Microsoft.Testing.Platform" }` — .NET 10's own test
+runner, not the legacy VSTest bridge. xUnit v3 sat on top of that runner through a compat
+shim, which is what produced the **"Zero tests ran"** failure this repo used to have to work
+around (an untouched `dotnet new xunit3` template failed identically on SDK 10.0.111). TUnit
+is source-generated and native to Microsoft.Testing.Platform — no shim, no discovery step at
+runtime — so both `dotnet test` and `dotnet run --project` work here without a workaround.
 
-Run tests with `dotnet run --project` until this is fixed upstream.
+**TUnit runs tests within a class in parallel by default** — xUnit ran them sequentially.
+Most classes are unaffected, since each test already seeds rows under its own chat/game id.
+Two hazards this surfaced during the migration, worth knowing before adding a test:
 
-`xunit.runner.visualstudio` and `Microsoft.NET.Test.Sdk` are referenced **only** so Rider can
-discover and run tests from the gutter. Neither is needed by `dotnet run`, and `dotnet test`
-doesn't work regardless — if Rider discovers tests without them, they can go.
+- A test class whose tests touch data **not scoped to their own seed** needs
+  `[NotInParallel]`. `SchedulerServiceTests` is the one case today — `RunTickAsync` processes
+  every team in the database, not just the one a test seeded, so two tests' tick calls could
+  otherwise race over each other's teams.
+- A row's identifying value (a `TelegramUserId`, say) must be **actually unique**, not just
+  "unique enough under serial execution" — a scheme derived from `DateTimeOffset.UtcNow` looks
+  fine sequentially but can collide when two calls a few instructions apart land in the same
+  clock tick under parallel load. Use a counter or a distinct literal per test instead.
+
+A missing `.ThenBy(id)` tiebreaker on an `OrderBy(createdAt)` query is the same hazard from
+the other direction: two rows with count identical timestamps (a `FakeTimeProvider` that
+never advances, or a batch insert stamped with one `now`) sort in a database-decided,
+un-guaranteed order — invariant 1 already calls for the tiebreaker in production code, and
+the domain model's own `Roster.Split` does it in memory. `LoadLiveGuestsAsync` in
+`SignupService` was missing it in the database-side query; parallel execution's extra
+concurrent writes are what turned that gap into an actually-visible flake.
 
 ## Built here on purpose
 
@@ -213,7 +229,6 @@ Nothing above is permanent. These are the specific triggers that should reopen a
 
 | Trigger | What changes |
 | --- | --- |
-| A new SDK feature band lands | Re-test `dotnet test` with xUnit v3. If it works, drop the `dotnet run` workaround from the docs. |
 | The mini app arrives | Generic host becomes `WebApplication`. Hosted services carry over unchanged. |
 | Phase 2 turns into genuinely separate services rather than one host | Reconsider .NET Aspire. Its orchestration and dashboard start earning their keep once there is more than one thing to run, and the objection above is entirely about there being one. |
 | You want log aggregation | Add OpenTelemetry at the composition root and point OTLP wherever you like. Call sites are already structured, so nothing else moves. |

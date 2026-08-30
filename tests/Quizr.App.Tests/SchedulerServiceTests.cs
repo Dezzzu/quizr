@@ -13,7 +13,14 @@ using Game = Quizr.Domain.Entities.Game;
 
 namespace Quizr.App.Tests;
 
-public class SchedulerServiceTests : IClassFixture<PostgresFixture>
+// SchedulerService.RunTickAsync processes every team in the database, not just the one a
+// test seeded — TUnit runs tests within a class in parallel by default, unlike xUnit, so two
+// tests' tick calls could otherwise race over each other's teams and steal each other's
+// notifications. NotInParallel restores the sequential-within-class execution these tests
+// were written against.
+[ClassDataSource<PostgresFixture>(Shared = SharedType.PerClass)]
+[NotInParallel]
+public class SchedulerServiceTests
 {
     private static readonly TimeOnly EveningBeforeAt = new(20, 0);
     private static readonly TimeOnly MorningOfAt = new(9, 0);
@@ -23,10 +30,10 @@ public class SchedulerServiceTests : IClassFixture<PostgresFixture>
 
     public SchedulerServiceTests(PostgresFixture fixture) => _fixture = fixture;
 
-    [Fact]
+    [Test]
     public async Task AGameLeftAloneFinishesItselfFourHoursAfterItStarted()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
         var team = await SeedTeamAsync(db, chatId: 9001, ct);
@@ -49,10 +56,10 @@ public class SchedulerServiceTests : IClassFixture<PostgresFixture>
         participations.Should().OnlyContain(p => p.Attended);
     }
 
-    [Fact]
+    [Test]
     public async Task AGameNotYetFourHoursPastItsStartIsLeftAlone()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
         var team = await SeedTeamAsync(db, chatId: 9003, ct);
@@ -64,10 +71,10 @@ public class SchedulerServiceTests : IClassFixture<PostgresFixture>
         (await db.Games.AsNoTracking().SingleAsync(g => g.Id == game.Id, ct)).FinishedAt.Should().BeNull();
     }
 
-    [Fact]
+    [Test]
     public async Task FinishingRemovesTheJoinButtonsFromTheAnnouncement()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
         var team = await SeedTeamAsync(db, chatId: 9004, ct);
@@ -84,10 +91,10 @@ public class SchedulerServiceTests : IClassFixture<PostgresFixture>
             .ContainSingle(text => text != null && text.Contains("Finished", StringComparison.Ordinal));
     }
 
-    [Fact]
+    [Test]
     public async Task AGroupReminderBatchesEveryOptedInPlayerIntoOneMessage()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
         var team = await SeedTeamAsync(db, chatId: 9005, ct);
@@ -108,10 +115,10 @@ public class SchedulerServiceTests : IClassFixture<PostgresFixture>
         reminders.Single().Should().Contain("Alice").And.Contain("Bob");
     }
 
-    [Fact]
+    [Test]
     public async Task ARunningTheSameTickTwiceDoesNotSendTheReminderTwice()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
         var team = await SeedTeamAsync(db, chatId: 9007, ct);
@@ -127,10 +134,10 @@ public class SchedulerServiceTests : IClassFixture<PostgresFixture>
         bot.SentTexts(9007).Count(t => t.Contains("Reminder", StringComparison.Ordinal)).Should().Be(1);
     }
 
-    [Fact]
+    [Test]
     public async Task ADmReminderIsSentOnlyWhenTheRecipientHasStartedTheBot()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
         var team = await SeedTeamAsync(db, chatId: 9008, ct);
@@ -155,10 +162,10 @@ public class SchedulerServiceTests : IClassFixture<PostgresFixture>
         notified.Should().ContainSingle(n => n.SignupId == withDmSignup.Id);
     }
 
-    [Fact]
+    [Test]
     public async Task AReserveIsSkippedUnlessTheyOptedInToReserveReminders()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
         var team = await SeedTeamAsync(db, chatId: 9010, ct);
@@ -179,10 +186,10 @@ public class SchedulerServiceTests : IClassFixture<PostgresFixture>
         reminders.Single().Should().NotContain("Reserve Bob");
     }
 
-    [Fact]
+    [Test]
     public async Task AReserveWhoOptedInIsIncluded()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
         var team = await SeedTeamAsync(db, chatId: 9012, ct);
@@ -202,10 +209,10 @@ public class SchedulerServiceTests : IClassFixture<PostgresFixture>
         notified.Should().ContainSingle(n => n.SignupId == reserveSignup.Id);
     }
 
-    [Fact]
+    [Test]
     public async Task TheBeforeStartReminderFiresRelativeToTheGamesStartTime()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
         var team = await SeedTeamAsync(db, chatId: 9015, ct);
@@ -224,10 +231,10 @@ public class SchedulerServiceTests : IClassFixture<PostgresFixture>
         botDueNow.SentTexts(9015).Where(t => t.Contains("Reminder", StringComparison.Ordinal)).Should().ContainSingle();
     }
 
-    [Fact]
+    [Test]
     public async Task ARestartMidWindowStillSendsAReminderThatCameDueWhileItWasDown()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
         var team = await SeedTeamAsync(db, chatId: 9016, ct);
@@ -252,10 +259,10 @@ public class SchedulerServiceTests : IClassFixture<PostgresFixture>
         bot.SentTexts(9016).Where(t => t.Contains("Reminder", StringComparison.Ordinal)).Should().ContainSingle();
     }
 
-    [Fact]
+    [Test]
     public async Task ADeclinedGameNeverFiresAReminder()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
         var team = await SeedTeamAsync(db, chatId: 9017, ct);
@@ -272,10 +279,10 @@ public class SchedulerServiceTests : IClassFixture<PostgresFixture>
         bot.SentTexts(9017).Where(t => t.Contains("Reminder", StringComparison.Ordinal)).Should().BeEmpty();
     }
 
-    [Fact]
+    [Test]
     public async Task EveryTickRefreshesTheBoardEvenWithNoGames()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         _ = await SeedTeamAsync(db, chatId: 9018, ct);
         var (scheduler, bot) = CreateScheduler(db, DateTimeOffset.UtcNow);

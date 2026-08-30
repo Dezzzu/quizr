@@ -8,7 +8,7 @@ public class GuestCascadeTests
     private static readonly PlayerId Inviter = new(1);
     private static readonly PlayerId SomeoneElse = new(2);
 
-    [Fact]
+    [Test]
     public void AnUnnamedGuestAutoCancelsWithTheirInviter()
     {
         var guest = new SignupBuilder(GameId).AsGuest().InvitedBy(Inviter.Value).Build();
@@ -19,7 +19,7 @@ public class GuestCascadeTests
         split.NeedsChoice.Should().BeEmpty();
     }
 
-    [Fact]
+    [Test]
     public void ANamedGuestNeedsAnExplicitChoiceInsteadOfAutoCancelling()
     {
         var guest = new SignupBuilder(GameId).AsGuest().InvitedBy(Inviter.Value).Named("Sasha").Build();
@@ -30,7 +30,7 @@ public class GuestCascadeTests
         split.NeedsChoice.Should().Equal(guest);
     }
 
-    [Fact]
+    [Test]
     public void AGuestAlreadyCancelledIsIgnored()
     {
         var start = DateTimeOffset.UtcNow;
@@ -47,7 +47,7 @@ public class GuestCascadeTests
         split.NeedsChoice.Should().BeEmpty();
     }
 
-    [Fact]
+    [Test]
     public void OnlyGuestsOfTheDroppingPlayerAreConsidered()
     {
         var mine = new SignupBuilder(GameId).AsGuest().InvitedBy(Inviter.Value).Build();
@@ -58,7 +58,7 @@ public class GuestCascadeTests
         split.AutoCancel.Should().Equal(mine);
     }
 
-    [Fact]
+    [Test]
     public void AMemberSignupIsNeverTreatedAsAGuest()
     {
         var member = new SignupBuilder(GameId).ByPlayer(Inviter.Value).Build();

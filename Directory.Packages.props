@@ -21,9 +21,7 @@
 
     <!-- Tests -->
     <ItemGroup>
-        <PackageVersion Include="xunit.v3" Version="4.0.0" />
-        <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.0" />
-        <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
+        <PackageVersion Include="TUnit" Version="1.65.68" />
         <PackageVersion Include="AwesomeAssertions" Version="9.6.0" />
         <PackageVersion Include="NSubstitute" Version="6.2.0" />
         <PackageVersion Include="Testcontainers.PostgreSql" Version="4.14.0" />

@@ -8,16 +8,17 @@ using Quizr.Domain.Entities;
 
 namespace Quizr.App.Tests;
 
-public class NotificationRecorderTests : IClassFixture<PostgresFixture>
+[ClassDataSource<PostgresFixture>(Shared = SharedType.PerClass)]
+public class NotificationRecorderTests
 {
     private readonly PostgresFixture _fixture;
 
     public NotificationRecorderTests(PostgresFixture fixture) => _fixture = fixture;
 
-    [Fact]
+    [Test]
     public async Task TheFirstRecordForASignupAndKindSucceeds()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var signupId = await SeedSignupAsync(db, chatId: 6001, ct);
 
@@ -32,10 +33,10 @@ public class NotificationRecorderTests : IClassFixture<PostgresFixture>
         recorded.Should().BeTrue();
     }
 
-    [Fact]
+    [Test]
     public async Task ASecondRecordForTheSameSignupAndKindIsRejectedAsADuplicate()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var signupId = await SeedSignupAsync(db, chatId: 6002, ct);
         var clock = new FakeTimeProvider();
@@ -53,10 +54,10 @@ public class NotificationRecorderTests : IClassFixture<PostgresFixture>
         (await db.Notifications.AsNoTracking().CountAsync(n => n.SignupId == signupId, ct)).Should().Be(1);
     }
 
-    [Fact]
+    [Test]
     public async Task TheDbContextStaysUsableAfterADuplicateIsRejected()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var signupId = await SeedSignupAsync(db, chatId: 6003, ct);
         var clock = new FakeTimeProvider();

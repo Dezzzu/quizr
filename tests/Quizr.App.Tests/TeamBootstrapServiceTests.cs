@@ -11,7 +11,8 @@ using Telegram.Bot.Types;
 
 namespace Quizr.App.Tests;
 
-public class TeamBootstrapServiceTests : IClassFixture<PostgresFixture>
+[ClassDataSource<PostgresFixture>(Shared = SharedType.PerClass)]
+public class TeamBootstrapServiceTests
 {
     private static readonly User BotUser = new() { Id = 999, FirstName = "Quizr" };
 
@@ -19,10 +20,10 @@ public class TeamBootstrapServiceTests : IClassFixture<PostgresFixture>
 
     public TeamBootstrapServiceTests(PostgresFixture fixture) => _fixture = fixture;
 
-    [Fact]
+    [Test]
     public async Task AddingTheBotAsAPlainMemberCreatesATeamWithConfirmedDefaultsAndWarnsAboutAdminRights()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         var (service, db, bot) = CreateService();
         var chatId = new TelegramChatId(1001);
 
@@ -43,10 +44,10 @@ public class TeamBootstrapServiceTests : IClassFixture<PostgresFixture>
         bot.SentTexts().Should().HaveCount(2);
     }
 
-    [Fact]
+    [Test]
     public async Task AddingTheBotAsAnAdminSendsOnlyTheWelcomeMessage()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         var (service, db, bot) = CreateService();
         var chatId = new TelegramChatId(1002);
 
@@ -59,10 +60,10 @@ public class TeamBootstrapServiceTests : IClassFixture<PostgresFixture>
         bot.SentTexts().Should().HaveCount(1);
     }
 
-    [Fact]
+    [Test]
     public async Task RemovingTheBotDeactivatesItsTeamWithoutDeletingIt()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         var (service, db, _) = CreateService();
         var chatId = new TelegramChatId(1003);
 
@@ -76,10 +77,10 @@ public class TeamBootstrapServiceTests : IClassFixture<PostgresFixture>
         team.DeactivatedAt.Should().NotBeNull();
     }
 
-    [Fact]
+    [Test]
     public async Task ReAddingTheBotClearsDeactivatedAtWithoutTouchingOtherFields()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         var (service, db, _) = CreateService();
         var chatId = new TelegramChatId(1004);
 

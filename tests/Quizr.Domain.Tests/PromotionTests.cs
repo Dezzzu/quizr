@@ -7,7 +7,7 @@ public class PromotionTests
 {
     private static readonly GameId GameId = new(1);
 
-    [Fact]
+    [Test]
     public void ADropCausesExactlyOneReservePromotion()
     {
         var start = DateTimeOffset.UtcNow;
@@ -31,7 +31,7 @@ public class PromotionTests
         promoted.Should().Equal(firstReserve);
     }
 
-    [Fact]
+    [Test]
     public void NobodyIsPromotedWhenTheRosterIsUnchanged()
     {
         var signups = SignupBuilder.Queue(GameId, count: 3);
@@ -42,7 +42,7 @@ public class PromotionTests
         Promotion.Promoted(before, after).Should().BeEmpty();
     }
 
-    [Fact]
+    [Test]
     public void RaisingCapacityPromotesEveryoneNewlyInRange()
     {
         var signups = SignupBuilder.Queue(GameId, count: 4);

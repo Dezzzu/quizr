@@ -9,7 +9,7 @@ public class MessageEditDebouncerTests
 {
     private static readonly TimeSpan WindowPastDebounce = TimeSpan.FromSeconds(2);
 
-    [Fact]
+    [Test]
     public async Task CoalescesRapidEditsToTheSameMessageIntoOneCallWithTheLatestText()
     {
         var timeProvider = new FakeTimeProvider();
@@ -17,7 +17,7 @@ public class MessageEditDebouncerTests
         var debouncer = new MessageEditDebouncer(bot, timeProvider);
         var chatId = new TelegramChatId(1);
         var messageId = new TelegramMessageId(100);
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
 
         await debouncer.ScheduleAsync(chatId, messageId, "first", null, ct);
         await debouncer.ScheduleAsync(chatId, messageId, "second", null, ct);
@@ -29,14 +29,14 @@ public class MessageEditDebouncerTests
         bot.EditedTexts().Should().Equal("third");
     }
 
-    [Fact]
+    [Test]
     public async Task DoesNotCoalesceEditsToDifferentMessages()
     {
         var timeProvider = new FakeTimeProvider();
         var bot = TelegramBotClientTestHelper.Create();
         var debouncer = new MessageEditDebouncer(bot, timeProvider);
         var chatId = new TelegramChatId(1);
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
 
         await debouncer.ScheduleAsync(chatId, new TelegramMessageId(100), "a", null, ct);
         await debouncer.ScheduleAsync(chatId, new TelegramMessageId(200), "b", null, ct);

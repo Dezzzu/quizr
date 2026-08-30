@@ -17,16 +17,17 @@ using Game = Quizr.Domain.Entities.Game;
 
 namespace Quizr.App.Tests;
 
-public class BoardServiceTests : IClassFixture<PostgresFixture>
+[ClassDataSource<PostgresFixture>(Shared = SharedType.PerClass)]
+public class BoardServiceTests
 {
     private readonly PostgresFixture _fixture;
 
     public BoardServiceTests(PostgresFixture fixture) => _fixture = fixture;
 
-    [Fact]
+    [Test]
     public async Task RefreshAsyncPostsAndPinsTheBoardWhenThereIsNoneYet()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var team = await SeedTeamAsync(db, chatId: 8001, ct);
         var bot = TelegramBotClientTestHelper.Create();
@@ -41,10 +42,10 @@ public class BoardServiceTests : IClassFixture<PostgresFixture>
         (await db.Teams.AsNoTracking().SingleAsync(t => t.Id == team.Id, ct)).BoardMessageId.Should().NotBeNull();
     }
 
-    [Fact]
+    [Test]
     public async Task RefreshAsyncEditsTheExistingBoardInPlaceRatherThanPostingANewOne()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var team = await SeedTeamAsync(db, chatId: 8002, ct);
         var bot = TelegramBotClientTestHelper.Create();
@@ -62,10 +63,10 @@ public class BoardServiceTests : IClassFixture<PostgresFixture>
         team.BoardMessageId!.Value.Should().Be(boardMessageId);
     }
 
-    [Fact]
+    [Test]
     public async Task RefreshAsyncRePinsWhenSomethingElseHasBeenPinnedOverTheBoard()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var team = await SeedTeamAsync(db, chatId: 8003, ct);
         var bot = TelegramBotClientTestHelper.Create();
@@ -78,10 +79,10 @@ public class BoardServiceTests : IClassFixture<PostgresFixture>
         bot.PinCallCount().Should().Be(2);
     }
 
-    [Fact]
+    [Test]
     public async Task RefreshAsyncDoesNotRePinWhenAlreadyCorrectlyPinned()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var team = await SeedTeamAsync(db, chatId: 8004, ct);
         var bot = TelegramBotClientTestHelper.Create();
@@ -94,10 +95,10 @@ public class BoardServiceTests : IClassFixture<PostgresFixture>
         bot.PinCallCount().Should().Be(1);
     }
 
-    [Fact]
+    [Test]
     public async Task RefreshAsyncRepostsAndRePinsWhenTheBoardMessageIsGone()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var team = await SeedTeamAsync(db, chatId: 8005, ct);
         var bot = TelegramBotClientTestHelper.Create();
@@ -116,10 +117,10 @@ public class BoardServiceTests : IClassFixture<PostgresFixture>
         bot.PinCallCount().Should().Be(2);
     }
 
-    [Fact]
+    [Test]
     public async Task RefreshAsyncListsOnlyUpcomingGames()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var team = await SeedTeamAsync(db, chatId: 8006, ct);
         var bot = TelegramBotClientTestHelper.Create();
@@ -169,6 +170,12 @@ public class BoardServiceTests : IClassFixture<PostgresFixture>
         return team;
     }
 
+    // A test can seed several games in one call, so the creator's id can't be derived from
+    // wall-clock time — under load two calls a few instructions apart can read the same
+    // DateTimeOffset.UtcNow. A monotonic counter is unique regardless of timing or the
+    // parallel execution TUnit runs tests under.
+    private static long _creatorIdSequence = 9_000_000;
+
     private static async Task<Game> SeedGameAsync(
         QuizrDb db,
         Team team,
@@ -179,7 +186,7 @@ public class BoardServiceTests : IClassFixture<PostgresFixture>
     {
         var creator = new Player
         {
-            TelegramUserId = new TelegramUserId(team.ChatId.Value * 1000 + startsAt.Ticks % 1000),
+            TelegramUserId = new TelegramUserId(Interlocked.Increment(ref _creatorIdSequence)),
             DisplayName = "Creator",
             CreatedAt = DateTimeOffset.UtcNow,
         };

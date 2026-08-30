@@ -6,7 +6,7 @@ namespace Quizr.Domain.Tests.Extensions;
 
 public class GameExtensionsTests
 {
-    [Fact]
+    [Test]
     public void AGameWithNoFinishedAtOrDeclinedAtIsNeitherFinishedNorDeclined()
     {
         var game = Game();
@@ -15,7 +15,7 @@ public class GameExtensionsTests
         game.IsDeclined.Should().BeFalse();
     }
 
-    [Fact]
+    [Test]
     public void AGameWithFinishedAtSetIsFinished()
     {
         var game = Game();
@@ -25,7 +25,7 @@ public class GameExtensionsTests
         game.IsDeclined.Should().BeFalse();
     }
 
-    [Fact]
+    [Test]
     public void AGameWithDeclinedAtSetIsDeclined()
     {
         var game = Game();

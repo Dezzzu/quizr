@@ -252,7 +252,9 @@ public sealed class SignupService : ISignupService
         await _db
             .Signups.AsNoTracking()
             .Where(s => s.GameId == game.Id && s.InvitedByPlayerId == inviterId && s.CancelledAt == null)
+            // Id breaks ties on identical CreatedAt — same reasoning as Roster.Split.
             .OrderBy(s => s.CreatedAt)
+            .ThenBy(s => s.Id)
             .ToListAsync(ct);
 
     private async Task<RosterSplit> LoadRosterAsync(Game game, CancellationToken ct)

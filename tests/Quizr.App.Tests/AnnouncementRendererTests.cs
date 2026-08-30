@@ -11,7 +11,7 @@ public class AnnouncementRendererTests
     private static readonly GameId GameId = new(1);
     private static readonly IStringsFor Strings = new Strings().For("en");
 
-    [Fact]
+    [Test]
     public void ListsPlayersInQueueOrderUnderThePlayingHeader()
     {
         var alice = Player(1, "Alice");
@@ -27,7 +27,7 @@ public class AnnouncementRendererTests
             .BeLessThan(text.IndexOf("Bob", StringComparison.Ordinal));
     }
 
-    [Fact]
+    [Test]
     public void TheStartTimeIsFormattedInTheTeamsLocalZone()
     {
         var game = GameWithCapacity(1);
@@ -39,7 +39,7 @@ public class AnnouncementRendererTests
         text.Should().Contain("Fri, 6 Mar, 19:05");
     }
 
-    [Fact]
+    [Test]
     public void ShowsTheReserveSectionOnlyWhenSomeoneIsWaiting()
     {
         var alice = Player(1, "Alice");
@@ -51,7 +51,7 @@ public class AnnouncementRendererTests
         text.Should().NotContain("Reserve");
     }
 
-    [Fact]
+    [Test]
     public void HtmlEncodesUserSuppliedNames()
     {
         var alice = Player(1, "<b>Alice</b>");
@@ -64,7 +64,7 @@ public class AnnouncementRendererTests
         text.Should().Contain("&lt;b&gt;Alice&lt;/b&gt;");
     }
 
-    [Fact]
+    [Test]
     public void AnAnonymousGuestIsCreditedToTheirInviter()
     {
         var alice = Player(1, "Alice");
@@ -84,7 +84,7 @@ public class AnnouncementRendererTests
         text.Should().Contain("Alice's guest");
     }
 
-    [Fact]
+    [Test]
     public void ANamedGuestShowsBothTheirNameAndTheirInviter()
     {
         var alice = Player(1, "Alice");
@@ -105,7 +105,7 @@ public class AnnouncementRendererTests
         text.Should().Contain("Sasha").And.Contain("guest of Alice");
     }
 
-    [Fact]
+    [Test]
     public void ATeamGuestHasNoInviterMentioned()
     {
         var game = GameWithCapacity(1);

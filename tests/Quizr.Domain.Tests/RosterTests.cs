@@ -6,7 +6,7 @@ public class RosterTests
 {
     private static readonly GameId GameId = new(1);
 
-    [Fact]
+    [Test]
     public void EveryoneUpToCapacityIsPlaying()
     {
         var signups = SignupBuilder.Queue(GameId, count: 3);
@@ -17,7 +17,7 @@ public class RosterTests
         roster.Reserve.Should().BeEmpty();
     }
 
-    [Fact]
+    [Test]
     public void EveryoneBeyondCapacityIsReserve()
     {
         var signups = SignupBuilder.Queue(GameId, count: 5);
@@ -28,7 +28,7 @@ public class RosterTests
         roster.Reserve.Should().Equal(signups.Skip(3));
     }
 
-    [Fact]
+    [Test]
     public void ZeroCapacityPutsEveryoneInReserve()
     {
         var signups = SignupBuilder.Queue(GameId, count: 2);
@@ -39,7 +39,7 @@ public class RosterTests
         roster.Reserve.Should().Equal(signups);
     }
 
-    [Fact]
+    [Test]
     public void TheSeatAtExactlyCapacityIsTheLastPlayingSeat()
     {
         var signups = SignupBuilder.Queue(GameId, count: 4);
@@ -50,7 +50,7 @@ public class RosterTests
         roster.Reserve.Should().BeEmpty();
     }
 
-    [Fact]
+    [Test]
     public void GuestsOccupySeatsInTheirOwnQueuePosition()
     {
         var start = DateTimeOffset.UtcNow;
@@ -64,7 +64,7 @@ public class RosterTests
         roster.Reserve.Should().Equal(another);
     }
 
-    [Fact]
+    [Test]
     public void ACancelledSignupFreesItsSeatForTheNextReserve()
     {
         var start = DateTimeOffset.UtcNow;
@@ -78,7 +78,7 @@ public class RosterTests
         roster.Reserve.Should().Equal(third);
     }
 
-    [Fact]
+    [Test]
     public void TiesOnCreatedAtBreakByInsertionOrderAndAreStableAcrossCalls()
     {
         var timestamp = DateTimeOffset.UtcNow;
@@ -94,7 +94,7 @@ public class RosterTests
         second.Playing.Should().Equal(earlierInsert);
     }
 
-    [Fact]
+    [Test]
     public void LocatesAPlayingSignupByItsOneBasedPosition()
     {
         var signups = SignupBuilder.Queue(GameId, count: 3);
@@ -105,7 +105,7 @@ public class RosterTests
         placement.Should().Be(new SignupPlacement(true, 2));
     }
 
-    [Fact]
+    [Test]
     public void LocatesAReserveSignupByItsOneBasedPosition()
     {
         var signups = SignupBuilder.Queue(GameId, count: 3);
@@ -116,7 +116,7 @@ public class RosterTests
         placement.Should().Be(new SignupPlacement(false, 2));
     }
 
-    [Fact]
+    [Test]
     public void LocatingAnUnknownSignupReturnsNull()
     {
         var signups = SignupBuilder.Queue(GameId, count: 2);

@@ -14,7 +14,8 @@ using Game = Quizr.Domain.Entities.Game;
 
 namespace Quizr.App.Tests;
 
-public class UpdateRouterSignupLoopTests : IClassFixture<PostgresFixture>
+[ClassDataSource<PostgresFixture>(Shared = SharedType.PerClass)]
+public class UpdateRouterSignupLoopTests
 {
     private static readonly TimeSpan WindowPastDebounce = TimeSpan.FromSeconds(2);
 
@@ -22,10 +23,10 @@ public class UpdateRouterSignupLoopTests : IClassFixture<PostgresFixture>
 
     public UpdateRouterSignupLoopTests(PostgresFixture fixture) => _fixture = fixture;
 
-    [Fact]
+    [Test]
     public async Task JoiningRewritesTheAnnouncementWithThePlayersName()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 7001, capacity: 5, ct);
         var (router, bot, clock) = CreateRouter(db);
@@ -50,10 +51,10 @@ public class UpdateRouterSignupLoopTests : IClassFixture<PostgresFixture>
             .Be(1);
     }
 
-    [Fact]
+    [Test]
     public async Task JoiningTwiceIsRejectedWithAnAlert()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 7002, capacity: 5, ct);
         var (router, bot, _) = CreateRouter(db);
@@ -68,10 +69,10 @@ public class UpdateRouterSignupLoopTests : IClassFixture<PostgresFixture>
         bot.AnsweredCallbackAlerts().Should().ContainSingle();
     }
 
-    [Fact]
+    [Test]
     public async Task BringingAGuestStartsANamingDialogThatANamedReplyResolves()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 7003, capacity: 5, ct);
         var (router, bot, clock) = CreateRouter(db);
@@ -105,10 +106,10 @@ public class UpdateRouterSignupLoopTests : IClassFixture<PostgresFixture>
             .ContainSingle(text => text != null && text.Contains("Sasha", StringComparison.Ordinal));
     }
 
-    [Fact]
+    [Test]
     public async Task SkippingTheGuestNamePromptLeavesTheGuestAnonymous()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 7004, capacity: 5, ct);
         var (router, _, _) = CreateRouter(db);
@@ -140,10 +141,10 @@ public class UpdateRouterSignupLoopTests : IClassFixture<PostgresFixture>
         (await db.Signups.AsNoTracking().SingleAsync(s => s.Id == guest.Id, ct)).GuestName.Should().BeNull();
     }
 
-    [Fact]
+    [Test]
     public async Task DroppingRequiresConfirmationBeforeCancellingTheSignup()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 7005, capacity: 5, ct);
         var (router, _, _) = CreateRouter(db);
@@ -190,10 +191,10 @@ public class UpdateRouterSignupLoopTests : IClassFixture<PostgresFixture>
             .Be(0);
     }
 
-    [Fact]
+    [Test]
     public async Task StayingKeepsTheSignupLive()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 7006, capacity: 5, ct);
         var (router, _, _) = CreateRouter(db);
@@ -224,10 +225,10 @@ public class UpdateRouterSignupLoopTests : IClassFixture<PostgresFixture>
             .Be(1);
     }
 
-    [Fact]
+    [Test]
     public async Task ConfirmingADropPromotesTheReserveAndSendsAPromotionMessage()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 7007, capacity: 1, ct);
         var (router, bot, _) = CreateRouter(db);
@@ -266,10 +267,10 @@ public class UpdateRouterSignupLoopTests : IClassFixture<PostgresFixture>
         bot.SentTexts().Should().Contain(text => text.Contains("Bob", StringComparison.Ordinal));
     }
 
-    [Fact]
+    [Test]
     public async Task ConfirmingADropSurfacesANamedGuestChoiceThatCanBeKept()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 7009, capacity: 5, ct);
         var (router, _, _) = CreateRouter(db);
@@ -325,10 +326,10 @@ public class UpdateRouterSignupLoopTests : IClassFixture<PostgresFixture>
         kept.InvitedByPlayerId.Should().BeNull();
     }
 
-    [Fact]
+    [Test]
     public async Task AGuestCanBeRemovedWithoutDroppingTheInviter()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 7010, capacity: 5, ct);
         var (router, bot, _) = CreateRouter(db);
@@ -383,10 +384,10 @@ public class UpdateRouterSignupLoopTests : IClassFixture<PostgresFixture>
             .BeNull();
     }
 
-    [Fact]
+    [Test]
     public async Task AddingASecondGuestFromTheMyGuestsViewWorksJustLikeTheAnnouncementButton()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 7011, capacity: 5, ct);
         var (router, _, _) = CreateRouter(db);

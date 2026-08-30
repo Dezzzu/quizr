@@ -5,13 +5,13 @@ namespace Quizr.App.Tests;
 
 public class LocaleResolverTests
 {
-    [Fact]
+    [Test]
     public void ExplicitChoiceWinsOverEverythingElse()
     {
         LocaleResolver.Resolve(explicitChoice: "de", telegramLanguageCode: "ru", teamDefault: "en").Should().Be("de");
     }
 
-    [Fact]
+    [Test]
     public void FallsBackToTelegramLanguageWhenNoExplicitChoice()
     {
         LocaleResolver
@@ -20,35 +20,35 @@ public class LocaleResolverTests
             .Be("ru");
     }
 
-    [Fact]
+    [Test]
     public void FallsBackToTeamDefaultWhenTelegramLanguageIsUnsupported()
     {
         LocaleResolver.Resolve(explicitChoice: null, telegramLanguageCode: "fr", teamDefault: "de").Should().Be("de");
     }
 
-    [Fact]
+    [Test]
     public void FallsBackToTeamDefaultWhenTelegramLanguageIsMissing()
     {
         LocaleResolver.Resolve(explicitChoice: null, telegramLanguageCode: null, teamDefault: "de").Should().Be("de");
     }
 
-    [Theory]
-    [InlineData("en", "en")]
-    [InlineData("ru-RU", "ru")]
-    [InlineData("DE", "de")]
-    [InlineData("fr", null)]
-    [InlineData(null, null)]
+    [Test]
+    [Arguments("en", "en")]
+    [Arguments("ru-RU", "ru")]
+    [Arguments("DE", "de")]
+    [Arguments("fr", null)]
+    [Arguments(null, null)]
     public void MapsToSupportedLocaleOrNull(string? languageCode, string? expected)
     {
         LocaleResolver.MapToSupported(languageCode).Should().Be(expected);
     }
 
-    [Theory]
-    [InlineData("en", true)]
-    [InlineData("ru", true)]
-    [InlineData("de", true)]
-    [InlineData("fr", false)]
-    [InlineData("ru-RU", false)]
+    [Test]
+    [Arguments("en", true)]
+    [Arguments("ru", true)]
+    [Arguments("de", true)]
+    [Arguments("fr", false)]
+    [Arguments("ru-RU", false)]
     public void IsSupportedRequiresAnExactMatch(string code, bool expected)
     {
         LocaleResolver.IsSupported(code).Should().Be(expected);

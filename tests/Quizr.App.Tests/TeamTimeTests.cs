@@ -5,7 +5,7 @@ namespace Quizr.App.Tests;
 
 public class TeamTimeTests
 {
-    [Fact]
+    [Test]
     public void ConvertsAWinterInstantToBerlinStandardTime()
     {
         var instant = new DateTimeOffset(2026, 1, 15, 18, 0, 0, TimeSpan.Zero);
@@ -16,7 +16,7 @@ public class TeamTimeTests
         local.Hour.Should().Be(19);
     }
 
-    [Fact]
+    [Test]
     public void ConvertsASummerInstantToBerlinDaylightTime()
     {
         var instant = new DateTimeOffset(2026, 7, 15, 18, 0, 0, TimeSpan.Zero);
@@ -27,7 +27,7 @@ public class TeamTimeTests
         local.Hour.Should().Be(20);
     }
 
-    [Fact]
+    [Test]
     public void GetUtcOffsetMatchesTheConvertedInstantsOffset()
     {
         var instant = new DateTimeOffset(2026, 7, 15, 18, 0, 0, TimeSpan.Zero);
@@ -35,7 +35,7 @@ public class TeamTimeTests
         TeamTime.GetUtcOffset(instant, "Europe/Berlin").Should().Be(TimeSpan.FromHours(2));
     }
 
-    [Fact]
+    [Test]
     public void SameInstantDifferentZonesProduceDifferentLocalHours()
     {
         var instant = new DateTimeOffset(2026, 3, 1, 12, 0, 0, TimeSpan.Zero);
@@ -47,7 +47,7 @@ public class TeamTimeTests
         berlin.ToUniversalTime().Should().Be(newYork.ToUniversalTime());
     }
 
-    [Fact]
+    [Test]
     public void ConvertsALocalWinterDateAndTimeToTheMatchingUtcInstant()
     {
         var instant = TeamTime.ConvertToUtc(new DateOnly(2026, 1, 15), new TimeOnly(19, 0), "Europe/Berlin");
@@ -55,7 +55,7 @@ public class TeamTimeTests
         instant.Should().Be(new DateTimeOffset(2026, 1, 15, 18, 0, 0, TimeSpan.Zero));
     }
 
-    [Fact]
+    [Test]
     public void ConvertsALocalSummerDateAndTimeToTheMatchingUtcInstant()
     {
         var instant = TeamTime.ConvertToUtc(new DateOnly(2026, 7, 15), new TimeOnly(20, 0), "Europe/Berlin");
@@ -63,7 +63,7 @@ public class TeamTimeTests
         instant.Should().Be(new DateTimeOffset(2026, 7, 15, 18, 0, 0, TimeSpan.Zero));
     }
 
-    [Fact]
+    [Test]
     public void ConvertToUtcRoundTripsWithConvertToLocal()
     {
         var original = new DateTimeOffset(2026, 3, 6, 19, 5, 0, TimeSpan.Zero);

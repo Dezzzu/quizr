@@ -8,16 +8,17 @@ using Quizr.Domain.Entities;
 
 namespace Quizr.App.Tests;
 
-public class SignupServiceTests : IClassFixture<PostgresFixture>
+[ClassDataSource<PostgresFixture>(Shared = SharedType.PerClass)]
+public class SignupServiceTests
 {
     private readonly PostgresFixture _fixture;
 
     public SignupServiceTests(PostgresFixture fixture) => _fixture = fixture;
 
-    [Fact]
+    [Test]
     public async Task JoinAsyncAddsALiveSignupForThePlayer()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 5001, capacity: 5, ct);
         var player = await SeedPlayerAsync(db, telegramUserId: 5001, ct);
@@ -30,10 +31,10 @@ public class SignupServiceTests : IClassFixture<PostgresFixture>
         result.Value.CancelledAt.Should().BeNull();
     }
 
-    [Fact]
+    [Test]
     public async Task JoinAsyncRejectsADuplicateSignup()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 5002, capacity: 5, ct);
         var player = await SeedPlayerAsync(db, telegramUserId: 5002, ct);
@@ -46,10 +47,10 @@ public class SignupServiceTests : IClassFixture<PostgresFixture>
         result.Error.Should().BeOfType<BusinessError.AlreadySignedUp>();
     }
 
-    [Fact]
+    [Test]
     public async Task JoinAsyncRejectsAFinishedGame()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 5003, capacity: 5, ct);
         game.FinishedAt = DateTimeOffset.UtcNow;
@@ -63,10 +64,10 @@ public class SignupServiceTests : IClassFixture<PostgresFixture>
         result.Error.Should().BeOfType<BusinessError.GameAlreadyFinished>();
     }
 
-    [Fact]
+    [Test]
     public async Task BringGuestAsyncCreatesAnAnonymousGuestOwnedByTheInviter()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 5004, capacity: 5, ct);
         var inviter = await SeedPlayerAsync(db, telegramUserId: 5004, ct);
@@ -80,10 +81,10 @@ public class SignupServiceTests : IClassFixture<PostgresFixture>
         result.Value.InvitedByPlayerId.Should().Be(inviter.Id);
     }
 
-    [Fact]
+    [Test]
     public async Task NameGuestAsyncSetsTheGuestsName()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 5005, capacity: 5, ct);
         var inviter = await SeedPlayerAsync(db, telegramUserId: 5005, ct);
@@ -96,10 +97,10 @@ public class SignupServiceTests : IClassFixture<PostgresFixture>
         result.Value.GuestName.Should().Be("Sasha");
     }
 
-    [Fact]
+    [Test]
     public async Task NameGuestAsyncRejectsSomeoneElsesGuest()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 5006, capacity: 5, ct);
         var inviter = await SeedPlayerAsync(db, telegramUserId: 5006, ct);
@@ -113,10 +114,10 @@ public class SignupServiceTests : IClassFixture<PostgresFixture>
         result.Error.Should().BeOfType<BusinessError.NotYourGuest>();
     }
 
-    [Fact]
+    [Test]
     public async Task DropAsyncCancelsTheCallersOwnSignup()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 5007, capacity: 5, ct);
         var player = await SeedPlayerAsync(db, telegramUserId: 5007, ct);
@@ -133,10 +134,10 @@ public class SignupServiceTests : IClassFixture<PostgresFixture>
         live.Should().BeEmpty();
     }
 
-    [Fact]
+    [Test]
     public async Task DropAsyncFailsWhenThePlayerHasNoLiveSignup()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 5008, capacity: 5, ct);
         var player = await SeedPlayerAsync(db, telegramUserId: 5008, ct);
@@ -148,10 +149,10 @@ public class SignupServiceTests : IClassFixture<PostgresFixture>
         result.Error.Should().BeOfType<BusinessError.NotSignedUp>();
     }
 
-    [Fact]
+    [Test]
     public async Task DropAsyncPromotesTheFirstReserveAndRecordsExactlyOneNotification()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 5009, capacity: 1, ct);
         var playing = await SeedPlayerAsync(db, telegramUserId: 5009, ct);
@@ -175,10 +176,10 @@ public class SignupServiceTests : IClassFixture<PostgresFixture>
         notifications.Should().ContainSingle();
     }
 
-    [Fact]
+    [Test]
     public async Task DropAsyncAutoCancelsAnUnnamedGuestOfTheDroppingPlayer()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 5010, capacity: 5, ct);
         var inviter = await SeedPlayerAsync(db, telegramUserId: 5010, ct);
@@ -194,10 +195,10 @@ public class SignupServiceTests : IClassFixture<PostgresFixture>
         (await db.Signups.AsNoTracking().SingleAsync(s => s.Id == guest.Id, ct)).CancelledAt.Should().NotBeNull();
     }
 
-    [Fact]
+    [Test]
     public async Task DropAsyncSurfacesANamedGuestInsteadOfCancellingThem()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 5011, capacity: 5, ct);
         var inviter = await SeedPlayerAsync(db, telegramUserId: 5011, ct);
@@ -214,10 +215,10 @@ public class SignupServiceTests : IClassFixture<PostgresFixture>
         (await db.Signups.AsNoTracking().SingleAsync(s => s.Id == guest.Id, ct)).CancelledAt.Should().BeNull();
     }
 
-    [Fact]
+    [Test]
     public async Task ResolveGuestChoiceAsyncKeepingClearsTheInviterAndLeavesTheGuestLive()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 5012, capacity: 5, ct);
         var inviter = await SeedPlayerAsync(db, telegramUserId: 5012, ct);
@@ -234,10 +235,10 @@ public class SignupServiceTests : IClassFixture<PostgresFixture>
         stored.CancelledAt.Should().BeNull();
     }
 
-    [Fact]
+    [Test]
     public async Task ResolveGuestChoiceAsyncRemovingCancelsTheGuestAndCanPromote()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 5013, capacity: 1, ct);
         var inviter = await SeedPlayerAsync(db, telegramUserId: 5013, ct);
@@ -255,10 +256,10 @@ public class SignupServiceTests : IClassFixture<PostgresFixture>
         (await db.Signups.AsNoTracking().SingleAsync(s => s.Id == guest.Id, ct)).CancelledAt.Should().NotBeNull();
     }
 
-    [Fact]
+    [Test]
     public async Task ResolveGuestChoiceAsyncRejectsAnyoneButTheInviter()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 5014, capacity: 5, ct);
         var inviter = await SeedPlayerAsync(db, telegramUserId: 5014, ct);
@@ -273,10 +274,10 @@ public class SignupServiceTests : IClassFixture<PostgresFixture>
         result.Error.Should().BeOfType<BusinessError.NotYourGuest>();
     }
 
-    [Fact]
+    [Test]
     public async Task RemoveGuestAsyncCancelsAnUnnamedGuestWithoutTouchingTheInvitersOwnSignup()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 5015, capacity: 5, ct);
         var inviter = await SeedPlayerAsync(db, telegramUserId: 5015, ct);
@@ -291,10 +292,10 @@ public class SignupServiceTests : IClassFixture<PostgresFixture>
         (await db.Signups.AsNoTracking().SingleAsync(s => s.PlayerId == inviter.Id, ct)).CancelledAt.Should().BeNull();
     }
 
-    [Fact]
+    [Test]
     public async Task RemoveGuestAsyncCanPromoteAReserve()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 5016, capacity: 1, ct);
         var inviter = await SeedPlayerAsync(db, telegramUserId: 5016, ct);
@@ -309,10 +310,10 @@ public class SignupServiceTests : IClassFixture<PostgresFixture>
         result.Value.NewlyPromoted.Should().ContainSingle(s => s.PlayerId == reserve.Id);
     }
 
-    [Fact]
+    [Test]
     public async Task RemoveGuestAsyncRejectsAnyoneButTheInviter()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 5017, capacity: 5, ct);
         var inviter = await SeedPlayerAsync(db, telegramUserId: 5017, ct);
@@ -326,10 +327,10 @@ public class SignupServiceTests : IClassFixture<PostgresFixture>
         result.Error.Should().BeOfType<BusinessError.NotYourGuest>();
     }
 
-    [Fact]
+    [Test]
     public async Task RemoveGuestAsyncRejectsAnAlreadyCancelledGuest()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 5018, capacity: 5, ct);
         var inviter = await SeedPlayerAsync(db, telegramUserId: 5018, ct);
@@ -343,10 +344,10 @@ public class SignupServiceTests : IClassFixture<PostgresFixture>
         result.Error.Should().BeOfType<BusinessError.GuestAlreadyResolved>();
     }
 
-    [Fact]
+    [Test]
     public async Task LoadLiveGuestsAsyncReturnsOnlyThatPlayersLiveGuestsInQueueOrder()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 5019, capacity: 5, ct);
         var inviter = await SeedPlayerAsync(db, telegramUserId: 5019, ct);

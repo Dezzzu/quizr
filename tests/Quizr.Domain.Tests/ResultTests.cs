@@ -4,7 +4,7 @@ namespace Quizr.Domain.Tests;
 
 public class ResultTests
 {
-    [Fact]
+    [Test]
     public void ASuccessCarriesItsValue()
     {
         Result<int> result = 19;
@@ -13,7 +13,7 @@ public class ResultTests
         result.Value.Should().Be(19);
     }
 
-    [Fact]
+    [Test]
     public void AFailureCarriesItsError()
     {
         Result<int> result = new BusinessError.NotCaptain();
@@ -22,7 +22,7 @@ public class ResultTests
         result.Error.Should().BeOfType<BusinessError.NotCaptain>();
     }
 
-    [Fact]
+    [Test]
     public void MatchDispatchesToTheRightBranch()
     {
         Result<int> success = 19;

@@ -13,43 +13,42 @@ public class PluralTemplatesTests
 {
     private readonly Strings _strings = new();
 
-    public static TheoryData<string, string, int, string> CapacityCases =>
-        new()
-        {
-            { "en", "Franchise.Capacity", 1, "👥 Capacity: 1 player" },
-            { "en", "Franchise.Capacity", 2, "👥 Capacity: 2 players" },
-            { "en", "Franchise.Capacity", 5, "👥 Capacity: 5 players" },
-            { "en", "Franchise.Capacity", 21, "👥 Capacity: 21 players" },
-            { "en", "Franchise.Capacity", 111, "👥 Capacity: 111 players" },
-            { "ru", "Franchise.Capacity", 1, "👥 Вместимость: 1 игрок" },
-            { "ru", "Franchise.Capacity", 2, "👥 Вместимость: 2 игрока" },
-            { "ru", "Franchise.Capacity", 5, "👥 Вместимость: 5 игроков" },
-            { "ru", "Franchise.Capacity", 21, "👥 Вместимость: 21 игрок" },
-            { "ru", "Franchise.Capacity", 111, "👥 Вместимость: 111 игроков" },
-            { "de", "Franchise.Capacity", 1, "👥 Kapazität: 1 Spieler" },
-            { "de", "Franchise.Capacity", 2, "👥 Kapazität: 2 Spieler" },
-            { "de", "Franchise.Capacity", 5, "👥 Kapazität: 5 Spieler" },
-            { "de", "Franchise.Capacity", 21, "👥 Kapazität: 21 Spieler" },
-            { "de", "Franchise.Capacity", 111, "👥 Kapazität: 111 Spieler" },
-            { "en", "NewGame.Capacity", 1, "👥 Capacity: 1 player" },
-            { "en", "NewGame.Capacity", 2, "👥 Capacity: 2 players" },
-            { "en", "NewGame.Capacity", 5, "👥 Capacity: 5 players" },
-            { "en", "NewGame.Capacity", 21, "👥 Capacity: 21 players" },
-            { "en", "NewGame.Capacity", 111, "👥 Capacity: 111 players" },
-            { "ru", "NewGame.Capacity", 1, "👥 Вместимость: 1 игрок" },
-            { "ru", "NewGame.Capacity", 2, "👥 Вместимость: 2 игрока" },
-            { "ru", "NewGame.Capacity", 5, "👥 Вместимость: 5 игроков" },
-            { "ru", "NewGame.Capacity", 21, "👥 Вместимость: 21 игрок" },
-            { "ru", "NewGame.Capacity", 111, "👥 Вместимость: 111 игроков" },
-            { "de", "NewGame.Capacity", 1, "👥 Kapazität: 1 Spieler" },
-            { "de", "NewGame.Capacity", 2, "👥 Kapazität: 2 Spieler" },
-            { "de", "NewGame.Capacity", 5, "👥 Kapazität: 5 Spieler" },
-            { "de", "NewGame.Capacity", 21, "👥 Kapazität: 21 Spieler" },
-            { "de", "NewGame.Capacity", 111, "👥 Kapazität: 111 Spieler" },
-        };
+    public static IEnumerable<(string Locale, string Key, int Capacity, string Expected)> CapacityCases()
+    {
+        yield return ("en", "Franchise.Capacity", 1, "👥 Capacity: 1 player");
+        yield return ("en", "Franchise.Capacity", 2, "👥 Capacity: 2 players");
+        yield return ("en", "Franchise.Capacity", 5, "👥 Capacity: 5 players");
+        yield return ("en", "Franchise.Capacity", 21, "👥 Capacity: 21 players");
+        yield return ("en", "Franchise.Capacity", 111, "👥 Capacity: 111 players");
+        yield return ("ru", "Franchise.Capacity", 1, "👥 Вместимость: 1 игрок");
+        yield return ("ru", "Franchise.Capacity", 2, "👥 Вместимость: 2 игрока");
+        yield return ("ru", "Franchise.Capacity", 5, "👥 Вместимость: 5 игроков");
+        yield return ("ru", "Franchise.Capacity", 21, "👥 Вместимость: 21 игрок");
+        yield return ("ru", "Franchise.Capacity", 111, "👥 Вместимость: 111 игроков");
+        yield return ("de", "Franchise.Capacity", 1, "👥 Kapazität: 1 Spieler");
+        yield return ("de", "Franchise.Capacity", 2, "👥 Kapazität: 2 Spieler");
+        yield return ("de", "Franchise.Capacity", 5, "👥 Kapazität: 5 Spieler");
+        yield return ("de", "Franchise.Capacity", 21, "👥 Kapazität: 21 Spieler");
+        yield return ("de", "Franchise.Capacity", 111, "👥 Kapazität: 111 Spieler");
+        yield return ("en", "NewGame.Capacity", 1, "👥 Capacity: 1 player");
+        yield return ("en", "NewGame.Capacity", 2, "👥 Capacity: 2 players");
+        yield return ("en", "NewGame.Capacity", 5, "👥 Capacity: 5 players");
+        yield return ("en", "NewGame.Capacity", 21, "👥 Capacity: 21 players");
+        yield return ("en", "NewGame.Capacity", 111, "👥 Capacity: 111 players");
+        yield return ("ru", "NewGame.Capacity", 1, "👥 Вместимость: 1 игрок");
+        yield return ("ru", "NewGame.Capacity", 2, "👥 Вместимость: 2 игрока");
+        yield return ("ru", "NewGame.Capacity", 5, "👥 Вместимость: 5 игроков");
+        yield return ("ru", "NewGame.Capacity", 21, "👥 Вместимость: 21 игрок");
+        yield return ("ru", "NewGame.Capacity", 111, "👥 Вместимость: 111 игроков");
+        yield return ("de", "NewGame.Capacity", 1, "👥 Kapazität: 1 Spieler");
+        yield return ("de", "NewGame.Capacity", 2, "👥 Kapazität: 2 Spieler");
+        yield return ("de", "NewGame.Capacity", 5, "👥 Kapazität: 5 Spieler");
+        yield return ("de", "NewGame.Capacity", 21, "👥 Kapazität: 21 Spieler");
+        yield return ("de", "NewGame.Capacity", 111, "👥 Kapazität: 111 Spieler");
+    }
 
-    [Theory]
-    [MemberData(nameof(CapacityCases))]
+    [Test]
+    [MethodDataSource(nameof(CapacityCases))]
     public void CapacityRendersTheCorrectPluralFormAtEveryBoundary(
         string locale,
         string key,

@@ -7,16 +7,17 @@ using Quizr.Domain.Entities;
 
 namespace Quizr.App.Tests;
 
-public class FranchiseServiceTests : IClassFixture<PostgresFixture>
+[ClassDataSource<PostgresFixture>(Shared = SharedType.PerClass)]
+public class FranchiseServiceTests
 {
     private readonly PostgresFixture _fixture;
 
     public FranchiseServiceTests(PostgresFixture fixture) => _fixture = fixture;
 
-    [Fact]
+    [Test]
     public async Task CreateAsyncPersistsEveryField()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var team = await SeedTeamAsync(db, chatId: 6001, ct);
         var service = new FranchiseService(db, new FakeTimeProvider());
@@ -33,10 +34,10 @@ public class FranchiseServiceTests : IClassFixture<PostgresFixture>
         franchise.ArchivedAt.Should().BeNull();
     }
 
-    [Fact]
+    [Test]
     public async Task SettersUpdateOnlyTheirOwnField()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var team = await SeedTeamAsync(db, chatId: 6002, ct);
         var service = new FranchiseService(db, new FakeTimeProvider());
@@ -61,10 +62,10 @@ public class FranchiseServiceTests : IClassFixture<PostgresFixture>
         franchise.DefaultPrice.Should().Be(7.5m);
     }
 
-    [Fact]
+    [Test]
     public async Task ArchiveAsyncStampsArchivedAt()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var team = await SeedTeamAsync(db, chatId: 6003, ct);
         var clock = new FakeTimeProvider();

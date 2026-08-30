@@ -27,15 +27,15 @@ the stack are settled.
 ```bash
 dotnet tool restore                              # first checkout
 dotnet build
-dotnet run --project tests/Quizr.Domain.Tests    # fast: pure domain, no Docker
-dotnet run --project tests/Quizr.App.Tests       # slower: Testcontainers needs Docker
+dotnet test                                      # both projects; or dotnet run --project <dir> for one
 dotnet csharpier format .                        # or: dotnet csharpier check .
 ```
 
-**Don't use `dotnet test`.** It reports "Zero tests ran" with xUnit v3 on SDK 10.0.111 — an
-untouched `dotnet new xunit3` template fails identically, so it's an SDK issue rather than
-anything in this repository. The assemblies discover and run their tests correctly when
-executed directly, which is what `dotnet run --project` does. See `STACK.md`.
+Tests run with **TUnit**, not xUnit — see `STACK.md`. TUnit runs tests within a class **in
+parallel by default**; a test class that touches shared/global state (like
+`SchedulerServiceTests`, whose `RunTickAsync` processes every team in the database, not just
+the one it seeded) needs `[NotInParallel]`, and every seeded row still needs a chat/game id
+unique to its own test, same as before.
 
 ## The rule everything else follows
 

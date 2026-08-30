@@ -10,13 +10,14 @@ using Telegram.Bot.Types;
 
 namespace Quizr.App.Tests;
 
-public class TeamGuardTests : IClassFixture<PostgresFixture>
+[ClassDataSource<PostgresFixture>(Shared = SharedType.PerClass)]
+public class TeamGuardTests
 {
     private readonly PostgresFixture _fixture;
 
     public TeamGuardTests(PostgresFixture fixture) => _fixture = fixture;
 
-    [Fact]
+    [Test]
     public void EnsureTimeZoneConfiguredSucceedsWhenSet()
     {
         var team = TeamWithTimeZone("Europe/Berlin");
@@ -24,7 +25,7 @@ public class TeamGuardTests : IClassFixture<PostgresFixture>
         TeamGuard.EnsureTimeZoneConfigured(team).IsSuccess.Should().BeTrue();
     }
 
-    [Fact]
+    [Test]
     public void EnsureTimeZoneConfiguredFailsWhenNotSet()
     {
         var team = TeamWithTimeZone(null);
@@ -35,10 +36,10 @@ public class TeamGuardTests : IClassFixture<PostgresFixture>
         result.Error.Should().BeOfType<BusinessError.TeamNotConfigured>();
     }
 
-    [Fact]
+    [Test]
     public async Task IsCaptainAsyncIsTrueForAnExplicitGrant()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var (team, player) = await SeedTeamAndPlayerAsync(db, chatId: 2001, telegramUserId: 1, ct);
         db.Memberships.Add(
@@ -65,10 +66,10 @@ public class TeamGuardTests : IClassFixture<PostgresFixture>
         isCaptain.Should().BeTrue();
     }
 
-    [Fact]
+    [Test]
     public async Task IsCaptainAsyncIsTrueForAChatAdminWithNoExplicitGrant()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var (team, player) = await SeedTeamAndPlayerAsync(db, chatId: 2002, telegramUserId: 2, ct);
         db.Memberships.Add(
@@ -102,10 +103,10 @@ public class TeamGuardTests : IClassFixture<PostgresFixture>
         isCaptain.Should().BeTrue();
     }
 
-    [Fact]
+    [Test]
     public async Task IsCaptainAsyncIsFalseOtherwise()
     {
-        var ct = TestContext.Current.CancellationToken;
+        var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var (team, player) = await SeedTeamAndPlayerAsync(db, chatId: 2003, telegramUserId: 3, ct);
         db.Memberships.Add(
