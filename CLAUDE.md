@@ -7,16 +7,20 @@ with a roster the bot owns.
 Read it before designing anything — most of what follows was decided deliberately and is not
 worth re-deriving.
 
+- **`PLAN.md`** — the data model and the ordered milestones. **Start here.**
 - **`STACK.md`** — the chosen tools and versions, what is built here rather than taken from a
   library, and what was considered and rejected.
 - **`STYLE.md`** — how code here is written: error handling, interfaces, async, comments,
   tests, and the conventions agents most often diverge on.
 - **`VISION.md`** — the product description, roadmap and decision log.
 
-## Status
+## Start here
 
-Project layout and tooling are in place; no domain code yet. The product description and the
-stack are settled.
+Project layout and tooling are in place; **no domain code yet**. The product description and
+the stack are settled.
+
+**`PLAN.md` has the data model and the milestone to start from.** Read this file and
+`STYLE.md` first, then work through `PLAN.md` in order.
 
 ## Commands
 

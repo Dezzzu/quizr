@@ -27,6 +27,7 @@ and who has to wait for a seat — and rewrites its own messages whenever any of
 
 ## Documentation
 
+- **[PLAN.md](PLAN.md)** — the data model and the ordered implementation milestones.
 - **[VISION.md](VISION.md)** — the idea, how it works, the roadmap, and the decision log.
 - **[STACK.md](STACK.md)** — the tools and versions, what is built here rather than taken
   from a library, and what was considered and rejected.

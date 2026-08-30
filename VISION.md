@@ -233,8 +233,14 @@ only ever taps one button in the group chat stays a first-class member of the te
 - Add venue-assigned players who were never registered
 - Decline a game the team chose not to play
 - Archive, browsable by everyone
-- Reminders before a game
+- Reminders before a game — three slots (the evening before, the morning of, shortly before
+  kickoff), each **opt-in and off by default**, each independently set to arrive in the group
+  chat or as a private message. Only people signed up to that game are reminded, and a
+  separate switch decides whether reminders continue while you're on the reserve
 - Reserve promotion ping
+- **Nudge** — anyone signed up can ping the players who haven't arrived yet, in the team
+  chat, so the replies land where everyone waiting can see them. Mandatory rather than
+  opt-in, with a per-game cooldown
 - **English, Russian and German** — group posts in the team's language, private messages in
   each person's own
 
@@ -245,7 +251,6 @@ only ever taps one button in the group chat stays a first-class member of the te
   placeholders, validated when saved
 - Results — score and placement
 - Statistics, captains only at first, opened up once it's clear which numbers are corrosive
-- Nudge a chosen subset, tagged in the team chat
 - Captain's game-creation UI (first thing to build in the app)
 - Calendar view — all games, or only mine
 - Phone-calendar subscription feed
@@ -289,22 +294,27 @@ Recorded so they don't get re-argued.
 | One chat is one team | A person can be in several teams; calendars stay separate. Other teams can use the same bot. |
 | Timezone is set per team by the captain | Not inferred from anyone's device. |
 | Localization is first-class from v1 | English, Russian and German from the first release rather than retrofitted. Group messages use the team's language; private messages use each person's own. |
+| A franchise is a template, not a live reference | Venue, capacity, price and time are copied onto a game when it's created and stay editable there, so editing a franchise never rewrites past games — and a one-off game, tied to no franchise at all, is simply one where nothing was copied. |
+| Reminders are opt-in, per slot, per channel | Three slots, all off by default, each set independently to the group chat or a private message. Only people signed up to a game are reminded. |
+| The nudge is mandatory and lives in the group | It can't be opted out of, and it goes to the team chat rather than private messages on purpose: replies like "ten minutes away" then land where the people waiting can see them, with no bot in the middle. |
 | A franchise carries a per-weekday schedule | One map from day to start time replaces separate "default time" and "typical days" fields, so the two can't drift apart. Creating a game becomes: pick the franchise, pick a date. |
 | Playing vs reserve is derived, not stored | A signup is who, which game and when; the split falls out of the ordering. Two people tapping for the last seat at the same moment simply get two timestamps. The invariant becomes a property of the data instead of something the code maintains. |
 
-## Still open
+## Questions that were open, and how they were settled
 
-None of these block starting.
+- **When do reminders fire?** Three slots, opt-in, with the times as team settings — see the
+  feature list above.
+- **Do venue-assigned players count in statistics?** Recorded so the roster is accurate,
+  excluded from member statistics. They aren't in the chat and won't recur, so they're stored
+  the same way an anonymous guest is: a name with no player attached.
+- **Which language do group posts use?** A team setting, defaulting to the language of
+  whoever adds the bot and changeable by a captain. Private messages follow each person.
+- **What if a game is never declined but wasn't played?** The finished announcement already
+  gets rewritten with the final roster, so it carries captain-only buttons — *Mark absent*,
+  *Add player*, *Not played*. Correcting it is one tap on a message that already exists, with
+  nothing extra posted to the chat.
 
-- **When do reminders fire?** A day before and a few hours before is the obvious guess, but
-  nothing's chosen. Also: whole chat, or only tag the registered players?
-- **Do venue-assigned players count in statistics?** They played with the team but aren't of
-  it. Probably recorded and excluded — but that's a guess.
-- **Which language do group posts use?** Per-person language works in private messages and
-  the app, but a single group message can only be written once. Needs a team-level setting.
-- **What if a game is never declined but wasn't played?** Default-played means a forgotten
-  decline silently inflates the count. Accepted for now; worth a gentle prompt if it turns
-  out to happen.
+Remaining parameters — default slot times, the nudge cooldown — are listed in `PLAN.md`.
 
 ## Telegram limits worth designing around
 
