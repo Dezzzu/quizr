@@ -192,7 +192,8 @@ keeps its roster editable by captains forever.
 ### Phase 1 — the bot
 
 Everything runs in the team chat. Announcement posts with buttons, the pinned Board, the
-queue, guests, reminders, the archive. Because the bot long-polls, **nothing ever connects
+queue, guests, reminders — with tagged games standing in for a browsable archive, findable
+through Telegram's own hashtag search. Because the bot long-polls, **nothing ever connects
 to it**: no domain, no TLS, no open ports. It dials out to Telegram and talks to its
 database, and that is the whole surface it needs.
 
@@ -200,8 +201,8 @@ database, and that is the whole surface it needs.
 
 A second view onto the same data, added once the bot has been used in anger. The captain's
 game-creation UI moves first, because that is where the friction is — even a short dialogue
-is clumsy compared to a form, and it's the most frequent organiser task. Then the calendar,
-the phone-calendar subscription feed, personal history.
+is clumsy compared to a form, and it's the most frequent organiser task. Then the browsable
+archive, the calendar, the phone-calendar subscription feed, personal history.
 
 ### Phase 3 — open the app up
 
@@ -234,9 +235,8 @@ only ever taps one button in the group chat stays a first-class member of the te
 - Everyone attended by default; captains mark absences
 - Add venue-assigned players who were never registered
 - Decline a game the team chose not to play
-- Archive, browsable by everyone
-- Game tags (music, detective, …) — also the interim way to find past games in chat history,
-  as a real Telegram hashtag, until the mini app's archive lands
+- Game tags (music, detective, …) — the interim way to find past games in chat history, as a
+  real Telegram hashtag, until the mini app's browsable archive lands
 - Reminders before a game — three slots (the evening before, the morning of, shortly before
   kickoff), each **opt-in and off by default**, each independently set to arrive in the group
   chat or as a private message. Only people signed up to that game are reminded, and a
@@ -255,6 +255,7 @@ only ever taps one button in the group chat stays a first-class member of the te
 - Results — score and placement
 - Statistics, captains only at first, opened up once it's clear which numbers are corrosive
 - Captain's game-creation UI (first thing to build in the app)
+- Archive, browsable by everyone — hashtagged tags are the phase 1 stand-in
 - Calendar view — all games, or only mine
 - Phone-calendar subscription feed
 - Personal history for players

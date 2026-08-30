@@ -36,3 +36,10 @@ jobs:
 
       - name: App tests
         run: dotnet test --project tests/Quizr.App.Tests --no-build
+
+      # Catches a broken Dockerfile on every push, independent of the dotnet build
+      # above — a change here (a moved project, a renamed csproj) can break the
+      # image without breaking `dotnet build`. Doesn't push anywhere; picking a
+      # registry is a deployment decision, not a CI one.
+      - name: Build Docker image
+        run: docker build -t quizr:ci .

@@ -10,6 +10,13 @@
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
         <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
         <AnalysisLevel>latest-recommended</AnalysisLevel>
+        <!-- CA1848/CA1873 push toward LoggerMessage source-generated delegates, which only
+         run under Release. CLAUDE.md's logging convention is a direct structured call
+         (LogInformation("Promoted {UserId} to game {GameId}", userId, gameId)) precisely
+         because it's simpler than maintaining a delegate per call site — a deliberate
+         choice, not an oversight, so these two are suppressed rather than the codebase
+         bent to satisfy an analyzer preset that disagrees with it. -->
+        <NoWarn>$(NoWarn);CA1848;CA1873</NoWarn>
     </PropertyGroup>
 
     <PropertyGroup>

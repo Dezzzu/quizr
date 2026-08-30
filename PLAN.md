@@ -317,8 +317,10 @@ list.
 
 ## Deliberately not in scope
 
-Tags, results and scores, statistics, captain-authored templates, badges, export — all
-`VISION.md` **Later**. The mini app is phase 2; see `STACK.md`. Don't build toward any of
+A browsable archive UI — M9 built tags rendered as real Telegram hashtags instead, the
+interim way to find past games via Telegram's own in-chat search until the mini app's
+archive lands. Results and scores, statistics, captain-authored templates, badges, export —
+all `VISION.md` **Later**. The mini app is phase 2; see `STACK.md`. Don't build toward any of
 them speculatively.
 
 ## Still undecided — ask, don't invent

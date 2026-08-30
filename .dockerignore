@@ -1,0 +1,24 @@
+# Build output — rebuilt inside the image, never copied in from the host.
+**/bin/
+**/obj/
+
+# IDE / editor state.
+.idea/
+.vs/
+.vscode/
+*.user
+*.sln.docstates
+
+# Not needed to build or run the app — smaller build context.
+.git/
+.github/
+tests/
+docker-compose.yml
+*.md
+LICENSE
+
+# Secrets — never end up in an image layer.
+.env
+.env.*
+appsettings.*.local.json
+secrets.json
