@@ -10,7 +10,6 @@ using Quizr.App.Time;
 using Quizr.App.Validation;
 using Quizr.Domain;
 using Quizr.Domain.Entities;
-using Quizr.Domain.Extensions;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;

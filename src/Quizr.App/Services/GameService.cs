@@ -3,7 +3,6 @@ using Quizr.App.Data;
 using Quizr.App.Time;
 using Quizr.Domain;
 using Quizr.Domain.Entities;
-using Quizr.Domain.Extensions;
 
 namespace Quizr.App.Services;
 
