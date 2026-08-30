@@ -1,5 +1,6 @@
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using Quizr.App.Data;
@@ -31,7 +32,13 @@ public class BoardServiceTests
         await using var db = _fixture.CreateContext();
         var team = await SeedTeamAsync(db, chatId: 8001, ct);
         var bot = TelegramBotClientTestHelper.Create();
-        var service = new BoardService(db, new MessageSender(bot, NoDebounce(bot)), bot, new Strings());
+        var service = new BoardService(
+            db,
+            new MessageSender(bot, NoDebounce(bot)),
+            bot,
+            new Strings(),
+            NullLogger<BoardService>.Instance
+        );
 
         await service.RefreshAsync(team, ct);
 
@@ -49,7 +56,13 @@ public class BoardServiceTests
         await using var db = _fixture.CreateContext();
         var team = await SeedTeamAsync(db, chatId: 8002, ct);
         var bot = TelegramBotClientTestHelper.Create();
-        var service = new BoardService(db, new MessageSender(bot, NoDebounce(bot)), bot, new Strings());
+        var service = new BoardService(
+            db,
+            new MessageSender(bot, NoDebounce(bot)),
+            bot,
+            new Strings(),
+            NullLogger<BoardService>.Instance
+        );
         await service.RefreshAsync(team, ct);
         var boardMessageId = team.BoardMessageId!.Value;
         StubGetChat(bot, pinnedMessageId: (int)boardMessageId.Value);
@@ -70,7 +83,13 @@ public class BoardServiceTests
         await using var db = _fixture.CreateContext();
         var team = await SeedTeamAsync(db, chatId: 8003, ct);
         var bot = TelegramBotClientTestHelper.Create();
-        var service = new BoardService(db, new MessageSender(bot, NoDebounce(bot)), bot, new Strings());
+        var service = new BoardService(
+            db,
+            new MessageSender(bot, NoDebounce(bot)),
+            bot,
+            new Strings(),
+            NullLogger<BoardService>.Instance
+        );
         await service.RefreshAsync(team, ct);
         StubGetChat(bot, pinnedMessageId: 999999); // some other message is now pinned
 
@@ -86,7 +105,13 @@ public class BoardServiceTests
         await using var db = _fixture.CreateContext();
         var team = await SeedTeamAsync(db, chatId: 8004, ct);
         var bot = TelegramBotClientTestHelper.Create();
-        var service = new BoardService(db, new MessageSender(bot, NoDebounce(bot)), bot, new Strings());
+        var service = new BoardService(
+            db,
+            new MessageSender(bot, NoDebounce(bot)),
+            bot,
+            new Strings(),
+            NullLogger<BoardService>.Instance
+        );
         await service.RefreshAsync(team, ct);
         StubGetChat(bot, pinnedMessageId: (int)team.BoardMessageId!.Value.Value);
 
@@ -102,7 +127,13 @@ public class BoardServiceTests
         await using var db = _fixture.CreateContext();
         var team = await SeedTeamAsync(db, chatId: 8005, ct);
         var bot = TelegramBotClientTestHelper.Create();
-        var service = new BoardService(db, new MessageSender(bot, NoDebounce(bot)), bot, new Strings());
+        var service = new BoardService(
+            db,
+            new MessageSender(bot, NoDebounce(bot)),
+            bot,
+            new Strings(),
+            NullLogger<BoardService>.Instance
+        );
         await service.RefreshAsync(team, ct);
         var originalMessageId = team.BoardMessageId!.Value;
         bot.SendRequest(
@@ -117,6 +148,97 @@ public class BoardServiceTests
         bot.PinCallCount().Should().Be(2);
     }
 
+    // A tick that finds nothing changed since the last one is the ordinary case, not an
+    // error — Telegram rejects a no-op edit as a 400 rather than a silent success, so this
+    // must not be mistaken for the board message having disappeared and reposted over it.
+    [Test]
+    public async Task RefreshAsyncDoesNotRepostWhenTelegramReportsNothingChanged()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 8009, ct);
+        var bot = TelegramBotClientTestHelper.Create();
+        var service = new BoardService(
+            db,
+            new MessageSender(bot, NoDebounce(bot)),
+            bot,
+            new Strings(),
+            NullLogger<BoardService>.Instance
+        );
+        await service.RefreshAsync(team, ct);
+        var originalMessageId = team.BoardMessageId!.Value;
+        bot.SendRequest(Arg.Any<EditMessageTextRequest>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(
+                new ApiRequestException(
+                    "Bad Request: message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message",
+                    400
+                )
+            );
+        StubGetChat(bot, pinnedMessageId: (int)originalMessageId.Value);
+
+        await service.RefreshAsync(team, ct);
+
+        team.BoardMessageId!.Value.Should().Be(originalMessageId);
+        bot.SentTexts().Should().ContainSingle();
+        bot.PinCallCount().Should().Be(1);
+    }
+
+    // Invariant 12: "the bot verifies the pin and restores it silently." A missing-rights pin
+    // failure — the ordinary state before a captain promotes the bot to admin — must not
+    // throw: uncaught, it would trip UpdateDispatcher's unhandled-exception alert and apology
+    // message for an expected, self-healing condition instead of staying silent.
+    [Test]
+    public async Task RefreshAsyncDoesNotThrowWhenTheBotIsNotYetAnAdmin()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 8007, ct);
+        var bot = TelegramBotClientTestHelper.Create();
+        bot.SendRequest(Arg.Any<PinChatMessageRequest>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new ApiRequestException("Bad Request: not enough rights to pin a message", 400));
+        var service = new BoardService(
+            db,
+            new MessageSender(bot, NoDebounce(bot)),
+            bot,
+            new Strings(),
+            NullLogger<BoardService>.Instance
+        );
+
+        await service.RefreshAsync(team, ct);
+
+        (await db.Teams.AsNoTracking().SingleAsync(t => t.Id == team.Id, ct)).BoardMessageId.Should().NotBeNull();
+    }
+
+    // The scheduler ticks every 30 seconds regardless of the previous tick's outcome — this
+    // is what makes the pin actually happen once a captain promotes the bot, with nothing
+    // else needed from anyone.
+    [Test]
+    public async Task RefreshAsyncPinsOnALaterCallOnceTheBotBecomesAnAdmin()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 8008, ct);
+        var bot = TelegramBotClientTestHelper.Create();
+        bot.SendRequest(Arg.Any<PinChatMessageRequest>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new ApiRequestException("Bad Request: not enough rights to pin a message", 400));
+        var service = new BoardService(
+            db,
+            new MessageSender(bot, NoDebounce(bot)),
+            bot,
+            new Strings(),
+            NullLogger<BoardService>.Instance
+        );
+        await service.RefreshAsync(team, ct);
+
+        StubGetChat(bot, pinnedMessageId: 0); // still nothing pinned
+        bot.SendRequest(Arg.Any<PinChatMessageRequest>(), Arg.Any<CancellationToken>()).Returns(true);
+        var teamOnNextTick = await db.Teams.SingleAsync(t => t.Id == team.Id, ct);
+
+        await service.RefreshAsync(teamOnNextTick, ct);
+
+        bot.PinCallCount().Should().Be(2);
+    }
+
     [Test]
     public async Task RefreshAsyncListsOnlyUpcomingGames()
     {
@@ -124,7 +246,13 @@ public class BoardServiceTests
         await using var db = _fixture.CreateContext();
         var team = await SeedTeamAsync(db, chatId: 8006, ct);
         var bot = TelegramBotClientTestHelper.Create();
-        var service = new BoardService(db, new MessageSender(bot, NoDebounce(bot)), bot, new Strings());
+        var service = new BoardService(
+            db,
+            new MessageSender(bot, NoDebounce(bot)),
+            bot,
+            new Strings(),
+            NullLogger<BoardService>.Instance
+        );
         var upcoming = await SeedGameAsync(db, team, "Upcoming Quiz", DateTimeOffset.UtcNow.AddDays(1), ct);
         var finished = await SeedGameAsync(db, team, "Finished Quiz", DateTimeOffset.UtcNow.AddDays(-1), ct);
         finished.FinishedAt = DateTimeOffset.UtcNow;
@@ -142,7 +270,8 @@ public class BoardServiceTests
 
     // The debouncer's own delay isn't what's under test here; a zero-window instance still
     // exercises the real coalescing code path.
-    private static MessageEditDebouncer NoDebounce(ITelegramBotClient bot) => new(bot, TimeProvider.System);
+    private static MessageEditDebouncer NoDebounce(ITelegramBotClient bot) =>
+        new(bot, TimeProvider.System, NullLogger<MessageEditDebouncer>.Instance);
 
     private static void StubGetChat(ITelegramBotClient bot, int pinnedMessageId) =>
         bot.SendRequest(Arg.Any<GetChatRequest>(), Arg.Any<CancellationToken>())

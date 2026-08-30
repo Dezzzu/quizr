@@ -310,11 +310,14 @@ public class SchedulerServiceTests
         // The debouncer runs on the real clock, not the fake business-time one, so an edit
         // (the Board, a finished announcement) actually flushes during the test instead of
         // waiting out a debounce window that never advances.
-        var sender = new MessageSender(bot, new MessageEditDebouncer(bot, TimeProvider.System));
+        var sender = new MessageSender(
+            bot,
+            new MessageEditDebouncer(bot, TimeProvider.System, NullLogger<MessageEditDebouncer>.Instance)
+        );
         var strings = new Strings();
         var games = new GameService(db, clock);
         var announcements = new AnnouncementService(db, sender, strings);
-        var board = new BoardService(db, sender, bot, strings);
+        var board = new BoardService(db, sender, bot, strings, NullLogger<BoardService>.Instance);
 
         var scheduler = new SchedulerService(
             db,

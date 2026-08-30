@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
+using Microsoft.Extensions.Logging;
 using Quizr.Domain;
 using Telegram.Bot;
+using Telegram.Bot.Exceptions;
 using Telegram.Bot.Requests;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
@@ -28,12 +30,14 @@ public sealed class MessageEditDebouncer : IMessageEditDebouncer
 
     private readonly ITelegramBotClient _bot;
     private readonly TimeProvider _timeProvider;
+    private readonly ILogger<MessageEditDebouncer> _logger;
     private readonly ConcurrentDictionary<(long ChatId, long MessageId), PendingEdit> _pending = new();
 
-    public MessageEditDebouncer(ITelegramBotClient bot, TimeProvider timeProvider)
+    public MessageEditDebouncer(ITelegramBotClient bot, TimeProvider timeProvider, ILogger<MessageEditDebouncer> logger)
     {
         _bot = bot;
         _timeProvider = timeProvider;
+        _logger = logger;
     }
 
     public Task ScheduleAsync(
@@ -88,18 +92,49 @@ public sealed class MessageEditDebouncer : IMessageEditDebouncer
 
         _pending.TryRemove(key, out _);
 
-        await _bot.SendRequest(
-            new EditMessageTextRequest
-            {
-                ChatId = key.ChatId,
-                MessageId = (int)key.MessageId,
-                Text = pending.Text,
-                ParseMode = ParseMode.Html,
-                ReplyMarkup = pending.Keyboard,
-            },
-            ct
-        );
+        // This runs detached from whoever scheduled it — the coalescing this class exists
+        // for (CLAUDE.md's ~20 messages/minute/group limit) means the actual edit can land up
+        // to DebounceWindow after the caller returned. Neither of STYLE.md's two broad-catch
+        // boundaries (update dispatch, scheduler tick) is still on the stack by then, so this
+        // is the only place a failure here is ever seen at all.
+        try
+        {
+            await _bot.SendRequest(
+                new EditMessageTextRequest
+                {
+                    ChatId = key.ChatId,
+                    MessageId = (int)key.MessageId,
+                    Text = pending.Text,
+                    ParseMode = ParseMode.Html,
+                    ReplyMarkup = pending.Keyboard,
+                },
+                ct
+            );
+        }
+        catch (OperationCanceledException)
+        {
+            // App shutdown mid-flush — not a failure worth logging.
+        }
+        catch (ApiRequestException ex) when (IsUnmodified(ex))
+        {
+            // The pending edit ended up matching what's already there — e.g. two rapid
+            // changes within the debounce window that cancel out. Not a failure.
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Debounced edit failed for chat {ChatId}, message {MessageId}",
+                key.ChatId,
+                key.MessageId
+            );
+        }
     }
+
+    // Same story as MessageSender.IsMessageGone/IsUnmodified: no dedicated error code for
+    // this on the API side, just this text on a 400.
+    private static bool IsUnmodified(ApiRequestException ex) =>
+        ex.Message.Contains("message is not modified", StringComparison.OrdinalIgnoreCase);
 
     private sealed class PendingEdit
     {

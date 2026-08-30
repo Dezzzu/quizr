@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Quizr.App.Data;
 using Quizr.App.Localization;
 using Quizr.App.Rendering;
@@ -6,6 +7,7 @@ using Quizr.App.Telegram;
 using Quizr.Domain;
 using Quizr.Domain.Entities;
 using Telegram.Bot;
+using Telegram.Bot.Exceptions;
 using Telegram.Bot.Requests;
 
 namespace Quizr.App.Services;
@@ -20,13 +22,21 @@ public sealed class BoardService
     private readonly IMessageSender _sender;
     private readonly ITelegramBotClient _bot;
     private readonly IStrings _strings;
+    private readonly ILogger<BoardService> _logger;
 
-    public BoardService(QuizrDb db, IMessageSender sender, ITelegramBotClient bot, IStrings strings)
+    public BoardService(
+        QuizrDb db,
+        IMessageSender sender,
+        ITelegramBotClient bot,
+        IStrings strings,
+        ILogger<BoardService> logger
+    )
     {
         _db = db;
         _sender = sender;
         _bot = bot;
         _strings = strings;
+        _logger = logger;
     }
 
     public async Task RefreshAsync(Team team, CancellationToken ct)
@@ -70,16 +80,35 @@ public sealed class BoardService
         }
     }
 
-    private async Task PinAsync(TelegramChatId chatId, TelegramMessageId messageId, CancellationToken ct) =>
-        await _bot.SendRequest(
-            new PinChatMessageRequest
-            {
-                ChatId = chatId.Value,
-                MessageId = (int)messageId.Value,
-                // "Restores it silently" — CLAUDE.md invariant 12. A re-pin the team never
-                // asked for shouldn't ping everyone in the chat.
-                DisableNotification = true,
-            },
-            ct
-        );
+    private async Task PinAsync(TelegramChatId chatId, TelegramMessageId messageId, CancellationToken ct)
+    {
+        try
+        {
+            await _bot.SendRequest(
+                new PinChatMessageRequest
+                {
+                    ChatId = chatId.Value,
+                    MessageId = (int)messageId.Value,
+                    // "Restores it silently" — CLAUDE.md invariant 12. A re-pin the team never
+                    // asked for shouldn't ping everyone in the chat.
+                    DisableNotification = true,
+                },
+                ct
+            );
+        }
+        catch (ApiRequestException ex)
+            when (ex.Message.Contains("not enough rights", StringComparison.OrdinalIgnoreCase))
+        {
+            // The bot isn't a chat admin yet (CLAUDE.md's Telegram constraints) — expected
+            // before a captain promotes it, not a bug. Swallowed here rather than left to
+            // propagate: uncaught, this fires UpdateDispatcher's unhandled-exception alert
+            // and apology message for every captain action until someone promotes the bot,
+            // even though invariant 12 already calls this case "restores it silently" — the
+            // scheduler's next tick (30s) retries unconditionally and succeeds the moment
+            // admin rights exist, with nothing else to do here in the meantime. Matched on
+            // the API's own wording, not just any ApiRequestException, so an unrelated pin
+            // failure still surfaces as the genuine bug it would be.
+            _logger.LogInformation("Board pin skipped for chat {ChatId}: the bot isn't a chat admin yet", chatId);
+        }
+    }
 }

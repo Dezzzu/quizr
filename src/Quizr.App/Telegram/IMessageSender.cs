@@ -106,6 +106,13 @@ public sealed class MessageSender : IMessageSender
         {
             return false;
         }
+        catch (ApiRequestException ex) when (IsUnmodified(ex))
+        {
+            // The current content already matches what was asked for — e.g. the scheduler's
+            // board refresh finding nothing changed since the last tick. Telegram rejects a
+            // no-op edit as a 400 rather than silently succeeding; this is that silence.
+            return true;
+        }
     }
 
     // Telegram's description for editing a deleted message; there's no dedicated error code
@@ -113,4 +120,8 @@ public sealed class MessageSender : IMessageSender
     private static bool IsMessageGone(ApiRequestException ex) =>
         ex.Message.Contains("message to edit not found", StringComparison.OrdinalIgnoreCase)
         || ex.Message.Contains("MESSAGE_ID_INVALID", StringComparison.OrdinalIgnoreCase);
+
+    // Same story as IsMessageGone: no dedicated error code, just this text on a 400.
+    private static bool IsUnmodified(ApiRequestException ex) =>
+        ex.Message.Contains("message is not modified", StringComparison.OrdinalIgnoreCase);
 }

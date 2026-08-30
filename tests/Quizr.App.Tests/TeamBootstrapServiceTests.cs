@@ -1,5 +1,6 @@
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using Quizr.App.Data;
 using Quizr.App.Localization;
@@ -104,7 +105,10 @@ public class TeamBootstrapServiceTests
         var db = _fixture.CreateContext();
         var bot = TelegramBotClientTestHelper.Create();
         var clock = new FakeTimeProvider();
-        var sender = new MessageSender(bot, new MessageEditDebouncer(bot, clock));
+        var sender = new MessageSender(
+            bot,
+            new MessageEditDebouncer(bot, clock, NullLogger<MessageEditDebouncer>.Instance)
+        );
 
         return (new TeamBootstrapService(db, sender, new Strings(), clock), db, bot);
     }

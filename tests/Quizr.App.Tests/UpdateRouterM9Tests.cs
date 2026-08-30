@@ -317,7 +317,10 @@ public class UpdateRouterM9Tests
     {
         var bot = TelegramBotClientTestHelper.Create();
         var clock = new FakeTimeProvider();
-        var sender = new MessageSender(bot, new MessageEditDebouncer(bot, clock));
+        var sender = new MessageSender(
+            bot,
+            new MessageEditDebouncer(bot, clock, NullLogger<MessageEditDebouncer>.Instance)
+        );
         var strings = new Strings();
         var teamBootstrap = new TeamBootstrapService(db, sender, strings, clock);
         var playerBootstrap = new PlayerBootstrapService(db, clock);
@@ -327,7 +330,7 @@ public class UpdateRouterM9Tests
         var games = new GameService(db, clock);
         var participations = new ParticipationService(db, clock);
         var announcements = new AnnouncementService(db, sender, strings);
-        var board = new BoardService(db, sender, bot, strings);
+        var board = new BoardService(db, sender, bot, strings, NullLogger<BoardService>.Instance);
 
         var router = new UpdateRouter(
             db,
