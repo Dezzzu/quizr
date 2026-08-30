@@ -512,23 +512,91 @@ public class UpdateRouterTests
             .Be(new TelegramChatId(-1004023999999));
     }
 
-    // The conflict case: TeamBootstrapService's own my_chat_member "added" handler already
-    // bootstrapped a fresh team for the new chat id before this migrate message was
-    // processed — the stale team is retired rather than colliding with it.
+    // The common conflict case: TeamBootstrapService's own my_chat_member "added" handler
+    // already bootstrapped a fresh team for the new chat id before this migrate message was
+    // processed, but nobody's actually configured it (no timezone, no Board) — it's the one
+    // that retires, and the real team (with its history) takes over the new chat id.
     [Test]
-    public async Task ChatMigrationRetiresTheStaleTeamWhenAFreshOneAlreadyOwnsTheNewChatId()
+    public async Task ChatMigrationRetiresTheUnusedBootstrapTeamAndMovesTheRealOneOver()
     {
         var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
-        var staleTeam = await SeedTeamAsync(db, chatId: 4024, ct);
-        await SeedTeamAsync(db, chatId: -1004024999999, ct);
+        var realTeam = await SeedTeamAsync(db, chatId: 4024, ct);
+        var bootstrapTeam = await SeedTeamAsync(db, chatId: -1004024999999, ct);
         var (router, _) = CreateRouter(db);
 
         await router.RouteAsync(MigrateUpdate(oldChatId: 4024, newChatId: -1004024999999), ct);
 
-        var refreshed = await db.Teams.AsNoTracking().SingleAsync(t => t.Id == staleTeam.Id, ct);
-        refreshed.ChatId.Should().Be(new TelegramChatId(4024));
-        refreshed.DeactivatedAt.Should().NotBeNull();
+        var refreshedReal = await db.Teams.AsNoTracking().SingleAsync(t => t.Id == realTeam.Id, ct);
+        refreshedReal.ChatId.Should().Be(new TelegramChatId(-1004024999999));
+        refreshedReal.DeactivatedAt.Should().BeNull();
+        var refreshedBootstrap = await db
+            .Teams.IgnoreQueryFilters()
+            .AsNoTracking()
+            .SingleAsync(t => t.Id == bootstrapTeam.Id, ct);
+        refreshedBootstrap.DeactivatedAt.Should().NotBeNull();
+    }
+
+    // The rarer case: a captain actually reached the fresh bootstrap team first (set its
+    // timezone, and it's already posted a Board) — it's the real active continuation, so the
+    // old team retires instead, same as before this fix.
+    [Test]
+    public async Task ChatMigrationRetiresTheOldTeamWhenTheFreshOneWasActuallyConfigured()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var staleTeam = await SeedTeamAsync(db, chatId: 4032, ct);
+        var configuredTeam = new Team
+        {
+            ChatId = new TelegramChatId(-1004032999999),
+            Name = "Test team",
+            Locale = "en",
+            TimeZoneId = "Europe/Berlin",
+            BoardMessageId = new TelegramMessageId(1),
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+        db.Teams.Add(configuredTeam);
+        await db.SaveChangesAsync(ct);
+        var (router, _) = CreateRouter(db);
+
+        await router.RouteAsync(MigrateUpdate(oldChatId: 4032, newChatId: -1004032999999), ct);
+
+        var refreshedStale = await db
+            .Teams.IgnoreQueryFilters()
+            .AsNoTracking()
+            .SingleAsync(t => t.Id == staleTeam.Id, ct);
+        refreshedStale.ChatId.Should().Be(new TelegramChatId(4032));
+        refreshedStale.DeactivatedAt.Should().NotBeNull();
+        (await db.Teams.AsNoTracking().SingleAsync(t => t.Id == configuredTeam.Id, ct)).DeactivatedAt.Should().BeNull();
+    }
+
+    // The exact shape TeamChatMigration's filtered index makes possible: an active team and
+    // a retired one sharing the same chat id (the retired one lost the chat id fight but,
+    // per invariant 7, is never deleted — it just keeps the id it had). Team's global query
+    // filter (TeamConfiguration) needs to resolve every ordinary interaction to the active
+    // one without throwing on the retired one sharing its chat id.
+    [Test]
+    public async Task AnOrdinaryMessageResolvesTheActiveTeamEvenWhenARetiredOneSharesItsChatId()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var activeTeam = await SeedCaptainedTeamAsync(db, chatId: 4033, telegramUserId: 4033, ct);
+        var retiredTeam = new Team
+        {
+            ChatId = new TelegramChatId(4033),
+            Name = "Retired duplicate",
+            Locale = "en",
+            CreatedAt = DateTimeOffset.UtcNow,
+            DeactivatedAt = DateTimeOffset.UtcNow,
+        };
+        db.Teams.Add(retiredTeam);
+        await db.SaveChangesAsync(ct);
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(MessageUpdate(4033, 4033, "/help"), ct);
+
+        bot.SentTexts(4033).Should().ContainSingle();
+        (await db.Teams.AsNoTracking().SingleAsync(t => t.Id == activeTeam.Id, ct)).DeactivatedAt.Should().BeNull();
     }
 
     private static Update MigrateUpdate(long oldChatId, long newChatId) =>

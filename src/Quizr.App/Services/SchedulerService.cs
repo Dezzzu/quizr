@@ -86,6 +86,18 @@ public sealed class SchedulerService
                 // system message; this is the backstop for whenever it doesn't.
                 await TeamChatMigration.ApplyAsync(_db, team, new TelegramChatId(newChatId), _clock, _logger, ct);
             }
+            catch (ApiRequestException ex) when (ex.Message.Contains("kicked", StringComparison.OrdinalIgnoreCase))
+            {
+                // The scheduler's own reactive half of TeamBootstrapService.HandleRemovedAsync
+                // — the proactive my_chat_member "removed" event usually catches this first,
+                // but if that update is missed or delayed, every send against this team keeps
+                // returning this same 403 forever without it. Deactivating here, the same way
+                // that handler does, is what stops the retry loop rather than logging this
+                // same error every tick until someone notices.
+                team.DeactivatedAt = _clock.GetUtcNow();
+                await _db.SaveChangesAsync(ct);
+                _logger.LogWarning("Team {TeamId} was kicked from its chat — deactivating reactively", team.Id.Value);
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Scheduler tick failed for team {TeamId}", team.Id);

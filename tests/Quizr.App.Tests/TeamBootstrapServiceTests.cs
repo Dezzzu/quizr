@@ -74,7 +74,7 @@ public class TeamBootstrapServiceTests
         );
         await service.HandleMyChatMemberAsync(RemovedFrom(chatId.Value), ct);
 
-        var team = await db.Teams.SingleAsync(t => t.ChatId == chatId, ct);
+        var team = await db.Teams.IgnoreQueryFilters().SingleAsync(t => t.ChatId == chatId, ct);
         team.DeactivatedAt.Should().NotBeNull();
     }
 

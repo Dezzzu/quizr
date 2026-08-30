@@ -384,18 +384,21 @@ public class SchedulerServiceTests
     // The real failure mode observed in practice: Telegram's own my_chat_member "added"
     // event for the new chat id arrives and bootstraps a fresh team before this tick catches
     // up to the migration — Team.ChatId's unique index means a blind overwrite would just
-    // fail a different way forever instead. The stale team is retired, not deleted
-    // (invariant 7), so the fresh team keeps the new chat id it already legitimately owns.
+    // fail a different way forever instead. That fresh team is never actually configured
+    // (SeedTeamAsync here sets a timezone but never a BoardMessageId — nobody's run
+    // /myreminders or seen a Board from it), so it's the one that retires; the real team
+    // takes over the new chat id it should have had all along, keeping its history intact.
     [Test]
     public async Task ATeamIsRetiredRatherThanCollidingWhenAFreshTeamAlreadyOwnsTheMigratedChatId()
     {
         var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
-        var staleTeam = await SeedTeamAsync(db, chatId: 9020, ct);
-        var freshTeam = await SeedTeamAsync(db, chatId: -1009999999998, ct);
+        var realTeam = await SeedTeamAsync(db, chatId: 9020, ct);
+        var bootstrapTeam = await SeedTeamAsync(db, chatId: -1009999999998, ct);
         var (scheduler, bot) = CreateScheduler(db, DateTimeOffset.UtcNow);
-        // Only the stale team's own send fails this way — Telegram never returns this error
-        // for a chat id that's already current, which is exactly what makes freshTeam fresh.
+        // Only the real team's own send fails this way — Telegram never returns this error
+        // for a chat id that's already current, which is exactly what makes bootstrapTeam
+        // fresh.
         bot.SendRequest(Arg.Is<SendMessageRequest>(r => r.ChatId.Identifier == 9020), Arg.Any<CancellationToken>())
             .ThrowsAsync(
                 new ApiRequestException(
@@ -407,12 +410,32 @@ public class SchedulerServiceTests
 
         await scheduler.RunTickAsync(ct);
 
-        var refreshedStale = await db.Teams.AsNoTracking().SingleAsync(t => t.Id == staleTeam.Id, ct);
-        refreshedStale.ChatId.Should().Be(new TelegramChatId(9020));
-        refreshedStale.DeactivatedAt.Should().NotBeNull();
-        (await db.Teams.AsNoTracking().SingleAsync(t => t.Id == freshTeam.Id, ct))
-            .ChatId.Should()
-            .Be(new TelegramChatId(-1009999999998));
+        var refreshedReal = await db.Teams.AsNoTracking().SingleAsync(t => t.Id == realTeam.Id, ct);
+        refreshedReal.ChatId.Should().Be(new TelegramChatId(-1009999999998));
+        refreshedReal.DeactivatedAt.Should().BeNull();
+        (await db.Teams.IgnoreQueryFilters().AsNoTracking().SingleAsync(t => t.Id == bootstrapTeam.Id, ct))
+            .DeactivatedAt.Should()
+            .NotBeNull();
+    }
+
+    // The reactive half of TeamBootstrapService.HandleRemovedAsync: if the proactive
+    // my_chat_member "removed" event is ever missed or delayed, every send against a kicked
+    // team keeps returning this same 403 forever unless the scheduler deactivates it itself.
+    [Test]
+    public async Task ATeamIsDeactivatedReactivelyWhenTheBotWasKicked()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 9023, ct);
+        var (scheduler, bot) = CreateScheduler(db, DateTimeOffset.UtcNow);
+        bot.SendRequest(Arg.Any<SendMessageRequest>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new ApiRequestException("Forbidden: bot was kicked from the supergroup chat", 403));
+
+        await scheduler.RunTickAsync(ct);
+
+        (await db.Teams.IgnoreQueryFilters().AsNoTracking().SingleAsync(t => t.Id == team.Id, ct))
+            .DeactivatedAt.Should()
+            .NotBeNull();
     }
 
     // Mirrors MessageEditDebouncerTests' pattern: the debouncer flushes on a real timer, so an

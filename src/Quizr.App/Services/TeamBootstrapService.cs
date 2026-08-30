@@ -50,7 +50,17 @@ public sealed class TeamBootstrapService
 
     private async Task HandleAddedAsync(ChatMemberUpdated update, TelegramChatId chatId, CancellationToken ct)
     {
-        var team = await _db.Teams.SingleOrDefaultAsync(t => t.ChatId == chatId, ct);
+        // More than one row can now share a chat id — an active team and any teams
+        // TeamChatMigration retired in its favor (they keep the chat id they lost, not their
+        // old one). A plain Single* would throw the moment that's true, so this picks: the
+        // active one if there is one (a duplicate "added" event — reactivating it is a
+        // harmless no-op), otherwise whichever retired team was most recently touched.
+        var team = await _db
+            .Teams.IgnoreQueryFilters()
+            .Where(t => t.ChatId == chatId)
+            .OrderByDescending(t => t.DeactivatedAt == null)
+            .ThenByDescending(t => t.DeactivatedAt)
+            .FirstOrDefaultAsync(ct);
 
         if (team is not null)
         {
