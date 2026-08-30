@@ -378,7 +378,9 @@ public class UpdateRouterSignupLoopTests : IClassFixture<PostgresFixture>
         );
 
         (await db.Signups.AsNoTracking().SingleAsync(s => s.Id == guest.Id, ct)).CancelledAt.Should().NotBeNull();
-        (await db.Signups.AsNoTracking().SingleAsync(s => s.PlayerId != null, ct)).CancelledAt.Should().BeNull();
+        (await db.Signups.AsNoTracking().SingleAsync(s => s.GameId == game.Id && s.PlayerId != null, ct))
+            .CancelledAt.Should()
+            .BeNull();
     }
 
     [Fact]
