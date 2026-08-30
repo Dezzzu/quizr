@@ -22,7 +22,7 @@ in the repo today.
 | Tests | `xunit.v3` **4.0.0**, `AwesomeAssertions` **9.6.0**, `NSubstitute` **6.2.0**, `Testcontainers.PostgreSql` **4.14.0**, `Microsoft.Extensions.TimeProvider.Testing` **10.9.0** | |
 | Test discovery | `xunit.runner.visualstudio` **4.0.0**, `Microsoft.NET.Test.Sdk` **18.9.0** | IDE runner only — see below |
 | Formatter | `csharpier` **1.3.0** | local tool; print width 120 |
-| Migrations CLI | `dotnet-ef` **10.0.5** | local tool |
+| Migrations CLI | `dotnet-ef` **10.0.11** | local tool |
 | Packaging | Docker | `tzdata` must be present in the image |
 
 ### Why .NET 10 specifically
