@@ -20,7 +20,8 @@ Two standing rules while working through this:
 - **Don't invent decisions.** Anything genuinely undecided is listed at the bottom. If
   something else is missing, ask rather than choosing.
 - **One milestone per session, and leave it green.** Build clean with warnings as errors,
-  csharpier clean, tests passing.
+  csharpier clean, tests passing. `.github/workflows/build.yml` enforces exactly this, so a
+  red pipeline means the milestone isn't done.
 
 ## Data model
 
@@ -211,11 +212,28 @@ per update; the callback-data scheme (compact, ≤64 bytes, documented where it'
 send/edit wrapper with the debouncer; the error boundary and the private-channel alert;
 `IStrings` / `IStringsFor` with the JSON loader and an **English** file.
 
+**Set `allowed_updates` explicitly** to `message`, `callback_query`, `my_chat_member` and
+`chat_member`. The last one is excluded by default and fails silently — see `CLAUDE.md`.
+
+**Team bootstrap**, which nothing else can happen without:
+
+- Bot added to a group (`my_chat_member`) → create the `Team` from the chat id and title.
+  Locale defaults to the language of whoever added it; **the timezone has to be asked**, since
+  every `StartsAt` is computed from it.
+- Post a setup message prompting for timezone and confirming the language. **Refuse to create
+  games until the timezone is set** rather than silently defaulting to UTC.
+- Warn if the bot is not an administrator — pinning and `chat_member` both depend on it.
+- Bot removed → mark the team inactive. Nothing is deleted, per invariant 7.
+- Players and memberships are **created lazily** on first interaction, so the bot works for
+  someone who has never spoken before. `chat_member` is used to mark departures, not to
+  populate the roster — that way a missed update degrades rather than breaks.
+
 **Localization infrastructure lands here, not at the end.** Locale is a parameter from the
 first rendered message — retrofitting it is exactly what `CLAUDE.md` forbids.
 
-Done when: the bot starts, responds to `/start`, registers the player, and a deliberate
-exception in a handler produces an alert without killing the process.
+Done when: the bot can be added to a fresh group, creates a team, asks for a timezone, and
+refuses to create a game until it has one; it responds to `/start`, registers the player
+lazily, and a deliberate exception in a handler produces an alert without killing the process.
 
 ### M4 — The signup loop
 

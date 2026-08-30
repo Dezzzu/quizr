@@ -2,6 +2,7 @@
     <PropertyGroup>
         <OutputType>Exe</OutputType>
         <RootNamespace>Quizr.App</RootNamespace>
+        <UserSecretsId>276b7c1f-31d2-42ff-aa8c-bb00176921c2</UserSecretsId>
     </PropertyGroup>
 
     <ItemGroup>

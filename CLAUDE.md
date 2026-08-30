@@ -111,6 +111,13 @@ Breaking one of these is a bug, not a preference.
 - The bot **must be a chat admin** to pin and to see messages that aren't commands.
 - **~20 messages per minute per group.** Debounce message edits; batch reminders into one
   message rather than one per person.
+- **`allowed_updates` must be set explicitly.** Telegram excludes `chat_member`,
+  `message_reaction` and `message_reaction_count` unless you list them, and the failure is
+  silent — the bot simply never hears about them. Request `message`, `callback_query`,
+  `my_chat_member` and `chat_member`. Note the asymmetry: `my_chat_member` (the bot's own
+  status changing) arrives by default, `chat_member` (anyone else's) does not, so testing one
+  tells you nothing about the other. Receiving `chat_member` also requires the bot to be an
+  administrator, which it already must be in order to pin.
 - **Callback data is capped at 64 bytes.** Use a compact scheme (`j:142`, `g:142`, `d:142`),
   never serialized JSON.
 - **Send with HTML parse mode, not MarkdownV2.** MarkdownV2 requires escaping
