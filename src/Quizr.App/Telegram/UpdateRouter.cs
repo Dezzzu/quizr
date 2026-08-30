@@ -151,6 +151,21 @@ public sealed class UpdateRouter
                 );
                 break;
 
+            case "/setlanguage" when team is not null && player is not null && message.From is not null:
+                await HandleSetLanguageAsync(
+                    team,
+                    player.Id,
+                    chatId,
+                    new TelegramUserId(message.From.Id),
+                    argument,
+                    ct
+                );
+                break;
+
+            case "/mylanguage" when player is not null:
+                await HandleSetMyLanguageAsync(player, chatId, argument, ct);
+                break;
+
             case "/newgame" when team is not null && player is not null && message.From is not null:
                 await HandleNewGameCommandAsync(team, player.Id, chatId, new TelegramUserId(message.From.Id), ct);
                 break;
@@ -205,6 +220,81 @@ public sealed class UpdateRouter
         // The team is now operational — invariant 12 says only the Board is ever pinned, so
         // it earns its pin from the moment the team can have games, not from the first one.
         await _board.RefreshAsync(team, ct);
+    }
+
+    // Group messages use the team's language (CLAUDE.md) — a captain setting, like the
+    // timezone.
+    private async Task HandleSetLanguageAsync(
+        Team team,
+        PlayerId playerId,
+        TelegramChatId chatId,
+        TelegramUserId telegramUserId,
+        string? argument,
+        CancellationToken ct
+    )
+    {
+        var strings = _strings.For(team.Locale);
+
+        if (!await _teamGuard.IsCaptainAsync(team.Id, playerId, chatId, telegramUserId, ct))
+        {
+            await _sender.SendAsync(chatId, strings.Text("NewGame.NotCaptain"), null, ct);
+            return;
+        }
+
+        if (argument is null || !LocaleResolver.IsSupported(argument))
+        {
+            await _sender.SendAsync(
+                chatId,
+                strings.Text("Setup.LanguageInvalid", new { Input = argument ?? "" }),
+                null,
+                ct
+            );
+            return;
+        }
+
+        team.Locale = argument;
+        await _db.SaveChangesAsync(ct);
+
+        // Rendered in the new locale, not the old one — the confirmation itself is the proof
+        // the change took effect.
+        await _sender.SendAsync(
+            chatId,
+            _strings.For(team.Locale).Text("Setup.LanguageSet", new { Locale = team.Locale }),
+            null,
+            ct
+        );
+    }
+
+    // DMs and the app use the person's own language (CLAUDE.md) — this is the "explicit user
+    // choice" step of the resolution chain; nothing else ever writes Player.Locale.
+    private async Task HandleSetMyLanguageAsync(
+        Player player,
+        TelegramChatId chatId,
+        string? argument,
+        CancellationToken ct
+    )
+    {
+        if (argument is null || !LocaleResolver.IsSupported(argument))
+        {
+            var strings = _strings.For(player.Locale ?? "en");
+            await _sender.SendAsync(
+                chatId,
+                strings.Text("Setup.LanguageInvalid", new { Input = argument ?? "" }),
+                null,
+                ct
+            );
+            return;
+        }
+
+        player.Locale = argument;
+        await _db.SaveChangesAsync(ct);
+
+        await _sender.SendAsync(
+            chatId,
+            _strings.For(player.Locale).Text("Setup.MyLanguageSet", new { Locale = player.Locale }),
+            null,
+            ct
+        );
     }
 
     private async Task HandleNewGameCommandAsync(

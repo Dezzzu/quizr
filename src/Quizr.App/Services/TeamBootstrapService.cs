@@ -76,7 +76,7 @@ public sealed class TeamBootstrapService
         }
 
         var strings = _strings.For(team.Locale);
-        await _sender.SendAsync(chatId, strings.Text("Setup.Welcome"), null, ct);
+        await _sender.SendAsync(chatId, strings.Text("Setup.Welcome", new { Locale = team.Locale }), null, ct);
 
         if (update.NewChatMember.Status != ChatMemberStatus.Administrator)
         {

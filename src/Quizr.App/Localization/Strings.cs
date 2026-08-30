@@ -38,7 +38,9 @@ public sealed class Strings : IStrings
         return new StringsFor(locale, templates);
     }
 
-    private static Dictionary<string, IReadOnlyDictionary<string, string>> LoadAll()
+    // Internal rather than private so StringsTests can check key parity across every loaded
+    // locale directly, instead of guessing at the file layout from outside.
+    internal static Dictionary<string, IReadOnlyDictionary<string, string>> LoadAll()
     {
         var assembly = typeof(Strings).Assembly;
         var byLocale = new Dictionary<string, IReadOnlyDictionary<string, string>>();

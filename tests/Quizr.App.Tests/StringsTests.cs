@@ -1,6 +1,5 @@
 using AwesomeAssertions;
 using Quizr.App.Localization;
-using SmartFormat.Core.Formatting;
 
 namespace Quizr.App.Tests;
 
@@ -25,51 +24,49 @@ public class StringsTests
     [Fact]
     public void FallsBackToEnglishForALocaleWithNoFileOfItsOwn()
     {
-        var russian = _strings.For("ru");
+        // "fr" isn't one of CLAUDE.md's three first-class locales, so it has no file — unlike
+        // "ru", which does since M8 and renders its own text, not English's.
+        var french = _strings.For("fr");
         var english = _strings.For("en");
 
-        russian.Text("Start.Greeting").Should().Be(english.Text("Start.Greeting"));
+        french.Text("Start.Greeting").Should().Be(english.Text("Start.Greeting"));
     }
 
     [Fact]
     public void ReportsTheRequestedLocaleEvenWhenFallingBackToEnglishTemplates()
     {
-        _strings.For("ru").Locale.Should().Be("ru");
+        _strings.For("fr").Locale.Should().Be("fr");
+    }
+
+    [Fact]
+    public void RussianAndGermanRenderTheirOwnText()
+    {
+        var russian = _strings.For("ru").Text("Start.Greeting");
+        var german = _strings.For("de").Text("Start.Greeting");
+        var english = _strings.For("en").Text("Start.Greeting");
+
+        russian.Should().NotBe(english);
+        german.Should().NotBe(english);
     }
 
     [Fact]
     public void EveryKeyPresentInEnglishIsPresentInEveryOtherLoadedLocale()
     {
-        // Only en.json exists until M8, so this is trivially true today — it's the exact
-        // key-parity check CLAUDE.md asks for, and starts earning its keep once ru/de land.
-        var englishKeys = new[]
-        {
-            "Start.Greeting",
-            "Setup.Welcome",
-            "Setup.NotAdmin",
-            "Setup.TimeZoneSet",
-            "Setup.TimeZoneInvalid",
-            "NewGame.NeedsTimeZone",
-            "NewGame.NotCaptain",
-            "Error.Generic",
-        };
+        // CLAUDE.md: "Test key parity — every key present in every locale file." Compares the
+        // actual loaded key sets rather than a hand-maintained list, so a translator adding or
+        // renaming a key in one file without the others fails here, not in production.
+        var byLocale = Strings.LoadAll();
+        var englishKeys = byLocale["en"].Keys.ToHashSet();
 
-        foreach (var key in englishKeys)
+        foreach (var (locale, templates) in byLocale)
         {
-            var hasKey = true;
-            try
+            if (locale == "en")
             {
-                // No placeholder args are supplied here, so a template that needs some may
-                // throw FormattingException — that still proves the key itself is present.
-                _strings.For("en").Text(key);
+                continue;
             }
-            catch (KeyNotFoundException)
-            {
-                hasKey = false;
-            }
-            catch (FormattingException) { }
 
-            hasKey.Should().BeTrue($"'{key}' should exist in en.json");
+            var localeKeys = templates.Keys.ToHashSet();
+            localeKeys.Should().BeEquivalentTo(englishKeys, $"'{locale}.json' should have exactly en.json's keys");
         }
     }
 }

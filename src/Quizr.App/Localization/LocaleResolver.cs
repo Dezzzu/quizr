@@ -9,6 +9,10 @@ internal static class LocaleResolver
     public static string Resolve(string? explicitChoice, string? telegramLanguageCode, string teamDefault) =>
         explicitChoice ?? MapToSupported(telegramLanguageCode) ?? teamDefault;
 
+    // For validating a captain's /setlanguage or a person's /mylanguage argument — exact
+    // match only, unlike MapToSupported's "ru-RU" -> "ru" leniency for Telegram's own codes.
+    public static bool IsSupported(string code) => Supported.Contains(code);
+
     // "ru-RU" -> "ru"; anything not in {en, ru, de} maps to null so the caller falls
     // through to the next step in the chain instead of storing an unsupported locale.
     public static string? MapToSupported(string? languageCode)

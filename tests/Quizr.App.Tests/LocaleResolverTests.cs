@@ -42,4 +42,15 @@ public class LocaleResolverTests
     {
         LocaleResolver.MapToSupported(languageCode).Should().Be(expected);
     }
+
+    [Theory]
+    [InlineData("en", true)]
+    [InlineData("ru", true)]
+    [InlineData("de", true)]
+    [InlineData("fr", false)]
+    [InlineData("ru-RU", false)]
+    public void IsSupportedRequiresAnExactMatch(string code, bool expected)
+    {
+        LocaleResolver.IsSupported(code).Should().Be(expected);
+    }
 }
