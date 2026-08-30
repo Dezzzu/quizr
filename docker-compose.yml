@@ -1,0 +1,14 @@
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: quizr
+      POSTGRES_PASSWORD: quizr
+      POSTGRES_DB: quizr
+    ports:
+      - "5432:5432"
+    volumes:
+      - quizr-postgres:/var/lib/postgresql/data
+
+volumes:
+  quizr-postgres:

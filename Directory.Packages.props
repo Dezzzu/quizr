@@ -11,6 +11,11 @@
         <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.9.0" />
         <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
         <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.11" />
+        <!-- Npgsql.EntityFrameworkCore.PostgreSQL floors these at 10.0.4, Design at
+             10.0.11 — pinned explicitly so central transitive pinning resolves both
+             to one version everywhere, instead of skewing per project. -->
+        <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.11" />
+        <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.11" />
         <PackageVersion Include="SmartFormat.NET" Version="3.6.1" />
     </ItemGroup>
 

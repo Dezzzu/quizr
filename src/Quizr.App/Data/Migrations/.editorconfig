@@ -1,0 +1,6 @@
+# Scaffolded by `dotnet ef migrations add` — not hand-written, so it isn't
+# held to the analyzer rules the rest of the repo is. Re-scaffolding a
+# migration must not fight the formatter or the build.
+[*.cs]
+csharp_style_namespace_declarations = block_scoped:silent
+dotnet_diagnostic.CA1861.severity = silent
