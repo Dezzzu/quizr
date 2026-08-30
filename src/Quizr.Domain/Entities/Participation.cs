@@ -22,8 +22,5 @@ public sealed class Participation
     // False for reserves who didn't get in.
     public bool Played { get; set; }
 
-    // Defaults true; captains mark exceptions.
-    public bool Attended { get; set; } = true;
-
     public DateTimeOffset CreatedAt { get; set; }
 }

@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Quizr.App.Data;
@@ -12,9 +13,11 @@ using Quizr.App.Data;
 namespace Quizr.App.Data.Migrations
 {
     [DbContext(typeof(QuizrDb))]
-    partial class QuizrDbModelSnapshot : ModelSnapshot
+    [Migration("20260830212000_DropParticipationAttended")]
+    partial class DropParticipationAttended
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

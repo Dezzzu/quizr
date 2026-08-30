@@ -328,7 +328,7 @@ public class UpdateRouterM9Tests
     // that affects someone else's record — added to invariant 13's list after the first pass
     // at audit logging turned out to have missed it.
     [Test]
-    public async Task TogglingAttendedOnAFinishedGamesRosterRecordsAnAuditEntry()
+    public async Task TogglingPlayedOnAFinishedGamesRosterRecordsAnAuditEntry()
     {
         var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
@@ -337,15 +337,15 @@ public class UpdateRouterM9Tests
         var (router, _) = CreateRouter(db);
 
         await router.RouteAsync(
-            CallbackUpdate(8010, 80101, CallbackData.Format(CallbackData.ToggleAttended, participation.Id)),
+            CallbackUpdate(8010, 80101, CallbackData.Format(CallbackData.TogglePlayed, participation.Id)),
             ct
         );
 
         (await db.Participations.AsNoTracking().SingleAsync(p => p.Id == participation.Id, ct))
-            .Attended.Should()
+            .Played.Should()
             .BeFalse();
         var entry = await db.AuditEntries.SingleAsync(e => e.GameId == game.Id, ct);
-        entry.Action.Should().Be(AuditActions.ParticipationAttendedToggled);
+        entry.Action.Should().Be(AuditActions.ParticipationPlayedToggled);
         entry.ActorPlayerId.Should().Be(captain.Id);
     }
 
@@ -604,9 +604,14 @@ public class UpdateRouterM9Tests
         await router.RouteAsync(MessageUpdate(8020, 8020, "skip"), ct);
         await router.RouteAsync(MessageUpdate(8020, 8020, "Mon-Fri: 19:00, Sat: 16:00, Sun: 16:00"), ct);
 
+        // Each text reply above already cleared its own now-answered prompt's keyboard (the
+        // stale-keyboard fix this test predates) — what's left to prove here is that Done adds
+        // exactly one more: the field-picker's own.
+        var clearedBeforeDone = bot.ClearedKeyboards().Count;
+
         await router.RouteAsync(CallbackUpdate(8020, 8020, CallbackData.Format(CallbackData.CloseView, 0L)), ct);
 
-        bot.ClearedKeyboards().Should().ContainSingle();
+        bot.ClearedKeyboards().Count.Should().Be(clearedBeforeDone + 1);
         (await db.DialogStates.CountAsync(d => d.ChatId == new TelegramChatId(8020) && d.PlayerId == captain.Id, ct))
             .Should()
             .Be(0);
@@ -776,7 +781,6 @@ public class UpdateRouterM9Tests
             PlayerId = creator.Id,
             Kind = ParticipationKind.Member,
             Played = true,
-            Attended = true,
             CreatedAt = DateTimeOffset.UtcNow,
         };
         db.Participations.Add(participation);

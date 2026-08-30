@@ -61,7 +61,7 @@ actually talks about quiz nights.
 | **Board** | The one pinned message per chat, listing upcoming games sorted by date. The *only* pinned message. |
 | **Signup** | Someone holding a place in a game. Its creation timestamp determines queue order, permanently. |
 | **Playing / Reserve** | The first `capacity` signups are playing; everyone after them is the reserve. Derived, never stored. |
-| **Participation** | Written when a game finishes: one row per person, recording whether they played and whether they attended. Statistics read these; captains edit these. |
+| **Participation** | Written when a game finishes: one row per person, recording whether they played. Statistics read these; captains edit these. |
 | **Member** | A person in the chat. |
 | **Guest** | Brought by a member. Anonymous by default, optionally named. Occupies a seat and holds its own queue position. |
 | **Team guest** | A guest with no owner. Must be named. Either a guest who stayed after their inviter dropped out, or one a captain added directly for someone not signed up themselves. |
@@ -91,11 +91,11 @@ Breaking one of these is a bug, not a preference.
    queue disputes answerable.
 8. **A game auto-finishes 4 hours after its start time.** Captains can finish it early with an
    explicit button. Until then it is live and players can still self-serve.
-9. **A finished game counts as played unless declined**, and every participant counts as
-   attended unless a captain says otherwise. The ordinary case requires zero input.
+9. **A finished game counts as played unless declined.** The ordinary case requires zero
+   input.
 10. **Finishing a game materialises participation.** Until then the roster is derived from
-    signup order. At finish, write one participation row per person — played or didn't,
-    attended defaulting to true. Statistics read those rows, never the signups.
+    signup order. At finish, write one participation row per person — played or didn't.
+    Statistics read those rows, never the signups.
 11. **Captains can edit a roster forever**, including long after the game. Before a game
     finishes that means the signups; afterwards it means the participation rows, and the
     signups become immutable history. That split is what lets a captain record "Лена played
@@ -105,8 +105,8 @@ Breaking one of these is a bug, not a preference.
     from the database if the message is gone.
 13. **Captain actions that change another player's state are recorded in `AuditEntry`** —
     registering or dropping someone on their behalf, declining or finishing a game, granting
-    or revoking captaincy, editing a finished game's participation (played/attended, or adding
-    a venue-assigned player), adding a team guest or removing any guest on someone's behalf.
+    or revoking captaincy, editing a finished game's participation (played, or adding a
+    venue-assigned player), adding a team guest or removing any guest on someone's behalf.
     `ActorPlayerId` is the captain; null means the system did it (the scheduler's auto-finish).
     Ordinary self-service already carries its own actor via a signup's own fields; this is for
     the actions that don't.

@@ -18,8 +18,6 @@ namespace Quizr.App.Services;
 // invariant 13 — lives inside the service itself rather than at each call site.
 public interface IParticipationService
 {
-    Task<Participation> ToggleAttendedAsync(Participation participation, PlayerId actorPlayerId, CancellationToken ct);
-
     Task<Participation> TogglePlayedAsync(Participation participation, PlayerId actorPlayerId, CancellationToken ct);
 
     Task<Result<Participation>> AddVenueAssignedAsync(
@@ -39,29 +37,6 @@ public sealed class ParticipationService : IParticipationService
     {
         _db = db;
         _clock = clock;
-    }
-
-    public async Task<Participation> ToggleAttendedAsync(
-        Participation participation,
-        PlayerId actorPlayerId,
-        CancellationToken ct
-    )
-    {
-        participation.Attended = !participation.Attended;
-
-        AuditRecorder.Record(
-            _db,
-            participation.Game.TeamId,
-            participation.GameId,
-            actorPlayerId,
-            AuditActions.ParticipationAttendedToggled,
-            new { ParticipationId = participation.Id.Value, participation.Attended },
-            _clock
-        );
-
-        await _db.SaveChangesAsync(ct);
-
-        return participation;
     }
 
     public async Task<Participation> TogglePlayedAsync(
@@ -105,7 +80,6 @@ public sealed class ParticipationService : IParticipationService
             Name = name,
             Kind = ParticipationKind.VenueAssigned,
             Played = true,
-            Attended = true,
             CreatedAt = _clock.GetUtcNow(),
         };
         _db.Participations.Add(participation);

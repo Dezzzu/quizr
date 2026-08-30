@@ -145,7 +145,6 @@ Written when a game finishes. Statistics read these, never signups.
 | `Name` | `string?` | for rows with no player |
 | `Kind` | `ParticipationKind` | `Member` \| `Guest` \| `TeamGuest` \| `VenueAssigned` |
 | `Played` | `bool` | false for reserves who didn't get in |
-| `Attended` | `bool` | **default true**; captains mark exceptions |
 | `CreatedAt` | `DateTimeOffset` | |
 
 `VenueAssigned` rows are excluded from member statistics.
@@ -303,9 +302,9 @@ Decline with a confirm step; an explicit Finish button sharing `GameService.Fini
 the scheduler's auto-finish; `Game.Tags`, settable alongside the other overridable fields and
 rendered as hashtags; an `AuditRecorder` writing `AuditEntry` rows for the actions invariant 13
 names, in the same transaction as the change that caused them — including
-`ParticipationService.ToggleAttendedAsync`/`TogglePlayedAsync` (editing a finished game's
-roster is the exact dispute this table exists for) and `AddVenueAssignedAsync`, added once the
-first pass at audit logging turned out to have missed both.
+`ParticipationService.TogglePlayedAsync` (editing a finished game's roster is the exact
+dispute this table exists for) and `AddVenueAssignedAsync`, added once the first pass at audit
+logging turned out to have missed both.
 
 Done when: a captain can decline, finish early, manage another player's signup, manage
 captaincy, and edit a finished game's roster, all without a developer; every reminder slot is

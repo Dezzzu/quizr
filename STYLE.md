@@ -87,7 +87,7 @@ public abstract record BusinessError
 ```
 
 The reason it's shared rather than per-operation: **"not a captain" is the same failure across
-create, edit, finish, decline, mark-attendance and remove-player.** Per-operation enums would
+create, edit, finish, decline, mark-played and remove-player.** Per-operation enums would
 repeat it a dozen times, with a dozen mappings to a message key and a dozen chances to
 translate it differently. Shared, there is **one** error-type-to-message-key mapping, and it's
 translated once into three languages.

@@ -58,7 +58,6 @@ public class SchedulerServiceTests
         participations.Should().HaveCount(2);
         participations.Single(p => p.PlayerId == playing.Id).Played.Should().BeTrue();
         participations.Single(p => p.PlayerId == reserve.Id).Played.Should().BeFalse();
-        participations.Should().OnlyContain(p => p.Attended);
     }
 
     [Test]

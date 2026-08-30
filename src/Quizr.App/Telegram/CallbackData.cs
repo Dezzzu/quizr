@@ -42,8 +42,7 @@ internal static class CallbackData
     public const char ToggleNudgeTarget = 't'; // carries PlayerId
     public const char SendNudge = 's'; // carries GameId
 
-    // Roster-management toggles — carry a ParticipationId.
-    public const char ToggleAttended = 'y';
+    // Roster-management toggle — carries a ParticipationId.
     public const char TogglePlayed = 'l';
 
     // Reminder settings (/myreminders) — self-service, carry a slot index or a dummy id.

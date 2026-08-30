@@ -28,7 +28,6 @@ public class ParticipationExtensionsTests
             GameId = new GameId(1),
             Kind = kind,
             Played = true,
-            Attended = true,
             CreatedAt = DateTimeOffset.UtcNow,
         };
 }

@@ -163,6 +163,41 @@ public class UpdateRouterTests
         buttons.Should().NotContain(b => b.CallbackData!.StartsWith($"{CallbackData.Skip}:", StringComparison.Ordinal));
     }
 
+    // Answering a Cancel/Skip prompt with an ordinary text reply moved the wizard on but left
+    // the old prompt's keyboard sitting in the chat, still tappable, no longer pointing at
+    // anything the dialog was still waiting on — reported as "the cancel button remains".
+    [Test]
+    public async Task AnsweringAPromptWithTextClearsItsOwnCancelKeyboard()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        await SeedCaptainedTeamAsync(db, chatId: 4034, telegramUserId: 4034, ct);
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(MessageUpdate(4034, 4034, "/newfranchise"), ct);
+        bot.ClearedKeyboards().Should().BeEmpty();
+
+        await router.RouteAsync(MessageUpdate(4034, 4034, "Travelling Quiz"), ct);
+
+        bot.ClearedKeyboards().Should().ContainSingle();
+    }
+
+    // A validation failure re-shows the very same prompt for a retry — its keyboard is still
+    // exactly what's needed, so it must not be stripped the way a real advance would strip it.
+    [Test]
+    public async Task AValidationErrorRetryLeavesThePromptsKeyboardAlone()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        await SeedCaptainedTeamAsync(db, chatId: 4035, telegramUserId: 4035, ct);
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(MessageUpdate(4035, 4035, "/newfranchise"), ct);
+        await router.RouteAsync(MessageUpdate(4035, 4035, "   "), ct); // blank name is rejected
+
+        bot.ClearedKeyboards().Should().BeEmpty();
+    }
+
     // Tapping Cancel abandons the whole creation, from any step — not just the confirm screen.
     [Test]
     public async Task CancelButtonAbandonsANewGameMidWizard()

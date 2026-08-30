@@ -8,9 +8,9 @@ using Telegram.Bot.Types.ReplyMarkups;
 
 namespace Quizr.App.Rendering;
 
-// A finished game's post-game view (design decision #4): every Participation row with
-// Played/Attended toggles, replacing the separate Mark absent · Add player · Not played
-// buttons the plan started from — one view, edited in place on every toggle.
+// A finished game's post-game view (design decision #4): every Participation row with a
+// Played toggle, replacing the separate Mark absent · Add player · Not played buttons the
+// plan started from — one view, edited in place on every toggle.
 internal static class RosterManagementRenderer
 {
     public static string RenderText(Game game, IReadOnlyList<Participation> participations, IStringsFor strings)
@@ -28,8 +28,7 @@ internal static class RosterManagementRenderer
         {
             var p = participations[i];
             text.Append(i + 1).Append(". ").Append(WebUtility.HtmlEncode(NameOf(p))).Append(" — ");
-            text.Append(p.Played ? strings.Text("Roster.Played") : strings.Text("Roster.NotPlayed")).Append(", ");
-            text.Append(p.Attended ? strings.Text("Roster.Attended") : strings.Text("Roster.Absent"));
+            text.Append(p.Played ? strings.Text("Roster.Played") : strings.Text("Roster.NotPlayed"));
             text.Append('\n');
         }
 
@@ -51,13 +50,6 @@ internal static class RosterManagementRenderer
                 InlineKeyboardButton.WithCallbackData(
                     strings.Text(p.Played ? "Roster.TogglePlayedOn" : "Roster.TogglePlayedOff", new { Name = name }),
                     CallbackData.Format(CallbackData.TogglePlayed, p.Id)
-                ),
-                InlineKeyboardButton.WithCallbackData(
-                    strings.Text(
-                        p.Attended ? "Roster.ToggleAttendedOn" : "Roster.ToggleAttendedOff",
-                        new { Name = name }
-                    ),
-                    CallbackData.Format(CallbackData.ToggleAttended, p.Id)
                 ),
             ]);
         }

@@ -43,6 +43,13 @@ public interface IMessageSender
         InlineKeyboardMarkup? keyboard,
         CancellationToken ct
     );
+
+    // Strips a message's inline keyboard without touching its text — for a wizard prompt
+    // that's been answered (by text, or a Skip tap) and moved on before its own button was
+    // ever pressed. Left alone, that keyboard sits in the chat looking tappable long after it
+    // stopped meaning anything. Same swallow list as TryEditImmediatelyAsync: the message may
+    // already be gone, or its keyboard already gone.
+    Task RemoveKeyboardAsync(TelegramChatId chatId, TelegramMessageId messageId, CancellationToken ct);
 }
 
 public sealed class MessageSender : IMessageSender
@@ -119,6 +126,23 @@ public sealed class MessageSender : IMessageSender
             // no-op edit as a 400 rather than silently succeeding; this is that silence.
             return true;
         }
+    }
+
+    public async Task RemoveKeyboardAsync(TelegramChatId chatId, TelegramMessageId messageId, CancellationToken ct)
+    {
+        try
+        {
+            await _bot.SendRequest(
+                new EditMessageReplyMarkupRequest
+                {
+                    ChatId = chatId.Value,
+                    MessageId = (int)messageId.Value,
+                    ReplyMarkup = null,
+                },
+                ct
+            );
+        }
+        catch (ApiRequestException ex) when (IsMessageGone(ex) || IsUnmodified(ex)) { }
     }
 
     // Telegram's description for editing a deleted message; there's no dedicated error code

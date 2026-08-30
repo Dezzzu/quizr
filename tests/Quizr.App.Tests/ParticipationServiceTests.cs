@@ -16,26 +16,6 @@ public class ParticipationServiceTests
     public ParticipationServiceTests(PostgresFixture fixture) => _fixture = fixture;
 
     [Test]
-    public async Task ToggleAttendedAsyncFlipsAttendedAndRecordsAnAuditEntry()
-    {
-        var ct = TestContext.Current!.Execution.CancellationToken;
-        await using var db = _fixture.CreateContext();
-        var (game, participation, captain) = await SeedFinishedGameWithParticipationAsync(db, chatId: 6201, ct);
-        var service = new ParticipationService(db, new FakeTimeProvider());
-
-        var toggledOff = await service.ToggleAttendedAsync(participation, captain.Id, ct);
-        toggledOff.Attended.Should().BeFalse();
-
-        var toggledOn = await service.ToggleAttendedAsync(participation, captain.Id, ct);
-        toggledOn.Attended.Should().BeTrue();
-
-        var entries = await db.AuditEntries.Where(e => e.GameId == game.Id).ToListAsync(ct);
-        entries.Should().HaveCount(2);
-        entries.Should().OnlyContain(e => e.Action == AuditActions.ParticipationAttendedToggled);
-        entries.Should().OnlyContain(e => e.ActorPlayerId == captain.Id);
-    }
-
-    [Test]
     public async Task TogglePlayedAsyncFlipsPlayedAndRecordsAnAuditEntry()
     {
         var ct = TestContext.Current!.Execution.CancellationToken;
@@ -65,7 +45,6 @@ public class ParticipationServiceTests
         result.Value.Kind.Should().Be(ParticipationKind.VenueAssigned);
         result.Value.Name.Should().Be("Walk-in Wendy");
         result.Value.Played.Should().BeTrue();
-        result.Value.Attended.Should().BeTrue();
 
         var entry = await db.AuditEntries.SingleAsync(e => e.GameId == game.Id, ct);
         entry.Action.Should().Be(AuditActions.VenuePlayerAdded);
@@ -158,7 +137,6 @@ public class ParticipationServiceTests
             PlayerId = creator.Id,
             Kind = ParticipationKind.Member,
             Played = true,
-            Attended = true,
             CreatedAt = DateTimeOffset.UtcNow,
         };
         db.Participations.Add(participation);

@@ -99,7 +99,8 @@ stays separate.
 
 **Captain.** Chat admins are captains by default, with explicit grant and revoke on top.
 A captain can do anything a player can do, on that player's behalf: register them, drop them,
-name their guest, correct their attendance. That one rule removes a whole category of edge cases.
+name their guest, correct whether they played. That one rule removes a whole category of
+edge cases.
 
 **Franchise.** A real entity, not a text label: name, default venue, default capacity, default
 price, and a **schedule** — a map from day of week to start time, like `Mon–Fri 19:00,
@@ -138,7 +139,7 @@ about a game to step aside without blocking a seat.
   stay. A guest who stays becomes the team's, with no owner. Only *named* guests may stay,
   because an ownerless anonymous +1 is a person nobody can identify at the door.
 - **Venue-assigned players** — strangers the organisers occasionally add to the team on the
-  night, recorded after the fact on the same screen used to correct attendance.
+  night, recorded after the fact on the same screen used to edit who played.
 
 A guest who keeps coming gets added to the chat and becomes a member. That's a social step,
 not a feature.
@@ -232,7 +233,6 @@ only ever taps one button in the group chat stays a first-class member of the te
 - Per-team timezone, set by the captain
 - Multiple teams, one per chat — in the data model from day one, UI later
 - Auto-finish four hours after kickoff, plus an explicit Finish button
-- Everyone attended by default; captains mark absences
 - Add venue-assigned players who were never registered
 - Decline a game the team chose not to play
 - Game tags (music, detective, …) — the interim way to find past games in chat history, as a
@@ -288,7 +288,6 @@ Recorded so they don't get re-argued.
 | Guests are unlimited and take seats | The team is trusted to be fair rather than rate-limited by software. |
 | Guests are anonymous unless named | Naming is optional friction — but a guest who outlives their inviter must be named, or they drop. |
 | Frequent guests get added to the chat | Guest records are per-game. Someone who keeps coming becomes a member. |
-| Everyone attended unless told otherwise | Attendance is a correction, never a chore. Same shape one level up: a game counts as played unless declined. |
 | Games stay live for four hours after kickoff | Plus an explicit Finish button. Late arrivals and last-minute changes are normal. |
 | Rosters are never frozen for captains | Composition changes on the night; the archive should record what happened. |
 | No undo window on dropping out | Dropping removes you entirely; re-registering puts you at the back. Simple, and it lets an unsure person step aside without holding a seat. |

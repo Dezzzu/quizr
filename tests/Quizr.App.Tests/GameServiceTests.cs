@@ -336,7 +336,6 @@ public class GameServiceTests
         participations.Should().HaveCount(2);
         participations.Single(p => p.PlayerId == playing.Id).Played.Should().BeTrue();
         participations.Single(p => p.PlayerId == reserve.Id).Played.Should().BeFalse();
-        participations.Should().OnlyContain(p => p.Attended);
 
         var entry = await db.AuditEntries.SingleAsync(e => e.GameId == game.Id, ct);
         entry.Action.Should().Be(AuditActions.GameFinished);

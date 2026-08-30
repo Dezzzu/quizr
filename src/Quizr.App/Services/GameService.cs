@@ -351,8 +351,6 @@ public sealed class GameService : IGameService
                     Name = signup.IsGuest ? signup.GuestName : null,
                     Kind = ParticipationKindOf(signup),
                     Played = playingIds.Contains(signup.Id),
-                    // Invariant 9: attended defaults true, the ordinary case needing zero input.
-                    Attended = true,
                     CreatedAt = now,
                 }
             );
