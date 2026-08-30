@@ -2,6 +2,8 @@ using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
+using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using Quizr.App.Data;
 using Quizr.App.Localization;
 using Quizr.App.Services;
@@ -9,6 +11,9 @@ using Quizr.App.Telegram;
 using Quizr.Domain;
 using Quizr.Domain.Entities;
 using Telegram.Bot;
+using Telegram.Bot.Exceptions;
+using Telegram.Bot.Requests;
+using Telegram.Bot.Types;
 using Game = Quizr.Domain.Entities.Game;
 
 namespace Quizr.App.Tests;
@@ -290,6 +295,66 @@ public class SchedulerServiceTests
         await scheduler.RunTickAsync(ct);
 
         bot.SentTexts(9018).Should().ContainSingle(t => t.Contains("No upcoming games yet", StringComparison.Ordinal));
+    }
+
+    // Telegram permanently invalidates a group's chat id the moment it's upgraded to a
+    // supergroup — every send against the old id then fails with exactly this, forever, with
+    // no way to recover on its own unless the stored id gets corrected.
+    [Test]
+    public async Task ATeamsMigratedChatIdIsUpdatedInsteadOfFailingForever()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 9019, ct);
+        var (scheduler, bot) = CreateScheduler(db, DateTimeOffset.UtcNow);
+        bot.SendRequest(Arg.Any<SendMessageRequest>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(
+                new ApiRequestException(
+                    "Bad Request: group chat was upgraded to a supergroup chat",
+                    400,
+                    new ResponseParameters { MigrateToChatId = -1009999999999 }
+                )
+            );
+
+        await scheduler.RunTickAsync(ct);
+
+        (await db.Teams.AsNoTracking().SingleAsync(t => t.Id == team.Id, ct))
+            .ChatId.Should()
+            .Be(new TelegramChatId(-1009999999999));
+    }
+
+    // The real failure mode observed in practice: Telegram's own my_chat_member "added"
+    // event for the new chat id arrives and bootstraps a fresh team before this tick catches
+    // up to the migration — Team.ChatId's unique index means a blind overwrite would just
+    // fail a different way forever instead. The stale team is retired, not deleted
+    // (invariant 7), so the fresh team keeps the new chat id it already legitimately owns.
+    [Test]
+    public async Task ATeamIsRetiredRatherThanCollidingWhenAFreshTeamAlreadyOwnsTheMigratedChatId()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var staleTeam = await SeedTeamAsync(db, chatId: 9020, ct);
+        var freshTeam = await SeedTeamAsync(db, chatId: -1009999999998, ct);
+        var (scheduler, bot) = CreateScheduler(db, DateTimeOffset.UtcNow);
+        // Only the stale team's own send fails this way — Telegram never returns this error
+        // for a chat id that's already current, which is exactly what makes freshTeam fresh.
+        bot.SendRequest(Arg.Is<SendMessageRequest>(r => r.ChatId.Identifier == 9020), Arg.Any<CancellationToken>())
+            .ThrowsAsync(
+                new ApiRequestException(
+                    "Bad Request: group chat was upgraded to a supergroup chat",
+                    400,
+                    new ResponseParameters { MigrateToChatId = -1009999999998 }
+                )
+            );
+
+        await scheduler.RunTickAsync(ct);
+
+        var refreshedStale = await db.Teams.AsNoTracking().SingleAsync(t => t.Id == staleTeam.Id, ct);
+        refreshedStale.ChatId.Should().Be(new TelegramChatId(9020));
+        refreshedStale.DeactivatedAt.Should().NotBeNull();
+        (await db.Teams.AsNoTracking().SingleAsync(t => t.Id == freshTeam.Id, ct))
+            .ChatId.Should()
+            .Be(new TelegramChatId(-1009999999998));
     }
 
     // Mirrors MessageEditDebouncerTests' pattern: the debouncer flushes on a real timer, so an

@@ -295,6 +295,56 @@ public class UpdateRouterTests
         bot.SentTexts().Should().ContainSingle(text => text.Contains("Für Captains", StringComparison.Ordinal));
     }
 
+    // The proactive half of TeamChatMigration: the migrate notice Telegram delivers as a
+    // textless Message, which RouteAsync's ordinary message filter would otherwise discard
+    // before anything sees it.
+    [Test]
+    public async Task ChatMigrationUpdatesTheTeamsStoredChatId()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 4023, ct);
+        var (router, _) = CreateRouter(db);
+
+        await router.RouteAsync(MigrateUpdate(oldChatId: 4023, newChatId: -1004023999999), ct);
+
+        (await db.Teams.AsNoTracking().SingleAsync(t => t.Id == team.Id, ct))
+            .ChatId.Should()
+            .Be(new TelegramChatId(-1004023999999));
+    }
+
+    // The conflict case: TeamBootstrapService's own my_chat_member "added" handler already
+    // bootstrapped a fresh team for the new chat id before this migrate message was
+    // processed — the stale team is retired rather than colliding with it.
+    [Test]
+    public async Task ChatMigrationRetiresTheStaleTeamWhenAFreshOneAlreadyOwnsTheNewChatId()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var staleTeam = await SeedTeamAsync(db, chatId: 4024, ct);
+        await SeedTeamAsync(db, chatId: -1004024999999, ct);
+        var (router, _) = CreateRouter(db);
+
+        await router.RouteAsync(MigrateUpdate(oldChatId: 4024, newChatId: -1004024999999), ct);
+
+        var refreshed = await db.Teams.AsNoTracking().SingleAsync(t => t.Id == staleTeam.Id, ct);
+        refreshed.ChatId.Should().Be(new TelegramChatId(4024));
+        refreshed.DeactivatedAt.Should().NotBeNull();
+    }
+
+    private static Update MigrateUpdate(long oldChatId, long newChatId) =>
+        new()
+        {
+            Id = 1,
+            Message = new Message
+            {
+                Id = 1,
+                Chat = new Chat { Id = oldChatId, Type = ChatType.Group },
+                MigrateToChatId = newChatId,
+                Date = DateTime.UtcNow,
+            },
+        };
+
     private static (UpdateRouter Router, ITelegramBotClient Bot) CreateRouter(QuizrDb db)
     {
         var bot = TelegramBotClientTestHelper.Create();

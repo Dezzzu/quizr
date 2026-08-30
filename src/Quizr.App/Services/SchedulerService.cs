@@ -8,6 +8,7 @@ using Quizr.App.Time;
 using Quizr.Domain;
 using Quizr.Domain.Entities;
 using Quizr.Domain.Extensions;
+using Telegram.Bot.Exceptions;
 
 namespace Quizr.App.Services;
 
@@ -61,6 +62,13 @@ public sealed class SchedulerService
             try
             {
                 await ProcessTeamAsync(team, ct);
+            }
+            catch (ApiRequestException ex) when (ex.Parameters?.MigrateToChatId is { } newChatId)
+            {
+                // The scheduler's own reactive half of TeamChatMigration — see that file.
+                // UpdateRouter's proactive half usually catches this first, from the migrate
+                // system message; this is the backstop for whenever it doesn't.
+                await TeamChatMigration.ApplyAsync(_db, team, new TelegramChatId(newChatId), _clock, _logger, ct);
             }
             catch (Exception ex)
             {

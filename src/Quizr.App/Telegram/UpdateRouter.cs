@@ -91,6 +91,17 @@ public sealed class UpdateRouter
                 _logger.LogDebug("Ignoring chat_member update for chat {ChatId}", update.ChatMember!.Chat.Id);
                 break;
 
+            // A group's chat id changing is announced as a Message with no text — silently
+            // discarded by the next case's own filter, so it has to be caught here first.
+            // See TeamChatMigration.
+            case UpdateType.Message when update.Message?.MigrateToChatId is { } newChatId:
+                await HandleChatMigratedAsync(
+                    new TelegramChatId(update.Message!.Chat.Id),
+                    new TelegramChatId(newChatId),
+                    ct
+                );
+                break;
+
             case UpdateType.Message when update.Message?.Text is not null:
                 await HandleMessageAsync(update.Message, ct);
                 break;
@@ -103,6 +114,17 @@ public sealed class UpdateRouter
                 _logger.LogDebug("Ignoring update {UpdateId} of type {Type}", update.Id, update.Type);
                 break;
         }
+    }
+
+    private async Task HandleChatMigratedAsync(TelegramChatId oldChatId, TelegramChatId newChatId, CancellationToken ct)
+    {
+        var team = await _db.Teams.SingleOrDefaultAsync(t => t.ChatId == oldChatId, ct);
+        if (team is null)
+        {
+            return;
+        }
+
+        await TeamChatMigration.ApplyAsync(_db, team, newChatId, _clock, _logger, ct);
     }
 
     private async Task HandleMessageAsync(Message message, CancellationToken ct)

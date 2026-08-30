@@ -133,6 +133,16 @@ Breaking one of these is a bug, not a preference.
   (`t.me/quizr_team_bot/<app>?startapp=<id>`) as a normal URL button. Phase 2 concern.
 - Deep-link payloads are ≤64 chars from `A-Za-z0-9_-` and are **user-editable**. They carry an
   id, never data, and permission is always checked server-side.
+- **A basic group upgrading to a supergroup permanently changes its chat id.** Telegram
+  starts every new group as a basic group (no `t.me/c/...` message-link scheme at all — see
+  `BoardRenderer`), and either auto-upgrades it or the owner does so explicitly. Once that
+  happens, every send against the old id fails with `400: group chat was upgraded to a
+  supergroup chat` forever, and incoming updates arrive tagged with the new id, so a team
+  keyed on the old one silently stops being found. `TeamChatMigration` handles both triggers —
+  proactively from the migrate notice (a `Message` with no text, otherwise indistinguishable
+  from noise), reactively from the API error's own `MigrateToChatId` — and retires rather than
+  overwrites when `TeamBootstrapService`'s own `my_chat_member` handler already bootstrapped a
+  second team for the new id first.
 
 ## Time
 

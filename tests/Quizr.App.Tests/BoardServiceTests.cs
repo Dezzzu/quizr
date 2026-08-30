@@ -268,6 +268,65 @@ public class BoardServiceTests
         text.Should().NotContain("Declined Quiz");
     }
 
+    // BoardRendererTests already proves the pure rendering function links correctly given the
+    // right inputs — this proves the inputs actually arrive that way through a real save and
+    // a fresh, untracked reload, the same round trip UpdateRouter.HandleConfirmNewGameAsync
+    // does: post the announcement, persist AnnouncementMessageId, then refresh the board from
+    // a query that never touches the in-memory Game instance that was just written to.
+    [Test]
+    public async Task RefreshAsyncLinksToTheAnnouncementOncePersistedInARealSupergroup()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: -1009998887771, ct); // real Telegram supergroup ids start with -100
+        var bot = TelegramBotClientTestHelper.Create();
+        var service = new BoardService(
+            db,
+            new MessageSender(bot, NoDebounce(bot)),
+            bot,
+            new Strings(),
+            NullLogger<BoardService>.Instance
+        );
+        var game = await SeedGameAsync(db, team, "Quiz Night", DateTimeOffset.UtcNow.AddDays(1), ct);
+        game.AnnouncementMessageId = new TelegramMessageId(777);
+        await db.SaveChangesAsync(ct);
+
+        await service.RefreshAsync(team, ct);
+
+        bot.SentTexts()
+            .Should()
+            .ContainSingle(text =>
+                text.Contains("""<a href="https://t.me/c/9998887771/777">""", StringComparison.Ordinal)
+            );
+    }
+
+    // Telegram has no message-link scheme for a basic (non-super) group at all — confirmed
+    // through the same real save-and-reload round trip as the supergroup case above, so a
+    // team whose chat never got upgraded doesn't quietly get a broken link instead of none.
+    [Test]
+    public async Task RefreshAsyncDoesNotLinkInARealBasicGroup()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: -998887772, ct); // basic groups: no "-100" prefix
+        var bot = TelegramBotClientTestHelper.Create();
+        var service = new BoardService(
+            db,
+            new MessageSender(bot, NoDebounce(bot)),
+            bot,
+            new Strings(),
+            NullLogger<BoardService>.Instance
+        );
+        var game = await SeedGameAsync(db, team, "Quiz Night", DateTimeOffset.UtcNow.AddDays(1), ct);
+        game.AnnouncementMessageId = new TelegramMessageId(778);
+        await db.SaveChangesAsync(ct);
+
+        await service.RefreshAsync(team, ct);
+
+        bot.SentTexts().Should().ContainSingle(text => text.Contains("Quiz Night", StringComparison.Ordinal));
+        bot.SentTexts().Should().ContainSingle(text => !text.Contains("<a href", StringComparison.Ordinal));
+    }
+
     // The debouncer's own delay isn't what's under test here; a zero-window instance still
     // exercises the real coalescing code path.
     private static MessageEditDebouncer NoDebounce(ITelegramBotClient bot) =>
