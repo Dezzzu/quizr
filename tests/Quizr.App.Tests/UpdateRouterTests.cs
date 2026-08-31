@@ -242,6 +242,70 @@ public class UpdateRouterTests
         bot.ClearedKeyboards().Should().ContainSingle();
     }
 
+    // Player.DmEnabled gates every DM the scheduler sends, and nothing ever set it — written
+    // false at creation and left there, which made the Dm reminder channel unreachable however
+    // anyone configured it.
+    [Test]
+    public async Task WritingToTheBotInPrivateMarksDmsAsReachable()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var (router, _) = CreateRouter(db);
+
+        await router.RouteAsync(MessageUpdate(4042, 4042, "/start", ChatType.Private), ct);
+
+        var player = await db.Players.SingleAsync(p => p.TelegramUserId == new TelegramUserId(4042), ct);
+        player.DmEnabled.Should().BeTrue();
+    }
+
+    // The same person talking in the group proves nothing about their private chat.
+    [Test]
+    public async Task WritingInAGroupDoesNotMarkDmsAsReachable()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        await SeedTeamAsync(db, chatId: 4043, ct);
+        var (router, _) = CreateRouter(db);
+
+        await router.RouteAsync(MessageUpdate(4043, 4043, "/help"), ct);
+
+        var player = await db.Players.SingleAsync(p => p.TelegramUserId == new TelegramUserId(4043), ct);
+        player.DmEnabled.Should().BeFalse();
+    }
+
+    [Test]
+    public async Task BlockingTheBotMarksDmsAsUnreachableAndUnblockingRestoresThem()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var (router, _) = CreateRouter(db);
+        await router.RouteAsync(MessageUpdate(4044, 4044, "/start", ChatType.Private), ct);
+
+        await router.RouteAsync(PrivateChatMemberUpdate(4044, ChatMemberStatus.Kicked), ct);
+        var blocked = await db.Players.SingleAsync(p => p.TelegramUserId == new TelegramUserId(4044), ct);
+        blocked.DmEnabled.Should().BeFalse();
+
+        await router.RouteAsync(PrivateChatMemberUpdate(4044, ChatMemberStatus.Member), ct);
+        db.ChangeTracker.Clear();
+        var unblocked = await db.Players.SingleAsync(p => p.TelegramUserId == new TelegramUserId(4044), ct);
+        unblocked.DmEnabled.Should().BeTrue();
+    }
+
+    // Unblocking used to run the group-bootstrap path, which minted a "Quiz team" keyed on the
+    // person's own chat id and greeted them with the group setup message.
+    [Test]
+    public async Task UnblockingTheBotDoesNotCreateATeamForThePrivateChat()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(PrivateChatMemberUpdate(4045, ChatMemberStatus.Member), ct);
+
+        (await db.Teams.CountAsync(t => t.ChatId == new TelegramChatId(4045), ct)).Should().Be(0);
+        bot.SentTexts().Should().BeEmpty();
+    }
+
     // A validation failure re-shows the very same prompt for a retry — its keyboard is still
     // exactly what's needed, so it must not be stripped the way a real advance would strip it.
     [Test]
@@ -807,6 +871,40 @@ public class UpdateRouterTests
         bot.SentTexts(4033).Should().ContainSingle();
         (await db.Teams.AsNoTracking().SingleAsync(t => t.Id == activeTeam.Id, ct)).DeactivatedAt.Should().BeNull();
     }
+
+    // Telegram reports private-chat membership only on block/unblock — Kicked and Member are
+    // the two statuses that actually occur there.
+    private static Update PrivateChatMemberUpdate(long telegramUserId, ChatMemberStatus newStatus) =>
+        new()
+        {
+            Id = 1,
+            MyChatMember = new ChatMemberUpdated
+            {
+                Chat = new Chat { Id = telegramUserId, Type = ChatType.Private },
+                From = new User { Id = telegramUserId, FirstName = "Test" },
+                Date = DateTime.UtcNow,
+                OldChatMember =
+                    newStatus == ChatMemberStatus.Member
+                        ? new ChatMemberBanned
+                        {
+                            User = new User { Id = 1, FirstName = "Quizr" },
+                        }
+                        : new ChatMemberMember
+                        {
+                            User = new User { Id = 1, FirstName = "Quizr" },
+                        },
+                NewChatMember =
+                    newStatus == ChatMemberStatus.Member
+                        ? new ChatMemberMember
+                        {
+                            User = new User { Id = 1, FirstName = "Quizr" },
+                        }
+                        : new ChatMemberBanned
+                        {
+                            User = new User { Id = 1, FirstName = "Quizr" },
+                        },
+            },
+        };
 
     private static Update MigrateUpdate(long oldChatId, long newChatId) =>
         new()

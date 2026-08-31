@@ -43,6 +43,24 @@ public sealed class PlayerBootstrapService
         return player;
     }
 
+    // A bot cannot message anyone who has not started it (CLAUDE.md), so DmEnabled is what
+    // SchedulerService checks before sending any DM reminder. Nothing ever wrote it: it was set
+    // false at creation and never revisited, which left the whole Dm channel unreachable — a
+    // person could pick it in /myreminders and simply never hear from the bot again.
+    //
+    // Two things prove a DM would land, and both flip it: a message the person sent in their
+    // own chat with the bot, and Telegram reporting them unblocking it. Blocking flips it back.
+    public async Task SetDmEnabledAsync(Player player, bool enabled, CancellationToken ct)
+    {
+        if (player.DmEnabled == enabled)
+        {
+            return;
+        }
+
+        player.DmEnabled = enabled;
+        await _db.SaveChangesAsync(ct);
+    }
+
     public async Task EnsureMembershipAsync(TeamId teamId, PlayerId playerId, CancellationToken ct)
     {
         var exists = await _db.Memberships.AnyAsync(m => m.TeamId == teamId && m.PlayerId == playerId, ct);

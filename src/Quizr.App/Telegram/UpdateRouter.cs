@@ -86,7 +86,7 @@ public sealed class UpdateRouter
         switch (update.Type)
         {
             case UpdateType.MyChatMember:
-                await _teamBootstrap.HandleMyChatMemberAsync(update.MyChatMember!, ct);
+                await HandleMyChatMemberAsync(update.MyChatMember!, ct);
                 break;
 
             case UpdateType.ChatMember:
@@ -121,6 +121,29 @@ public sealed class UpdateRouter
         }
     }
 
+    // my_chat_member covers two unrelated things. In a group it is the bot being added or
+    // removed, which is the only way a Team is born. In a private chat Telegram sends it only
+    // when someone blocks or unblocks the bot — the one signal that says whether a DM would
+    // land, and emphatically not a team: a private chat has no title and no members, so
+    // routing it into TeamBootstrapService minted a "Quiz team" keyed on the person's own chat
+    // id and greeted them with the group setup message the first time they unblocked.
+    private async Task HandleMyChatMemberAsync(ChatMemberUpdated update, CancellationToken ct)
+    {
+        if (update.Chat.Type != ChatType.Private)
+        {
+            await _teamBootstrap.HandleMyChatMemberAsync(update, ct);
+            return;
+        }
+
+        var player = await _playerBootstrap.GetOrCreateAsync(update.From, ct);
+        await _playerBootstrap.SetDmEnabledAsync(player, CanReceiveDms(update.NewChatMember.Status), ct);
+    }
+
+    // Blocking the bot reports as Kicked; unblocking reports as Member. Anything else in a
+    // private chat is not a state this can act on, so it reads as "no DMs" rather than
+    // guessing.
+    private static bool CanReceiveDms(ChatMemberStatus status) => status == ChatMemberStatus.Member;
+
     private async Task HandleChatMigratedAsync(TelegramChatId oldChatId, TelegramChatId newChatId, CancellationToken ct)
     {
         var team = await _db.Teams.SingleOrDefaultAsync(t => t.ChatId == oldChatId, ct);
@@ -146,6 +169,14 @@ public sealed class UpdateRouter
             if (team is not null)
             {
                 await _playerBootstrap.EnsureMembershipAsync(team.Id, player.Id, ct);
+            }
+
+            // Them writing in their own chat with the bot is the proof that a DM would land —
+            // the ordinary way this becomes true, since most people press Start and never
+            // block anything.
+            if (message.Chat.Type == ChatType.Private)
+            {
+                await _playerBootstrap.SetDmEnabledAsync(player, true, ct);
             }
         }
 
