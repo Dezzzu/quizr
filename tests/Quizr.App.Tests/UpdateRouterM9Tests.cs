@@ -309,7 +309,11 @@ public class UpdateRouterM9Tests
 
         await router.RouteAsync(MessageUpdate(8009, 8009, "/managecaptains"), ct);
 
-        bot.SentTexts().Should().ContainSingle(text => text.Contains("captain", StringComparison.OrdinalIgnoreCase));
+        // As private as the view it refuses: the command is taken away, so a public refusal
+        // would be left with nothing in the chat to explain it.
+        bot.EphemeralTexts()
+            .Should()
+            .ContainSingle(e => e.Text.Contains("captain", StringComparison.OrdinalIgnoreCase));
     }
 
     // /managecaptains was another view with no way to end the interaction — found while

@@ -231,6 +231,10 @@ public class UpdateRouterTests
         // the finished game's announcement and the Board that lists it.
         bot.SentTexts(4040).Should().HaveCount(2);
         bot.EphemeralTexts(4040).Should().NotBeEmpty();
+
+        // Including the command that started it: the team hears about a new game from the
+        // game's own post, not from watching somebody type /newgame.
+        bot.DeletedMessageIds().Should().Contain(1);
     }
 
     // The one-off branch leaves the same picker behind — it just reaches its next step through
@@ -325,10 +329,11 @@ public class UpdateRouterTests
         await SeedCaptainedTeamAsync(db, chatId: 4046, telegramUserId: 4046, ct);
         var (router, bot) = CreateRouter(db);
 
-        await router.RouteAsync(MessageUpdate(4046, 4046, "/newfranchise"), ct);
+        await router.RouteAsync(MessageUpdate(4046, 4046, "/newfranchise", messageId: 76), ct);
         await router.RouteAsync(MessageUpdate(4046, 4046, "Travelling Quiz", messageId: 77), ct);
 
-        bot.DeletedMessageIds().Should().Equal(77);
+        // The command that opened the private flow, then the answer it consumed.
+        bot.DeletedMessageIds().Should().Equal(76, 77);
     }
 
     // A rejected answer leaves the step where it was, so the captain keeps what they typed
@@ -341,10 +346,11 @@ public class UpdateRouterTests
         await SeedCaptainedTeamAsync(db, chatId: 4047, telegramUserId: 4047, ct);
         var (router, bot) = CreateRouter(db);
 
-        await router.RouteAsync(MessageUpdate(4047, 4047, "/newfranchise"), ct);
+        await router.RouteAsync(MessageUpdate(4047, 4047, "/newfranchise", messageId: 76), ct);
         await router.RouteAsync(MessageUpdate(4047, 4047, "   ", messageId: 78), ct);
 
-        bot.DeletedMessageIds().Should().BeEmpty();
+        // The command goes, the rejected answer stays put.
+        bot.DeletedMessageIds().Should().Equal(76);
     }
 
     // Skip is answered by a button, not by typing, and the synthetic reply it builds borrows
@@ -357,13 +363,13 @@ public class UpdateRouterTests
         await using var db = _fixture.CreateContext();
         await SeedCaptainedTeamAsync(db, chatId: 4048, telegramUserId: 4048, ct);
         var (router, bot) = CreateRouter(db);
-        await router.RouteAsync(MessageUpdate(4048, 4048, "/newfranchise"), ct);
+        await router.RouteAsync(MessageUpdate(4048, 4048, "/newfranchise", messageId: 89), ct);
         await router.RouteAsync(MessageUpdate(4048, 4048, "Travelling Quiz", messageId: 90), ct);
 
         await router.RouteAsync(CallbackUpdate(4048, 4048, CallbackData.Format(CallbackData.Skip, 0L)), ct);
 
-        // Only the typed name was an answer to take away.
-        bot.DeletedMessageIds().Should().Equal(90);
+        // The command and the typed name; the Skip tap adds nothing to take away.
+        bot.DeletedMessageIds().Should().Equal(89, 90);
     }
 
     // A validation failure re-shows the very same prompt for a retry — its keyboard is still

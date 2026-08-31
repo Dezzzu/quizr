@@ -192,6 +192,13 @@ public sealed class UpdateRouter
 
         var (command, argument) = CommandText.Parse(message.Text!);
 
+        // Set by the commands whose entire reply is private, so the command itself can be
+        // taken away too. Leaving it behind would hide the flow and keep the announcement of
+        // it: the team learns about a new game from the game's own post, not from watching
+        // somebody type /newgame — and a wizard that gets cancelled or abandoned would
+        // otherwise leave the command sitting there with no outcome at all.
+        var handledPrivately = false;
+
         switch (command)
         {
             case "/start":
@@ -216,6 +223,7 @@ public sealed class UpdateRouter
 
             case "/cancel" when team is not null && player is not null:
                 await HandleCancelCommandAsync(team, player, chatId, ct);
+                handledPrivately = true;
                 break;
 
             case "/settimezone" when team is not null && actor is { } a:
@@ -228,6 +236,7 @@ public sealed class UpdateRouter
 
             case "/mylanguage" when player is not null:
                 await HandleSetMyLanguageAsync(player, chatId, argument, ct);
+                handledPrivately = true;
                 break;
 
             case "/setreminders" when team is not null && actor is { } a:
@@ -236,27 +245,38 @@ public sealed class UpdateRouter
 
             case "/newgame" when team is not null && actor is { } a:
                 await HandleNewGameCommandAsync(team, a, chatId, ct);
+                handledPrivately = true;
                 break;
 
             case "/newfranchise" when team is not null && actor is { } a:
                 await HandleNewFranchiseCommandAsync(team, a, chatId, ct);
+                handledPrivately = true;
                 break;
 
             case "/editfranchise" when team is not null && actor is { } a:
                 await HandleEditFranchiseCommandAsync(team, a, chatId, ct);
+                handledPrivately = true;
                 break;
 
             case "/editgame" when team is not null && actor is { } a:
                 await HandleEditGameCommandAsync(team, a, chatId, ct);
+                handledPrivately = true;
                 break;
 
             case "/myreminders" when team is not null && actor is { } a:
                 await HandleMyRemindersCommandAsync(team, a, chatId, ct);
+                handledPrivately = true;
                 break;
 
             case "/managecaptains" when team is not null && actor is { } a:
                 await HandleManageCaptainsCommandAsync(team, a, chatId, ct);
+                handledPrivately = true;
                 break;
+        }
+
+        if (handledPrivately)
+        {
+            await _sender.TryDeleteAsync(chatId, new TelegramMessageId(message.Id), ct);
         }
     }
 
@@ -3615,7 +3635,14 @@ public sealed class UpdateRouter
         var result = await _teams.LoadMembersAsync(team, actor, ct);
         if (!result.IsSuccess)
         {
-            await _sender.SendAsync(chatId, strings.Text(ErrorKey(result.Error)), null, ct);
+            await _sender.SendEphemeralAsync(
+                chatId,
+                actor.TelegramUserId,
+                strings.Text(ErrorKey(result.Error)),
+                null,
+                null,
+                ct
+            );
             return;
         }
 
