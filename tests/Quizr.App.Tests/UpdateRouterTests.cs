@@ -542,7 +542,9 @@ public class UpdateRouterTests
             .Locale.Should()
             .Be("de");
         (await db.Teams.AsNoTracking().SingleAsync(t => t.Id == team.Id, ct)).Locale.Should().Be("en");
-        bot.SentTexts().Should().ContainSingle();
+        // Somebody's own language is nobody else's business, so the confirmation is private.
+        bot.SentTexts().Should().BeEmpty();
+        bot.EphemeralTexts().Should().ContainSingle();
     }
 
     [Test]
@@ -558,7 +560,7 @@ public class UpdateRouterTests
         (await db.Players.AsNoTracking().SingleAsync(p => p.TelegramUserId == new TelegramUserId(4014), ct))
             .Locale.Should()
             .BeNull();
-        bot.SentTexts().Should().ContainSingle(text => text.Contains("klingon", StringComparison.Ordinal));
+        bot.EphemeralTexts().Should().ContainSingle(e => e.Text.Contains("klingon", StringComparison.Ordinal));
     }
 
     [Test]

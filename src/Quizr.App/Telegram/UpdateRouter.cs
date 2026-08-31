@@ -250,8 +250,8 @@ public sealed class UpdateRouter
                 await HandleEditGameCommandAsync(team, a, chatId, ct);
                 break;
 
-            case "/myreminders" when team is not null && player is not null:
-                await HandleMyRemindersCommandAsync(team, player.Id, chatId, ct);
+            case "/myreminders" when team is not null && actor is { } a:
+                await HandleMyRemindersCommandAsync(team, a, chatId, ct);
                 break;
 
             case "/managecaptains" when team is not null && actor is { } a:
@@ -349,9 +349,11 @@ public sealed class UpdateRouter
         if (argument is null || !LocaleResolver.IsSupported(argument))
         {
             var strings = _strings.For(player.Locale ?? "en");
-            await _sender.SendAsync(
+            await _sender.SendEphemeralAsync(
                 chatId,
+                player.TelegramUserId,
                 strings.Text("Setup.LanguageInvalid", new { Input = argument ?? "" }),
+                null,
                 null,
                 ct
             );
@@ -361,9 +363,11 @@ public sealed class UpdateRouter
         player.Locale = argument;
         await _db.SaveChangesAsync(ct);
 
-        await _sender.SendAsync(
+        await _sender.SendEphemeralAsync(
             chatId,
+            player.TelegramUserId,
             _strings.For(player.Locale).Text("Setup.MyLanguageSet", new { Locale = player.Locale }),
+            null,
             null,
             ct
         );
@@ -1363,7 +1367,7 @@ public sealed class UpdateRouter
             return true;
         }
 
-        await SendRosterViewAsync(game, roster.Value, chatId, strings, ct);
+        await SendRosterViewAsync(game, roster.Value, chatId, actor.TelegramUserId, strings, ct);
         return true;
     }
 
@@ -1417,7 +1421,7 @@ public sealed class UpdateRouter
         }
 
         var (text, keyboard) = BuildManageGuestsView(game, guests.Value, strings);
-        await _sender.SendAsync(chatId, text, keyboard, ct);
+        await _sender.SendEphemeralAsync(chatId, actor.TelegramUserId, text, keyboard, null, ct);
         return true;
     }
 
@@ -1749,7 +1753,7 @@ public sealed class UpdateRouter
         var outcome = result.Value;
         foreach (var guest in outcome.NamedGuestsNeedingChoice)
         {
-            await SendGuestChoicePromptAsync(scope.ChatId, guest, scope.Strings, ct);
+            await SendGuestChoicePromptAsync(scope.ChatId, scope.Actor.TelegramUserId, guest, scope.Strings, ct);
         }
 
         await SendPromotionMessagesAsync(scope.ChatId, outcome.NewlyPromoted, scope.Strings, ct);
@@ -1771,7 +1775,14 @@ public sealed class UpdateRouter
         var guests = await _signups.LoadLiveGuestsAsync(game, scope.Player.Id, ct);
         var (text, keyboard) = BuildMyGuestsView(game, guests, scope.Strings);
 
-        await _sender.SendAsync(scope.ChatId, text, keyboard, ct);
+        await _sender.SendEphemeralAsync(
+            scope.ChatId,
+            scope.Actor.TelegramUserId,
+            text,
+            keyboard,
+            callbackQuery.Id,
+            ct
+        );
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
@@ -1907,8 +1918,13 @@ public sealed class UpdateRouter
         await SendPromotionMessagesAsync(scope.ChatId, outcome.NewlyPromoted, scope.Strings, ct);
     }
 
+    // Goes to the guest's inviter, who is not always the person whose drop caused it: a
+    // captain dropping someone on their behalf leaves that someone's guests needing a
+    // decision, and sending it to the captain instead would leave the guest hanging with
+    // nobody able to resolve them.
     private async Task SendGuestChoicePromptAsync(
         TelegramChatId chatId,
+        TelegramUserId inviter,
         Signup guest,
         IStringsFor strings,
         CancellationToken ct
@@ -1927,7 +1943,14 @@ public sealed class UpdateRouter
                 ),
             ],
         ]);
-        await _sender.SendAsync(chatId, strings.Text("Guest.KeepQuestion", new { Name = encodedName }), keyboard, ct);
+        await _sender.SendEphemeralAsync(
+            chatId,
+            inviter,
+            strings.Text("Guest.KeepQuestion", new { Name = encodedName }),
+            keyboard,
+            null,
+            ct
+        );
     }
 
     // --- Captain flows: franchise pick/edit, game creation branch/date/confirm, game-edit
@@ -2601,7 +2624,7 @@ public sealed class UpdateRouter
             return;
         }
 
-        await SendRosterViewAsync(game, roster.Value, scope.ChatId, scope.Strings, ct);
+        await SendRosterViewAsync(game, roster.Value, scope.ChatId, scope.Actor.TelegramUserId, scope.Strings, ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
@@ -2609,13 +2632,16 @@ public sealed class UpdateRouter
         Game game,
         IReadOnlyList<Participation> participations,
         TelegramChatId chatId,
+        TelegramUserId receiver,
         IStringsFor strings,
         CancellationToken ct
     ) =>
-        await _sender.SendAsync(
+        await _sender.SendEphemeralAsync(
             chatId,
+            receiver,
             RosterManagementRenderer.RenderText(game, participations, strings),
             RosterManagementRenderer.RenderKeyboard(game, participations, strings),
+            null,
             ct
         );
 
@@ -2701,7 +2727,14 @@ public sealed class UpdateRouter
             return;
         }
 
-        await _sender.SendAsync(scope.ChatId, scope.Strings.Text("Roster.AskPlayerName"), null, ct);
+        await _sender.SendEphemeralAsync(
+            scope.ChatId,
+            scope.Actor.TelegramUserId,
+            scope.Strings.Text("Roster.AskPlayerName"),
+            null,
+            callbackQuery.Id,
+            ct
+        );
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
@@ -2745,7 +2778,14 @@ public sealed class UpdateRouter
         );
 
         var (text, keyboard) = BuildNudgeView(game, playing, selected, scope.Strings);
-        await _sender.SendAsync(scope.ChatId, text, keyboard, ct);
+        await _sender.SendEphemeralAsync(
+            scope.ChatId,
+            scope.Actor.TelegramUserId,
+            text,
+            keyboard,
+            callbackQuery.Id,
+            ct
+        );
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
@@ -2953,10 +2993,12 @@ public sealed class UpdateRouter
                 ),
             ],
         ]);
-        await _sender.SendAsync(
+        await _sender.SendEphemeralAsync(
             scope.ChatId,
+            scope.Actor.TelegramUserId,
             strings.Text("Decline.ConfirmPrompt", new { Title = WebUtility.HtmlEncode(game.Title) }),
             keyboard,
+            callbackQuery.Id,
             ct
         );
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
@@ -3038,10 +3080,12 @@ public sealed class UpdateRouter
             return;
         }
 
-        await _sender.SendAsync(
+        await _sender.SendEphemeralAsync(
             scope.ChatId,
+            scope.Actor.TelegramUserId,
             ManagePlayersRenderer.RenderText(game, statuses.Value, scope.Strings),
             ManagePlayersRenderer.RenderKeyboard(statuses.Value, scope.Strings),
+            callbackQuery.Id,
             ct
         );
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
@@ -3100,9 +3144,15 @@ public sealed class UpdateRouter
             await _announcements.RefreshAsync(game, scope.Team, ct);
 
             var outcome = result.Value;
-            foreach (var guest in outcome.NamedGuestsNeedingChoice)
+            if (outcome.NamedGuestsNeedingChoice.Count > 0)
             {
-                await SendGuestChoicePromptAsync(scope.ChatId, guest, strings, ct);
+                // The dropped player, not the captain who dropped them — see the prompt's own
+                // comment. Loaded only when there is actually a decision to hand over.
+                var target = await _db.Players.AsNoTracking().SingleAsync(p => p.Id == targetPlayerId, ct);
+                foreach (var guest in outcome.NamedGuestsNeedingChoice)
+                {
+                    await SendGuestChoicePromptAsync(scope.ChatId, target.TelegramUserId, guest, strings, ct);
+                }
             }
 
             await SendPromotionMessagesAsync(scope.ChatId, outcome.NewlyPromoted, strings, ct);
@@ -3167,7 +3217,14 @@ public sealed class UpdateRouter
         }
 
         var (text, keyboard) = BuildManageGuestsView(game, guests.Value, scope.Strings);
-        await _sender.SendAsync(scope.ChatId, text, keyboard, ct);
+        await _sender.SendEphemeralAsync(
+            scope.ChatId,
+            scope.Actor.TelegramUserId,
+            text,
+            keyboard,
+            callbackQuery.Id,
+            ct
+        );
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
@@ -3250,7 +3307,14 @@ public sealed class UpdateRouter
                 return;
             }
 
-            await _sender.SendAsync(scope.ChatId, strings.Text("ManageGuests.AskName"), null, ct);
+            await _sender.SendEphemeralAsync(
+                scope.ChatId,
+                scope.Actor.TelegramUserId,
+                strings.Text("ManageGuests.AskName"),
+                null,
+                callbackQuery.Id,
+                ct
+            );
             await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
             return;
         }
@@ -3296,15 +3360,18 @@ public sealed class UpdateRouter
 
     private async Task HandleMyRemindersCommandAsync(
         Team team,
-        PlayerId playerId,
+        Actor actor,
         TelegramChatId chatId,
         CancellationToken ct
     )
     {
-        var membership = await _teams.LoadOwnMembershipAsync(team, playerId, ct);
+        var membership = await _teams.LoadOwnMembershipAsync(team, actor.PlayerId, ct);
         var strings = _strings.For(team.Locale);
         var (text, keyboard) = BuildReminderSettingsView(membership, strings);
-        await _sender.SendAsync(chatId, text, keyboard, ct);
+
+        // Somebody's own reminder preferences concern nobody else in the chat. The command
+        // they typed is still theirs and still public — ephemeral only covers the bot's half.
+        await _sender.SendEphemeralAsync(chatId, actor.TelegramUserId, text, keyboard, null, ct);
     }
 
     private async Task HandleReminderSettingsCallbackAsync(char verb, CallbackQuery callbackQuery, CancellationToken ct)

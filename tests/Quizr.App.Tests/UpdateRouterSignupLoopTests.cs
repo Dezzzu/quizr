@@ -643,7 +643,8 @@ public class UpdateRouterSignupLoopTests
             ),
             ct
         );
-        bot.SentTexts().Should().Contain(text => text.Contains("Your guests", StringComparison.Ordinal));
+        // Your own guest list is private to you now.
+        bot.EphemeralTexts().Should().Contain(e => e.Text.Contains("Your guests", StringComparison.Ordinal));
 
         await router.RouteAsync(
             CallbackUpdate(

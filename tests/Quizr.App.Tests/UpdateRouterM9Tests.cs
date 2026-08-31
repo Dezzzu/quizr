@@ -665,6 +665,63 @@ public class UpdateRouterM9Tests
         return (router, bot);
     }
 
+    // The captain-only views are private to the captain who opened them now — the team has no
+    // reason to watch someone scroll a member list.
+    [Test]
+    public async Task ManagePlayersOpensPrivatelyForTheCaptainWhoAskedForIt()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 8023, capacity: 5, ct);
+        await SeedCaptainAsync(db, game.TeamId, telegramUserId: 80231, ct);
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(
+            CallbackUpdate(8023, 80231, CallbackData.Format(CallbackData.ManagePlayers, game.Id)),
+            ct
+        );
+
+        bot.EphemeralTexts().Should().ContainSingle(e => e.ReceiverUserId == 80231);
+        bot.SentTexts(8023).Should().BeEmpty();
+    }
+
+    // The keep-or-drop decision belongs to whoever invited the guest, which is not the person
+    // who caused it when a captain drops someone on their behalf. Sending it to the captain
+    // would leave the guest unresolved with nobody able to answer for them.
+    [Test]
+    public async Task AGuestChoiceRaisedByADropOnBehalfGoesToTheInviterNotTheCaptain()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 8024, capacity: 5, ct);
+        await SeedCaptainAsync(db, game.TeamId, telegramUserId: 80241, ct);
+        var target = await SeedMemberAsync(db, game.TeamId, telegramUserId: 80242, ct);
+        var (router, bot) = CreateRouter(db);
+
+        // The target signs up and brings a named guest, who therefore survives their drop only
+        // if they say so.
+        await router.RouteAsync(CallbackUpdate(8024, 80242, CallbackData.Format(CallbackData.Join, game.Id)), ct);
+        await router.RouteAsync(CallbackUpdate(8024, 80242, CallbackData.Format(CallbackData.Guest, game.Id)), ct);
+        var guest = await db.Signups.SingleAsync(s => s.GameId == game.Id && s.PlayerId == null, ct);
+        guest.GuestName = "Sasha";
+        await db.SaveChangesAsync(ct);
+
+        await router.RouteAsync(
+            CallbackUpdate(8024, 80241, CallbackData.Format(CallbackData.ManagePlayers, game.Id)),
+            ct
+        );
+        await router.RouteAsync(
+            CallbackUpdate(8024, 80241, CallbackData.Format(CallbackData.TogglePlayerSignup, target.Id)),
+            ct
+        );
+
+        var choice = bot.EphemeralTexts()
+            .Should()
+            .ContainSingle(e => e.Text.Contains("Sasha", StringComparison.Ordinal))
+            .Subject;
+        choice.ReceiverUserId.Should().Be(80242, "the guest belongs to the dropped player, not the captain");
+    }
+
     private static async Task<Team> SeedTeamAsync(QuizrDb db, long chatId, CancellationToken ct)
     {
         var team = new Team
