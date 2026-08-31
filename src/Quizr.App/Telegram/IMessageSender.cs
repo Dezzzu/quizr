@@ -78,6 +78,17 @@ public interface IMessageSender
     Task RemoveKeyboardAsync(TelegramChatId chatId, TelegramMessageId messageId, CancellationToken ct);
 
     Task RemoveKeyboardAsync(MessageRef message, CancellationToken ct);
+
+    // Deletes a message the bot did not send: a captain's own typed answer inside a private
+    // wizard, once it has been consumed. This is the only thing here that destroys something
+    // somebody wrote, so the caller is expected to be certain the message was an answer and
+    // that the step it answered actually advanced.
+    //
+    // Needs can_delete_messages, which the bot has whenever it is an admin — which it must be
+    // to pin the Board at all. Swallows the ways this legitimately fails rather than treating
+    // any of them as a fault: the message may already be gone, may be older than the 48 hours
+    // Telegram lets a bot delete within, or the bot may not be an admin yet.
+    Task TryDeleteAsync(TelegramChatId chatId, TelegramMessageId messageId, CancellationToken ct);
 }
 
 public sealed class MessageSender : IMessageSender
@@ -252,6 +263,24 @@ public sealed class MessageSender : IMessageSender
         }
         catch (ApiRequestException ex) when (IsMessageGone(ex) || IsUnmodified(ex)) { }
     }
+
+    public async Task TryDeleteAsync(TelegramChatId chatId, TelegramMessageId messageId, CancellationToken ct)
+    {
+        try
+        {
+            await _bot.SendRequest(
+                new DeleteMessageRequest { ChatId = chatId.Value, MessageId = (int)messageId.Value },
+                ct
+            );
+        }
+        catch (ApiRequestException ex) when (IsUndeletable(ex)) { }
+    }
+
+    // No dedicated error codes for any of these either, just the text on a 400.
+    private static bool IsUndeletable(ApiRequestException ex) =>
+        ex.Message.Contains("message to delete not found", StringComparison.OrdinalIgnoreCase)
+        || ex.Message.Contains("message can't be deleted", StringComparison.OrdinalIgnoreCase)
+        || ex.Message.Contains("not enough rights", StringComparison.OrdinalIgnoreCase);
 
     // Telegram's description for editing a deleted message; there's no dedicated error code
     // for it, just this text on a 400.

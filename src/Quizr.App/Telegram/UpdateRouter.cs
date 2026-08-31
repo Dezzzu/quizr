@@ -185,7 +185,7 @@ public sealed class UpdateRouter
             var dialog = await _dialogs.LoadAsync(chatId, player.Id, ct);
             if (dialog is not null)
             {
-                await HandleDialogReplyAsync(dialog, message, ct);
+                await HandleDialogReplyAsync(dialog, message, isTypedReply: true, ct);
                 return;
             }
         }
@@ -741,7 +741,16 @@ public sealed class UpdateRouter
     private static Actor ActorFor(DialogState dialog, Message message) =>
         new(dialog.PlayerId, new TelegramUserId(message.From!.Id));
 
-    private async Task HandleDialogReplyAsync(DialogState dialog, Message message, CancellationToken ct)
+    // isTypedReply distinguishes a real message somebody sent from the synthetic one
+    // HandleSkipAsync manufactures for a Skip tap. Only the former may be deleted — the
+    // synthetic one borrows the prompt's own message id, so deleting it would take away the
+    // bot's prompt instead of an answer.
+    private async Task HandleDialogReplyAsync(
+        DialogState dialog,
+        Message message,
+        bool isTypedReply,
+        CancellationToken ct
+    )
     {
         // Captured before dispatch: if the step below re-shows the same prompt (a validation
         // error), MessageId comes back unchanged and nothing gets stripped — the keyboard is
@@ -794,6 +803,15 @@ public sealed class UpdateRouter
         if (advanced && previousPrompt is { } stale)
         {
             await _sender.RemoveKeyboardAsync(stale, ct);
+        }
+
+        // The bot's half of a private wizard is invisible to the chat, but the answers are
+        // ordinary messages the captain sent, so hiding the flow means taking them away once
+        // they've been consumed. Only once the step actually advanced: a validation retry
+        // leaves the answer where it is, where the captain can still see what they typed.
+        if (advanced && isTypedReply && dialog.OwnerTelegramUserId is not null)
+        {
+            await _sender.TryDeleteAsync(dialog.ChatId, new TelegramMessageId(message.Id), ct);
         }
     }
 
@@ -3749,7 +3767,7 @@ public sealed class UpdateRouter
         // Routed through the same dispatch every real text reply goes through — Skip is
         // shown only on the four kinds that switch handles, so this reaches the exact same
         // handler a real "skip" reply would, and inherits its stale-keyboard cleanup too.
-        await HandleDialogReplyAsync(dialog, syntheticReply, ct);
+        await HandleDialogReplyAsync(dialog, syntheticReply, isTypedReply: false, ct);
 
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }

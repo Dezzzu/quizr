@@ -315,6 +315,57 @@ public class UpdateRouterTests
         bot.SentTexts().Should().BeEmpty();
     }
 
+    // A private wizard hides the bot's half, but the captain's answers are ordinary messages
+    // they sent — so hiding the flow means taking those away once they've been consumed.
+    [Test]
+    public async Task AnAnsweredWizardStepDeletesTheAnswerTheCaptainTyped()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        await SeedCaptainedTeamAsync(db, chatId: 4046, telegramUserId: 4046, ct);
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(MessageUpdate(4046, 4046, "/newfranchise"), ct);
+        await router.RouteAsync(MessageUpdate(4046, 4046, "Travelling Quiz", messageId: 77), ct);
+
+        bot.DeletedMessageIds().Should().Equal(77);
+    }
+
+    // A rejected answer leaves the step where it was, so the captain keeps what they typed
+    // in front of them to correct — the same rule that governs the prompt's own keyboard.
+    [Test]
+    public async Task ARejectedWizardAnswerIsLeftAlone()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        await SeedCaptainedTeamAsync(db, chatId: 4047, telegramUserId: 4047, ct);
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(MessageUpdate(4047, 4047, "/newfranchise"), ct);
+        await router.RouteAsync(MessageUpdate(4047, 4047, "   ", messageId: 78), ct);
+
+        bot.DeletedMessageIds().Should().BeEmpty();
+    }
+
+    // Skip is answered by a button, not by typing, and the synthetic reply it builds borrows
+    // the prompt's own message id — so a deletion here would take away the bot's prompt rather
+    // than any answer.
+    [Test]
+    public async Task TappingSkipDeletesNothing()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        await SeedCaptainedTeamAsync(db, chatId: 4048, telegramUserId: 4048, ct);
+        var (router, bot) = CreateRouter(db);
+        await router.RouteAsync(MessageUpdate(4048, 4048, "/newfranchise"), ct);
+        await router.RouteAsync(MessageUpdate(4048, 4048, "Travelling Quiz", messageId: 90), ct);
+
+        await router.RouteAsync(CallbackUpdate(4048, 4048, CallbackData.Format(CallbackData.Skip, 0L)), ct);
+
+        // Only the typed name was an answer to take away.
+        bot.DeletedMessageIds().Should().Equal(90);
+    }
+
     // A validation failure re-shows the very same prompt for a retry — its keyboard is still
     // exactly what's needed, so it must not be stripped the way a real advance would strip it.
     [Test]
@@ -1034,14 +1085,15 @@ public class UpdateRouterTests
         long chatId,
         long telegramUserId,
         string text,
-        ChatType chatType = ChatType.Supergroup
+        ChatType chatType = ChatType.Supergroup,
+        int messageId = 1
     ) =>
         new()
         {
             Id = 1,
             Message = new Message
             {
-                Id = 1,
+                Id = messageId,
                 Chat = new Chat { Id = chatId, Type = chatType },
                 From = new User { Id = telegramUserId, FirstName = "Test" },
                 Text = text,
