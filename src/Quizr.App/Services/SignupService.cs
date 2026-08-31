@@ -17,11 +17,11 @@ public interface ISignupService
     // someone actually playing, never by someone who isn't in the game themselves.
     Task<Result<Signup>> BringGuestAsync(Game game, PlayerId inviterId, CancellationToken ct);
 
-    // Captain-only (checked by the caller, not here): adds an already-named, ownerless guest
-    // directly, for a captain who wants to add someone without being signed up themselves.
-    // Named up front rather than anonymous-then-named — invariant 5 means a team guest is
-    // always named, there's no owner for an anonymous one to fall back to identifying by.
-    Task<Result<Signup>> AddTeamGuestAsync(Game game, string name, CancellationToken ct);
+    // Captain-only: adds an already-named, ownerless guest directly, for a captain who wants
+    // to add someone without being signed up themselves. Named up front rather than
+    // anonymous-then-named — invariant 5 means a team guest is always named, there's no owner
+    // for an anonymous one to fall back to identifying by.
+    Task<Result<Signup>> AddTeamGuestAsync(Game game, Team team, Actor actor, string name, CancellationToken ct);
 
     Task<Result<Signup>> NameGuestAsync(
         SignupId guestSignupId,
@@ -47,19 +47,22 @@ public interface ISignupService
         CancellationToken ct
     );
 
-    // Captain-only (checked by the caller): removes any live guest regardless of who invited
-    // them, or a team guest nobody owns — the one case RemoveGuestAsync's ownership check can
-    // never let anyone reach, self-service or not. captainId is recorded as CancelledByPlayerId
-    // since there's no "self" to attribute this to the way a member's own drop has one.
+    // Captain-only: removes any live guest regardless of who invited them, or a team guest
+    // nobody owns — the one case RemoveGuestAsync's ownership check can never let anyone
+    // reach, self-service or not. The actor is recorded as CancelledByPlayerId since there's
+    // no "self" to attribute this to the way a member's own drop has one.
     Task<Result<GuestRemovalOutcome>> RemoveGuestOnBehalfAsync(
         SignupId guestSignupId,
-        PlayerId captainId,
+        Team team,
+        Actor actor,
         CancellationToken ct
     );
 
     Task<IReadOnlyList<Signup>> LoadLiveGuestsAsync(Game game, PlayerId inviterId, CancellationToken ct);
 
-    Task<IReadOnlyList<Signup>> LoadAllLiveGuestsAsync(Game game, CancellationToken ct);
+    // Captain-only: the manage-guests view shows every guest for the game, including team
+    // guests the viewer has no ownership claim on.
+    Task<Result<IReadOnlyList<Signup>>> LoadAllLiveGuestsAsync(Game game, Team team, Actor actor, CancellationToken ct);
 }
 
 // Invariant 5's cascade: unnamed guests cancel automatically with the inviter; named ones
@@ -78,11 +81,13 @@ public sealed record GuestRemovalOutcome(Signup Guest, IReadOnlyList<Signup> New
 public sealed class SignupService : ISignupService
 {
     private readonly QuizrDb _db;
+    private readonly TeamGuard _guard;
     private readonly TimeProvider _clock;
 
-    public SignupService(QuizrDb db, TimeProvider clock)
+    public SignupService(QuizrDb db, TeamGuard guard, TimeProvider clock)
     {
         _db = db;
+        _guard = guard;
         _clock = clock;
     }
 
@@ -146,8 +151,20 @@ public sealed class SignupService : ISignupService
         return signup;
     }
 
-    public async Task<Result<Signup>> AddTeamGuestAsync(Game game, string name, CancellationToken ct)
+    public async Task<Result<Signup>> AddTeamGuestAsync(
+        Game game,
+        Team team,
+        Actor actor,
+        string name,
+        CancellationToken ct
+    )
     {
+        var allowed = await _guard.RequireCaptainAsync(team, actor, ct);
+        if (!allowed.IsSuccess)
+        {
+            return allowed.Error;
+        }
+
         var open = RegistrationGuard(game);
         if (!open.IsSuccess)
         {
@@ -284,17 +301,24 @@ public sealed class SignupService : ISignupService
 
     public async Task<Result<GuestRemovalOutcome>> RemoveGuestOnBehalfAsync(
         SignupId guestSignupId,
-        PlayerId captainId,
+        Team team,
+        Actor actor,
         CancellationToken ct
     )
     {
+        var allowed = await _guard.RequireCaptainAsync(team, actor, ct);
+        if (!allowed.IsSuccess)
+        {
+            return allowed.Error;
+        }
+
         var guest = await _db.Signups.SingleOrDefaultAsync(s => s.Id == guestSignupId && s.PlayerId == null, ct);
         if (guest is null)
         {
             return new BusinessError.NotYourGuest();
         }
 
-        return await CancelGuestAsync(guest, captainId, ct);
+        return await CancelGuestAsync(guest, actor.PlayerId, ct);
     }
 
     private async Task<Result<GuestRemovalOutcome>> CancelGuestAsync(
@@ -330,14 +354,27 @@ public sealed class SignupService : ISignupService
             .ThenBy(s => s.Id)
             .ToListAsync(ct);
 
-    public async Task<IReadOnlyList<Signup>> LoadAllLiveGuestsAsync(Game game, CancellationToken ct) =>
-        await _db
+    public async Task<Result<IReadOnlyList<Signup>>> LoadAllLiveGuestsAsync(
+        Game game,
+        Team team,
+        Actor actor,
+        CancellationToken ct
+    )
+    {
+        var allowed = await _guard.RequireCaptainAsync(team, actor, ct);
+        if (!allowed.IsSuccess)
+        {
+            return allowed.Error;
+        }
+
+        return await _db
             .Signups.AsNoTracking()
             .Include(s => s.InvitedByPlayer)
             .Where(s => s.GameId == game.Id && s.PlayerId == null && s.CancelledAt == null)
             .OrderBy(s => s.CreatedAt)
             .ThenBy(s => s.Id)
             .ToListAsync(ct);
+    }
 
     private async Task<RosterSplit> LoadRosterAsync(Game game, CancellationToken ct)
     {

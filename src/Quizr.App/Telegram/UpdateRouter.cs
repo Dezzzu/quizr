@@ -33,7 +33,8 @@ public sealed class UpdateRouter
     private readonly IStrings _strings;
     private readonly TeamBootstrapService _teamBootstrap;
     private readonly PlayerBootstrapService _playerBootstrap;
-    private readonly TeamGuard _teamGuard;
+    private readonly ITeamService _teams;
+    private readonly IDialogService _dialogs;
     private readonly ISignupService _signups;
     private readonly IFranchiseService _franchises;
     private readonly IGameService _games;
@@ -50,7 +51,8 @@ public sealed class UpdateRouter
         IStrings strings,
         TeamBootstrapService teamBootstrap,
         PlayerBootstrapService playerBootstrap,
-        TeamGuard teamGuard,
+        ITeamService teams,
+        IDialogService dialogs,
         ISignupService signups,
         IFranchiseService franchises,
         IGameService games,
@@ -67,7 +69,8 @@ public sealed class UpdateRouter
         _strings = strings;
         _teamBootstrap = teamBootstrap;
         _playerBootstrap = playerBootstrap;
-        _teamGuard = teamGuard;
+        _teams = teams;
+        _dialogs = dialogs;
         _signups = signups;
         _franchises = franchises;
         _games = games;
@@ -135,9 +138,11 @@ public sealed class UpdateRouter
         var team = await _db.Teams.ByChatId(chatId).SingleOrDefaultAsync(ct);
 
         Player? player = null;
+        Actor? actor = null;
         if (message.From is not null)
         {
             player = await _playerBootstrap.GetOrCreateAsync(message.From, ct);
+            actor = new Actor(player.Id, new TelegramUserId(message.From.Id));
             if (team is not null)
             {
                 await _playerBootstrap.EnsureMembershipAsync(team.Id, player.Id, ct);
@@ -146,10 +151,7 @@ public sealed class UpdateRouter
 
         if (player is not null && !message.Text!.StartsWith('/'))
         {
-            var dialog = await _db.DialogStates.SingleOrDefaultAsync(
-                d => d.ChatId == chatId && d.PlayerId == player.Id,
-                ct
-            );
+            var dialog = await _dialogs.LoadAsync(chatId, player.Id, ct);
             if (dialog is not null)
             {
                 await HandleDialogReplyAsync(dialog, message, ct);
@@ -185,92 +187,60 @@ public sealed class UpdateRouter
                 await HandleCancelCommandAsync(team, player, chatId, ct);
                 break;
 
-            case "/settimezone" when team is not null && player is not null && message.From is not null:
-                await HandleSetTimeZoneAsync(
-                    team,
-                    player.Id,
-                    chatId,
-                    new TelegramUserId(message.From.Id),
-                    argument,
-                    ct
-                );
+            case "/settimezone" when team is not null && actor is { } a:
+                await HandleSetTimeZoneAsync(team, a, chatId, argument, ct);
                 break;
 
-            case "/setlanguage" when team is not null && player is not null && message.From is not null:
-                await HandleSetLanguageAsync(
-                    team,
-                    player.Id,
-                    chatId,
-                    new TelegramUserId(message.From.Id),
-                    argument,
-                    ct
-                );
+            case "/setlanguage" when team is not null && actor is { } a:
+                await HandleSetLanguageAsync(team, a, chatId, argument, ct);
                 break;
 
             case "/mylanguage" when player is not null:
                 await HandleSetMyLanguageAsync(player, chatId, argument, ct);
                 break;
 
-            case "/setreminders" when team is not null && player is not null && message.From is not null:
-                await HandleSetRemindersAsync(
-                    team,
-                    player.Id,
-                    chatId,
-                    new TelegramUserId(message.From.Id),
-                    argument,
-                    ct
-                );
+            case "/setreminders" when team is not null && actor is { } a:
+                await HandleSetRemindersAsync(team, a, chatId, argument, ct);
                 break;
 
-            case "/newgame" when team is not null && player is not null && message.From is not null:
-                await HandleNewGameCommandAsync(team, player.Id, chatId, new TelegramUserId(message.From.Id), ct);
+            case "/newgame" when team is not null && actor is { } a:
+                await HandleNewGameCommandAsync(team, a, chatId, ct);
                 break;
 
-            case "/newfranchise" when team is not null && player is not null && message.From is not null:
-                await HandleNewFranchiseCommandAsync(team, player.Id, chatId, new TelegramUserId(message.From.Id), ct);
+            case "/newfranchise" when team is not null && actor is { } a:
+                await HandleNewFranchiseCommandAsync(team, a, chatId, ct);
                 break;
 
-            case "/editfranchise" when team is not null && player is not null && message.From is not null:
-                await HandleEditFranchiseCommandAsync(team, player.Id, chatId, new TelegramUserId(message.From.Id), ct);
+            case "/editfranchise" when team is not null && actor is { } a:
+                await HandleEditFranchiseCommandAsync(team, a, chatId, ct);
                 break;
 
-            case "/editgame" when team is not null && player is not null && message.From is not null:
-                await HandleEditGameCommandAsync(team, player.Id, chatId, new TelegramUserId(message.From.Id), ct);
+            case "/editgame" when team is not null && actor is { } a:
+                await HandleEditGameCommandAsync(team, a, chatId, ct);
                 break;
 
             case "/myreminders" when team is not null && player is not null:
                 await HandleMyRemindersCommandAsync(team, player.Id, chatId, ct);
                 break;
 
-            case "/managecaptains" when team is not null && player is not null && message.From is not null:
-                await HandleManageCaptainsCommandAsync(
-                    team,
-                    player.Id,
-                    chatId,
-                    new TelegramUserId(message.From.Id),
-                    ct
-                );
+            case "/managecaptains" when team is not null && actor is { } a:
+                await HandleManageCaptainsCommandAsync(team, a, chatId, ct);
                 break;
         }
     }
 
     private async Task HandleSetTimeZoneAsync(
         Team team,
-        PlayerId playerId,
+        Actor actor,
         TelegramChatId chatId,
-        TelegramUserId telegramUserId,
         string? argument,
         CancellationToken ct
     )
     {
         var strings = _strings.For(team.Locale);
 
-        if (!await _teamGuard.IsCaptainAsync(team.Id, playerId, chatId, telegramUserId, ct))
-        {
-            await _sender.SendAsync(chatId, strings.Text("NewGame.NotCaptain"), null, ct);
-            return;
-        }
-
+        // Parsed at the boundary, not in the service: a bad timezone string echoes the input
+        // back in its own message, which is a rendering concern, not a business failure.
         if (argument is null || !IsValidTimeZone(argument))
         {
             await _sender.SendAsync(
@@ -282,8 +252,12 @@ public sealed class UpdateRouter
             return;
         }
 
-        team.TimeZoneId = argument;
-        await _db.SaveChangesAsync(ct);
+        var result = await _teams.SetTimeZoneAsync(team, actor, argument, ct);
+        if (!result.IsSuccess)
+        {
+            await _sender.SendAsync(chatId, strings.Text(ErrorKey(result.Error)), null, ct);
+            return;
+        }
 
         await _sender.SendAsync(chatId, strings.Text("Setup.TimeZoneSet", new { TimeZoneId = argument }), null, ct);
 
@@ -296,20 +270,13 @@ public sealed class UpdateRouter
     // timezone.
     private async Task HandleSetLanguageAsync(
         Team team,
-        PlayerId playerId,
+        Actor actor,
         TelegramChatId chatId,
-        TelegramUserId telegramUserId,
         string? argument,
         CancellationToken ct
     )
     {
         var strings = _strings.For(team.Locale);
-
-        if (!await _teamGuard.IsCaptainAsync(team.Id, playerId, chatId, telegramUserId, ct))
-        {
-            await _sender.SendAsync(chatId, strings.Text("NewGame.NotCaptain"), null, ct);
-            return;
-        }
 
         if (argument is null || !LocaleResolver.IsSupported(argument))
         {
@@ -322,8 +289,12 @@ public sealed class UpdateRouter
             return;
         }
 
-        team.Locale = argument;
-        await _db.SaveChangesAsync(ct);
+        var result = await _teams.SetLocaleAsync(team, actor, argument, ct);
+        if (!result.IsSuccess)
+        {
+            await _sender.SendAsync(chatId, strings.Text(ErrorKey(result.Error)), null, ct);
+            return;
+        }
 
         // Rendered in the new locale, not the old one — the confirmation itself is the proof
         // the change took effect.
@@ -372,20 +343,13 @@ public sealed class UpdateRouter
     // of a single-field edit leaving the other two silently unexplained.
     private async Task HandleSetRemindersAsync(
         Team team,
-        PlayerId playerId,
+        Actor actor,
         TelegramChatId chatId,
-        TelegramUserId telegramUserId,
         string? argument,
         CancellationToken ct
     )
     {
         var strings = _strings.For(team.Locale);
-
-        if (!await _teamGuard.IsCaptainAsync(team.Id, playerId, chatId, telegramUserId, ct))
-        {
-            await _sender.SendAsync(chatId, strings.Text("NewGame.NotCaptain"), null, ct);
-            return;
-        }
 
         var parts = argument?.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? [];
         if (
@@ -399,10 +363,12 @@ public sealed class UpdateRouter
             return;
         }
 
-        team.EveningBeforeAt = eveningBeforeAt;
-        team.MorningOfAt = morningOfAt;
-        team.BeforeStartLead = beforeStartLead;
-        await _db.SaveChangesAsync(ct);
+        var result = await _teams.SetRemindersAsync(team, actor, eveningBeforeAt, morningOfAt, beforeStartLead, ct);
+        if (!result.IsSuccess)
+        {
+            await _sender.SendAsync(chatId, strings.Text(ErrorKey(result.Error)), null, ct);
+            return;
+        }
 
         await _sender.SendAsync(
             chatId,
@@ -420,37 +386,21 @@ public sealed class UpdateRouter
         );
     }
 
-    private async Task HandleNewGameCommandAsync(
-        Team team,
-        PlayerId playerId,
-        TelegramChatId chatId,
-        TelegramUserId telegramUserId,
-        CancellationToken ct
-    )
+    private async Task HandleNewGameCommandAsync(Team team, Actor actor, TelegramChatId chatId, CancellationToken ct)
     {
         var strings = _strings.For(team.Locale);
 
-        if (!await _teamGuard.IsCaptainAsync(team.Id, playerId, chatId, telegramUserId, ct))
+        var options = await _games.LoadNewGameOptionsAsync(team, actor, ct);
+        if (!options.IsSuccess)
         {
-            await _sender.SendAsync(chatId, strings.Text("NewGame.NotCaptain"), null, ct);
+            await _sender.SendAsync(chatId, strings.Text(ErrorKey(options.Error)), null, ct);
             return;
         }
 
-        var guard = TeamGuard.EnsureTimeZoneConfigured(team);
-        if (!guard.IsSuccess)
-        {
-            await _sender.SendAsync(chatId, strings.Text("NewGame.NeedsTimeZone"), null, ct);
-            return;
-        }
-
-        var franchises = await _db
-            .Franchises.AsNoTracking()
-            .Where(f => f.TeamId == team.Id && f.ArchivedAt == null)
-            .ToListAsync(ct);
-
-        await StartDialogAsync(
+        var franchises = options.Value;
+        await _dialogs.StartAsync(
             team.Id,
-            playerId,
+            actor.PlayerId,
             chatId,
             DialogKinds.NewGame,
             new NewGameDialogData(NewGameDialogData.ChooseBranch),
@@ -484,53 +434,52 @@ public sealed class UpdateRouter
 
     private async Task HandleNewFranchiseCommandAsync(
         Team team,
-        PlayerId playerId,
+        Actor actor,
         TelegramChatId chatId,
-        TelegramUserId telegramUserId,
         CancellationToken ct
     )
     {
         var strings = _strings.For(team.Locale);
 
-        if (!await _teamGuard.IsCaptainAsync(team.Id, playerId, chatId, telegramUserId, ct))
-        {
-            await _sender.SendAsync(chatId, strings.Text("NewGame.NotCaptain"), null, ct);
-            return;
-        }
-
-        var dialog = await StartDialogAsync(
-            team.Id,
-            playerId,
-            chatId,
+        var started = await _dialogs.StartForCaptainAsync(
+            team,
+            actor,
             DialogKinds.NewFranchise,
             new NewFranchiseDialogData(NewFranchiseDialogData.AskName),
             ct
         );
+        if (!started.IsSuccess)
+        {
+            await _sender.SendAsync(chatId, strings.Text(ErrorKey(started.Error)), null, ct);
+            return;
+        }
 
-        await SendPromptAsync(dialog, chatId, strings.Text("Franchise.AskName"), CancelButton.Keyboard(strings), ct);
+        await SendPromptAsync(
+            started.Value,
+            chatId,
+            strings.Text("Franchise.AskName"),
+            CancelButton.Keyboard(strings),
+            ct
+        );
     }
 
     private async Task HandleEditFranchiseCommandAsync(
         Team team,
-        PlayerId playerId,
+        Actor actor,
         TelegramChatId chatId,
-        TelegramUserId telegramUserId,
         CancellationToken ct
     )
     {
         var strings = _strings.For(team.Locale);
 
-        if (!await _teamGuard.IsCaptainAsync(team.Id, playerId, chatId, telegramUserId, ct))
+        var result = await _franchises.LoadEditableAsync(team, actor, ct);
+        if (!result.IsSuccess)
         {
-            await _sender.SendAsync(chatId, strings.Text("NewGame.NotCaptain"), null, ct);
+            await _sender.SendAsync(chatId, strings.Text(ErrorKey(result.Error)), null, ct);
             return;
         }
 
-        var franchises = await _db
-            .Franchises.AsNoTracking()
-            .Where(f => f.TeamId == team.Id && f.ArchivedAt == null)
-            .ToListAsync(ct);
-
+        var franchises = result.Value;
         if (franchises.Count == 0)
         {
             await _sender.SendAsync(chatId, strings.Text("Franchise.NoneYet"), null, ct);
@@ -545,28 +494,18 @@ public sealed class UpdateRouter
         );
     }
 
-    private async Task HandleEditGameCommandAsync(
-        Team team,
-        PlayerId playerId,
-        TelegramChatId chatId,
-        TelegramUserId telegramUserId,
-        CancellationToken ct
-    )
+    private async Task HandleEditGameCommandAsync(Team team, Actor actor, TelegramChatId chatId, CancellationToken ct)
     {
         var strings = _strings.For(team.Locale);
 
-        if (!await _teamGuard.IsCaptainAsync(team.Id, playerId, chatId, telegramUserId, ct))
+        var result = await _games.LoadEditableGamesAsync(team, actor, ct);
+        if (!result.IsSuccess)
         {
-            await _sender.SendAsync(chatId, strings.Text("NewGame.NotCaptain"), null, ct);
+            await _sender.SendAsync(chatId, strings.Text(ErrorKey(result.Error)), null, ct);
             return;
         }
 
-        var games = await _db
-            .Games.AsNoTracking()
-            .Where(g => g.TeamId == team.Id && g.FinishedAt == null && g.DeclinedAt == null)
-            .OrderBy(g => g.StartsAt)
-            .ToListAsync(ct);
-
+        var games = result.Value;
         if (games.Count == 0)
         {
             await _sender.SendAsync(chatId, strings.Text("EditGame.NoneYet"), null, ct);
@@ -587,50 +526,41 @@ public sealed class UpdateRouter
         await _sender.SendAsync(chatId, strings.Text("EditGame.PickGame"), keyboard, ct);
     }
 
-    // One dialog per (chat, player) — a stray earlier one is replaced rather than left to
-    // collide on the unique index, same rule StartGuestNamingDialogAsync already follows.
-    private async Task<DialogState> StartDialogAsync<TData>(
-        TeamId teamId,
-        PlayerId playerId,
-        TelegramChatId chatId,
-        string kind,
-        TData data,
-        CancellationToken ct
-    )
-    {
-        var existing = await _db.DialogStates.SingleOrDefaultAsync(
-            d => d.ChatId == chatId && d.PlayerId == playerId,
-            ct
-        );
-        if (existing is not null)
-        {
-            _db.DialogStates.Remove(existing);
-        }
+    // Everything a callback handler needs about who tapped what, resolved once. Before this,
+    // each of the seven callback sub-dispatchers opened with the same six lines, and every
+    // handler beneath them re-derived the chat id from the message a second time.
+    private sealed record CallbackScope(
+        TelegramChatId ChatId,
+        Team Team,
+        IStringsFor Strings,
+        Player Player,
+        Actor Actor,
+        TelegramMessageId MessageId
+    );
 
-        var now = _clock.GetUtcNow();
-        var dialog = new DialogState
-        {
-            TeamId = teamId,
-            PlayerId = playerId,
-            ChatId = chatId,
-            Kind = kind,
-            Step = "",
-            Data = JsonSerializer.Serialize(data),
-            CreatedAt = now,
-            UpdatedAt = now,
-        };
-        _db.DialogStates.Add(dialog);
-        await _db.SaveChangesAsync(ct);
-        return dialog;
+    private async Task<CallbackScope?> ResolveScopeAsync(CallbackQuery callbackQuery, CancellationToken ct)
+    {
+        var chatId = await ResolveChatIdAsync(new TelegramChatId(callbackQuery.Message!.Chat.Id), ct);
+        var team = await _db.Teams.ByChatId(chatId).SingleOrDefaultAsync(ct);
+        return team is null ? null : await ScopeForAsync(team, callbackQuery, ct);
     }
 
-    // Overwrites an already-active dialog's Data in place (same row, new UpdatedAt) — used at
-    // every step of a multi-step captain flow instead of removing and re-adding.
-    private async Task SaveDialogDataAsync<TData>(DialogState dialog, TData data, CancellationToken ct)
+    // For the game callbacks, where the team comes from the game rather than from a chat-id
+    // lookup — team.ChatId is by definition what ResolveChatIdAsync would have returned, so
+    // this path needs no Teams query of its own at all.
+    private async Task<CallbackScope> ScopeForAsync(Team team, CallbackQuery callbackQuery, CancellationToken ct)
     {
-        dialog.Data = JsonSerializer.Serialize(data);
-        dialog.UpdatedAt = _clock.GetUtcNow();
-        await _db.SaveChangesAsync(ct);
+        var player = await _playerBootstrap.GetOrCreateAsync(callbackQuery.From, ct);
+        await _playerBootstrap.EnsureMembershipAsync(team.Id, player.Id, ct);
+
+        return new CallbackScope(
+            team.ChatId,
+            team,
+            _strings.For(team.Locale),
+            player,
+            new Actor(player.Id, new TelegramUserId(callbackQuery.From.Id)),
+            new TelegramMessageId(callbackQuery.Message!.MessageId)
+        );
     }
 
     // Sends a prompt carrying a Cancel or Skip+Cancel keyboard and remembers its message id on
@@ -642,12 +572,7 @@ public sealed class UpdateRouter
         string text,
         InlineKeyboardMarkup keyboard,
         CancellationToken ct
-    )
-    {
-        dialog.MessageId = await _sender.SendAsync(chatId, text, keyboard, ct);
-        dialog.UpdatedAt = _clock.GetUtcNow();
-        await _db.SaveChangesAsync(ct);
-    }
+    ) => await _dialogs.SetPromptMessageAsync(dialog, await _sender.SendAsync(chatId, text, keyboard, ct), ct);
 
     // A chat id pulled straight off an incoming message or callback query can still carry a
     // migrated chat's pre-migration shape (CLAUDE.md's Telegram-migration note) — TeamLookup
@@ -675,6 +600,12 @@ public sealed class UpdateRouter
         || chatId.Value.ToString(CultureInfo.InvariantCulture).StartsWith("-100", StringComparison.Ordinal);
 
     // --- Dialog replies (currently: naming a guest) ---
+
+    // A dialog is looked up by (chat, player), so whoever is replying is by construction the
+    // person who owns it — and HandleSkipAsync copies the tapper onto its synthetic message
+    // for this reason, since a skipped step can still reach a captain-gated service.
+    private static Actor ActorFor(DialogState dialog, Message message) =>
+        new(dialog.PlayerId, new TelegramUserId(message.From!.Id));
 
     private async Task HandleDialogReplyAsync(DialogState dialog, Message message, CancellationToken ct)
     {
@@ -721,8 +652,7 @@ public sealed class UpdateRouter
             case DialogKinds.ManagePlayers:
             default:
                 _logger.LogWarning("Discarding a dialog with unrecognised kind {Kind}", dialog.Kind);
-                _db.DialogStates.Remove(dialog);
-                await _db.SaveChangesAsync(ct);
+                await _dialogs.ClearAsync(dialog, ct);
                 advanced = true;
                 break;
         }
@@ -741,7 +671,7 @@ public sealed class UpdateRouter
     private async Task<bool> HandleNewFranchiseReplyAsync(DialogState dialog, Message message, CancellationToken ct)
     {
         var data = JsonSerializer.Deserialize<NewFranchiseDialogData>(dialog.Data)!;
-        var chatId = await ResolveChatIdAsync(new TelegramChatId(message.Chat.Id), ct);
+        var chatId = dialog.ChatId;
         var team = await _db.Teams.SingleAsync(t => t.Id == dialog.TeamId, ct);
         var strings = _strings.For(team.Locale);
         var input = message.Text!;
@@ -755,7 +685,7 @@ public sealed class UpdateRouter
                     return false;
                 }
 
-                await SaveDialogDataAsync(
+                await _dialogs.SaveDataAsync(
                     dialog,
                     data with
                     {
@@ -776,7 +706,7 @@ public sealed class UpdateRouter
             case NewFranchiseDialogData.AskVenue:
                 _ = FieldParsing.TryParseOptionalText(input, out var venue, out _);
 
-                await SaveDialogDataAsync(
+                await _dialogs.SaveDataAsync(
                     dialog,
                     data with
                     {
@@ -801,7 +731,7 @@ public sealed class UpdateRouter
                     return false;
                 }
 
-                await SaveDialogDataAsync(
+                await _dialogs.SaveDataAsync(
                     dialog,
                     data with
                     {
@@ -826,7 +756,7 @@ public sealed class UpdateRouter
                     return false;
                 }
 
-                await SaveDialogDataAsync(
+                await _dialogs.SaveDataAsync(
                     dialog,
                     data with
                     {
@@ -852,7 +782,8 @@ public sealed class UpdateRouter
                 }
 
                 var createResult = await _franchises.CreateAsync(
-                    team.Id,
+                    team,
+                    ActorFor(dialog, message),
                     data.Name!,
                     data.Venue,
                     data.Capacity,
@@ -866,8 +797,7 @@ public sealed class UpdateRouter
                     // collected steps ago, and leaving the dialog at AskSchedule would
                     // misinterpret a retried name as a schedule. Clearing it sends the captain
                     // back to a clean /newfranchise instead.
-                    _db.DialogStates.Remove(dialog);
-                    await _db.SaveChangesAsync(ct);
+                    await _dialogs.ClearAsync(dialog, ct);
                     await _sender.SendAsync(chatId, strings.Text(ErrorKey(createResult.Error)), null, ct);
                     return true;
                 }
@@ -879,7 +809,7 @@ public sealed class UpdateRouter
                 // buttons (besides Archive, which is self-sufficient) only mean something while
                 // an EditFranchise dialog is active — without starting one here, they'd tap into
                 // nothing.
-                await StartDialogAsync(
+                await _dialogs.StartAsync(
                     team.Id,
                     dialog.PlayerId,
                     chatId,
@@ -903,7 +833,7 @@ public sealed class UpdateRouter
     private async Task<bool> HandleEditFranchiseReplyAsync(DialogState dialog, Message message, CancellationToken ct)
     {
         var data = JsonSerializer.Deserialize<EditFranchiseDialogData>(dialog.Data)!;
-        var chatId = await ResolveChatIdAsync(new TelegramChatId(message.Chat.Id), ct);
+        var chatId = dialog.ChatId;
         var team = await _db.Teams.SingleAsync(t => t.Id == dialog.TeamId, ct);
         var strings = _strings.For(team.Locale);
 
@@ -913,6 +843,7 @@ public sealed class UpdateRouter
             return false;
         }
 
+        var actor = ActorFor(dialog, message);
         var franchise = await _db.Franchises.SingleAsync(f => f.Id == data.FranchiseId, ct);
         var input = message.Text!;
         string? errorKey;
@@ -922,34 +853,35 @@ public sealed class UpdateRouter
             case EditFranchiseDialogData.Name:
                 if (FieldParsing.TryParseText(input, out var name, out errorKey))
                 {
-                    var nameResult = await _franchises.SetNameAsync(franchise, name, ct);
-                    errorKey = nameResult.IsSuccess ? null : ErrorKey(nameResult.Error);
+                    errorKey = FailureKey(await _franchises.SetNameAsync(franchise, team, actor, name, ct));
                 }
                 break;
 
             case EditFranchiseDialogData.Venue:
-                _ = FieldParsing.TryParseOptionalText(input, out var venue, out errorKey);
-                await _franchises.SetVenueAsync(franchise, venue, ct);
+                if (FieldParsing.TryParseOptionalText(input, out var venue, out errorKey))
+                {
+                    errorKey = FailureKey(await _franchises.SetVenueAsync(franchise, team, actor, venue, ct));
+                }
                 break;
 
             case EditFranchiseDialogData.Capacity:
                 if (FieldParsing.TryParseOptionalCapacity(input, out var capacity, out errorKey))
                 {
-                    await _franchises.SetCapacityAsync(franchise, capacity, ct);
+                    errorKey = FailureKey(await _franchises.SetCapacityAsync(franchise, team, actor, capacity, ct));
                 }
                 break;
 
             case EditFranchiseDialogData.Price:
                 if (FieldParsing.TryParsePrice(input, out var price, out errorKey))
                 {
-                    await _franchises.SetPriceAsync(franchise, price, ct);
+                    errorKey = FailureKey(await _franchises.SetPriceAsync(franchise, team, actor, price, ct));
                 }
                 break;
 
             case EditFranchiseDialogData.Schedule:
                 if (FieldParsing.TryParseSchedule(input, team.Locale, out var schedule, out errorKey))
                 {
-                    await _franchises.SetScheduleAsync(franchise, schedule, ct);
+                    errorKey = FailureKey(await _franchises.SetScheduleAsync(franchise, team, actor, schedule, ct));
                 }
                 break;
 
@@ -967,7 +899,7 @@ public sealed class UpdateRouter
         // is about to be shown again, and its buttons (besides Archive) only mean something
         // with an EditFranchise dialog behind them. Removing it here left every edit after the
         // first tapping into nothing. The dialog only ends via the picker's own Done button.
-        await SaveDialogDataAsync(dialog, data with { FieldIndex = null }, ct);
+        await _dialogs.SaveDataAsync(dialog, data with { FieldIndex = null }, ct);
 
         await _sender.SendAsync(chatId, strings.Text("Franchise.Updated"), null, ct);
         await _sender.SendAsync(
@@ -984,7 +916,7 @@ public sealed class UpdateRouter
     private async Task<bool> HandleNewGameReplyAsync(DialogState dialog, Message message, CancellationToken ct)
     {
         var data = JsonSerializer.Deserialize<NewGameDialogData>(dialog.Data)!;
-        var chatId = await ResolveChatIdAsync(new TelegramChatId(message.Chat.Id), ct);
+        var chatId = dialog.ChatId;
         var team = await _db.Teams.SingleAsync(t => t.Id == dialog.TeamId, ct);
         var strings = _strings.For(team.Locale);
         var input = message.Text!;
@@ -998,7 +930,7 @@ public sealed class UpdateRouter
                     return false;
                 }
 
-                await SaveDialogDataAsync(
+                await _dialogs.SaveDataAsync(
                     dialog,
                     data with
                     {
@@ -1024,7 +956,7 @@ public sealed class UpdateRouter
                 }
 
                 var customConfirmData = data with { Step = NewGameDialogData.Confirm, Time = customTime };
-                await SaveDialogDataAsync(dialog, customConfirmData, ct);
+                await _dialogs.SaveDataAsync(dialog, customConfirmData, ct);
                 await SendConfirmScreenAsync(dialog, chatId, customConfirmData, strings, ct);
                 return true;
 
@@ -1035,7 +967,7 @@ public sealed class UpdateRouter
                     return false;
                 }
 
-                await SaveDialogDataAsync(
+                await _dialogs.SaveDataAsync(
                     dialog,
                     data with
                     {
@@ -1060,7 +992,15 @@ public sealed class UpdateRouter
                     return false;
                 }
 
-                await SaveDialogDataAsync(dialog, data with { Step = NewGameDialogData.OneOffDate, Venue = venue }, ct);
+                await _dialogs.SaveDataAsync(
+                    dialog,
+                    data with
+                    {
+                        Step = NewGameDialogData.OneOffDate,
+                        Venue = venue,
+                    },
+                    ct
+                );
                 await SendPromptAsync(
                     dialog,
                     chatId,
@@ -1077,7 +1017,7 @@ public sealed class UpdateRouter
                     return false;
                 }
 
-                await SaveDialogDataAsync(
+                await _dialogs.SaveDataAsync(
                     dialog,
                     data with
                     {
@@ -1102,7 +1042,7 @@ public sealed class UpdateRouter
                     return false;
                 }
 
-                await SaveDialogDataAsync(
+                await _dialogs.SaveDataAsync(
                     dialog,
                     data with
                     {
@@ -1127,7 +1067,7 @@ public sealed class UpdateRouter
                     return false;
                 }
 
-                await SaveDialogDataAsync(
+                await _dialogs.SaveDataAsync(
                     dialog,
                     data with
                     {
@@ -1153,7 +1093,7 @@ public sealed class UpdateRouter
                 }
 
                 var confirmData = data with { Step = NewGameDialogData.Confirm, Price = price };
-                await SaveDialogDataAsync(dialog, confirmData, ct);
+                await _dialogs.SaveDataAsync(dialog, confirmData, ct);
                 await SendConfirmScreenAsync(dialog, chatId, confirmData, strings, ct);
                 return true;
 
@@ -1231,7 +1171,7 @@ public sealed class UpdateRouter
         }
 
         updated = updated with { Step = NewGameDialogData.Confirm, EditingFieldIndex = null };
-        await SaveDialogDataAsync(dialog, updated, ct);
+        await _dialogs.SaveDataAsync(dialog, updated, ct);
         await SendConfirmScreenAsync(dialog, chatId, updated, strings, ct);
         return true;
     }
@@ -1254,7 +1194,7 @@ public sealed class UpdateRouter
     private async Task<bool> HandleEditGameReplyAsync(DialogState dialog, Message message, CancellationToken ct)
     {
         var data = JsonSerializer.Deserialize<EditGameDialogData>(dialog.Data)!;
-        var chatId = await ResolveChatIdAsync(new TelegramChatId(message.Chat.Id), ct);
+        var chatId = dialog.ChatId;
         var team = await _db.Teams.SingleAsync(t => t.Id == dialog.TeamId, ct);
         var strings = _strings.For(team.Locale);
 
@@ -1264,6 +1204,7 @@ public sealed class UpdateRouter
             return false;
         }
 
+        var actor = ActorFor(dialog, message);
         var game = await _db.Games.SingleAsync(g => g.Id == data.GameId, ct);
         var input = message.Text!;
         string? errorKey;
@@ -1274,46 +1215,52 @@ public sealed class UpdateRouter
             case EditGameDialogData.Title:
                 if (FieldParsing.TryParseText(input, out var title, out errorKey))
                 {
-                    await _games.SetTitleAsync(game, title, ct);
+                    errorKey = FailureKey(await _games.SetTitleAsync(game, team, actor, title, ct));
                 }
                 break;
 
             case EditGameDialogData.Venue:
                 if (FieldParsing.TryParseText(input, out var venue, out errorKey))
                 {
-                    await _games.SetVenueAsync(game, venue, ct);
+                    errorKey = FailureKey(await _games.SetVenueAsync(game, team, actor, venue, ct));
                 }
                 break;
 
             case EditGameDialogData.Capacity:
                 if (FieldParsing.TryParseCapacity(input, out var capacity, out errorKey))
                 {
-                    promoted = await _games.SetCapacityAsync(game, capacity, ct);
+                    var resized = await _games.SetCapacityAsync(game, team, actor, capacity, ct);
+                    errorKey = FailureKey(resized);
+                    promoted = resized.IsSuccess ? resized.Value : [];
                 }
                 break;
 
             case EditGameDialogData.Price:
                 if (FieldParsing.TryParsePrice(input, out var price, out errorKey))
                 {
-                    await _games.SetPriceAsync(game, price, ct);
+                    errorKey = FailureKey(await _games.SetPriceAsync(game, team, actor, price, ct));
                 }
                 break;
 
             case EditGameDialogData.Notes:
-                _ = FieldParsing.TryParseOptionalText(input, out var notes, out errorKey);
-                await _games.SetNotesAsync(game, notes, ct);
+                if (FieldParsing.TryParseOptionalText(input, out var notes, out errorKey))
+                {
+                    errorKey = FailureKey(await _games.SetNotesAsync(game, team, actor, notes, ct));
+                }
                 break;
 
             case EditGameDialogData.StartTime:
                 if (FieldParsing.TryParseTime(input, out var time, out errorKey))
                 {
-                    await _games.SetStartTimeAsync(game, time, team.TimeZoneId!, ct);
+                    errorKey = FailureKey(await _games.SetStartTimeAsync(game, team, actor, time, ct));
                 }
                 break;
 
             case EditGameDialogData.Tags:
-                _ = FieldParsing.TryParseTags(input, out var tags, out errorKey);
-                await _games.SetTagsAsync(game, tags, ct);
+                if (FieldParsing.TryParseTags(input, out var tags, out errorKey))
+                {
+                    errorKey = FailureKey(await _games.SetTagsAsync(game, team, actor, tags, ct));
+                }
                 break;
 
             default:
@@ -1326,8 +1273,7 @@ public sealed class UpdateRouter
             return false;
         }
 
-        _db.DialogStates.Remove(dialog);
-        await _db.SaveChangesAsync(ct);
+        await _dialogs.ClearAsync(dialog, ct);
 
         await _announcements.RefreshAsync(game, team, ct);
         await _sender.SendAsync(chatId, strings.Text("EditGame.Updated"), null, ct);
@@ -1339,7 +1285,7 @@ public sealed class UpdateRouter
     private async Task<bool> HandleAddVenuePlayerReplyAsync(DialogState dialog, Message message, CancellationToken ct)
     {
         var data = JsonSerializer.Deserialize<AddVenuePlayerDialogData>(dialog.Data)!;
-        var chatId = await ResolveChatIdAsync(new TelegramChatId(message.Chat.Id), ct);
+        var chatId = dialog.ChatId;
         var team = await _db.Teams.SingleAsync(t => t.Id == dialog.TeamId, ct);
         var strings = _strings.For(team.Locale);
 
@@ -1349,11 +1295,11 @@ public sealed class UpdateRouter
             return false;
         }
 
+        var actor = ActorFor(dialog, message);
         var game = await _db.Games.SingleAsync(g => g.Id == data.GameId, ct);
-        var result = await _participations.AddVenueAssignedAsync(game, name, dialog.PlayerId, ct);
+        var result = await _participations.AddVenueAssignedAsync(game, team, actor, name, ct);
 
-        _db.DialogStates.Remove(dialog);
-        await _db.SaveChangesAsync(ct);
+        await _dialogs.ClearAsync(dialog, ct);
 
         if (!result.IsSuccess)
         {
@@ -1361,14 +1307,21 @@ public sealed class UpdateRouter
             return true;
         }
 
-        await SendRosterViewAsync(game, chatId, strings, ct);
+        var roster = await _participations.LoadRosterAsync(game, team, actor, ct);
+        if (!roster.IsSuccess)
+        {
+            await _sender.SendAsync(chatId, strings.Text(ErrorKey(roster.Error)), null, ct);
+            return true;
+        }
+
+        await SendRosterViewAsync(game, roster.Value, chatId, strings, ct);
         return true;
     }
 
     private async Task<bool> HandleAddTeamGuestReplyAsync(DialogState dialog, Message message, CancellationToken ct)
     {
         var data = JsonSerializer.Deserialize<AddTeamGuestDialogData>(dialog.Data)!;
-        var chatId = await ResolveChatIdAsync(new TelegramChatId(message.Chat.Id), ct);
+        var chatId = dialog.ChatId;
         var team = await _db.Teams.SingleAsync(t => t.Id == dialog.TeamId, ct);
         var strings = _strings.For(team.Locale);
 
@@ -1380,9 +1333,12 @@ public sealed class UpdateRouter
             return false;
         }
 
+        var actor = ActorFor(dialog, message);
         var game = await _db.Games.SingleAsync(g => g.Id == data.GameId, ct);
-        var result = await _signups.AddTeamGuestAsync(game, name, ct);
+        var result = await _signups.AddTeamGuestAsync(game, team, actor, name, ct);
 
+        // Not IDialogService.ClearAsync: the audit entry below has to ride along in the same
+        // SaveChangesAsync (CLAUDE.md), and clearing would commit the removal ahead of it.
         _db.DialogStates.Remove(dialog);
 
         if (!result.IsSuccess)
@@ -1404,8 +1360,14 @@ public sealed class UpdateRouter
         await _db.SaveChangesAsync(ct);
         await _announcements.RefreshAsync(game, team, ct);
 
-        var guests = await _signups.LoadAllLiveGuestsAsync(game, ct);
-        var (text, keyboard) = BuildManageGuestsView(game, guests, strings);
+        var guests = await _signups.LoadAllLiveGuestsAsync(game, team, actor, ct);
+        if (!guests.IsSuccess)
+        {
+            await _sender.SendAsync(chatId, strings.Text(ErrorKey(guests.Error)), null, ct);
+            return true;
+        }
+
+        var (text, keyboard) = BuildManageGuestsView(game, guests.Value, strings);
         await _sender.SendAsync(chatId, text, keyboard, ct);
         return true;
     }
@@ -1413,14 +1375,13 @@ public sealed class UpdateRouter
     private async Task<bool> HandleGuestNameReplyAsync(DialogState dialog, Message message, CancellationToken ct)
     {
         var data = JsonSerializer.Deserialize<GuestNameDialogData>(dialog.Data)!;
-        var chatId = await ResolveChatIdAsync(new TelegramChatId(message.Chat.Id), ct);
+        var chatId = dialog.ChatId;
         var team = await _db.Teams.SingleAsync(t => t.Id == dialog.TeamId, ct);
         var strings = _strings.For(team.Locale);
 
         var result = await _signups.NameGuestAsync(data.SignupId, dialog.PlayerId, message.Text!.Trim(), ct);
 
-        _db.DialogStates.Remove(dialog);
-        await _db.SaveChangesAsync(ct);
+        await _dialogs.ClearAsync(dialog, ct);
 
         if (!result.IsSuccess)
         {
@@ -1543,199 +1504,168 @@ public sealed class UpdateRouter
         }
 
         var team = await _db.Teams.SingleAsync(t => t.Id == game.TeamId, ct);
-        var strings = _strings.For(team.Locale);
-        var player = await _playerBootstrap.GetOrCreateAsync(callbackQuery.From, ct);
-        await _playerBootstrap.EnsureMembershipAsync(team.Id, player.Id, ct);
+        var scope = await ScopeForAsync(team, callbackQuery, ct);
 
         switch (verb)
         {
             case CallbackData.Join:
-                await HandleJoinAsync(game, team, player, callbackQuery, strings, ct);
+                await HandleJoinAsync(game, scope, callbackQuery, ct);
                 break;
 
             case CallbackData.Guest:
-                await HandleBringGuestAsync(game, team, player, callbackQuery, strings, ct);
+                await HandleBringGuestAsync(game, scope, callbackQuery, ct);
                 break;
 
             case CallbackData.Drop:
-                await HandleDropPromptAsync(game, player, callbackQuery, strings, ct);
+                await HandleDropPromptAsync(game, scope, callbackQuery, ct);
                 break;
 
             case CallbackData.ConfirmDrop:
-                await HandleConfirmDropAsync(game, team, player, callbackQuery, strings, ct);
+                await HandleConfirmDropAsync(game, scope, callbackQuery, ct);
                 break;
 
             case CallbackData.Stay:
-                await HandleStayAsync(callbackQuery, strings, ct);
+                await HandleStayAsync(scope, callbackQuery, ct);
                 break;
 
             case CallbackData.MyGuests:
-                await HandleMyGuestsAsync(game, player, callbackQuery, strings, ct);
+                await HandleMyGuestsAsync(game, scope, callbackQuery, ct);
                 break;
 
             case CallbackData.Nudge:
-                await HandleNudgeButtonAsync(game, team, player, callbackQuery, strings, ct);
+                await HandleNudgeButtonAsync(game, scope, callbackQuery, ct);
                 break;
 
             case CallbackData.ManageRoster:
-                await HandleManageRosterButtonAsync(game, team, player, callbackQuery, strings, ct);
+                await HandleManageRosterButtonAsync(game, scope, callbackQuery, ct);
                 break;
 
             case CallbackData.ManagePlayers:
-                await HandleManagePlayersButtonAsync(game, team, player, callbackQuery, strings, ct);
+                await HandleManagePlayersButtonAsync(game, scope, callbackQuery, ct);
                 break;
 
             case CallbackData.ManageGuests:
-                await HandleManageGuestsButtonAsync(game, team, player, callbackQuery, strings, ct);
+                await HandleManageGuestsButtonAsync(game, scope, callbackQuery, ct);
                 break;
 
             case CallbackData.DeclineGame:
-                await HandleDeclinePromptAsync(game, team, player, callbackQuery, strings, ct);
+                await HandleDeclinePromptAsync(game, scope, callbackQuery, ct);
                 break;
 
             case CallbackData.ConfirmDecline:
-                await HandleConfirmDeclineAsync(game, team, player, callbackQuery, strings, ct);
+                await HandleConfirmDeclineAsync(game, scope, callbackQuery, ct);
                 break;
 
             case CallbackData.CancelDecline:
-                await HandleCancelDeclineAsync(callbackQuery, strings, ct);
+                await HandleCancelDeclineAsync(scope, callbackQuery, ct);
                 break;
 
             case CallbackData.FinishGame:
-                await HandleFinishButtonAsync(game, team, player, callbackQuery, strings, ct);
+                await HandleFinishButtonAsync(game, scope, callbackQuery, ct);
                 break;
         }
     }
 
     private async Task HandleJoinAsync(
         Game game,
-        Team team,
-        Player player,
+        CallbackScope scope,
         CallbackQuery callbackQuery,
-        IStringsFor strings,
         CancellationToken ct
     )
     {
-        var result = await _signups.JoinAsync(game, player.Id, ct);
+        var result = await _signups.JoinAsync(game, scope.Player.Id, ct);
         if (!result.IsSuccess)
         {
-            await AnswerAlertAsync(callbackQuery, strings.Text(ErrorKey(result.Error)), ct);
+            await AnswerAlertAsync(callbackQuery, scope.Strings.Text(ErrorKey(result.Error)), ct);
             return;
         }
 
-        await _announcements.RefreshAsync(game, team, ct);
-        await _bot.AnswerCallbackQuery(callbackQuery.Id, strings.Text("Announcement.Joined"), cancellationToken: ct);
+        await _announcements.RefreshAsync(game, scope.Team, ct);
+        await _bot.AnswerCallbackQuery(
+            callbackQuery.Id,
+            scope.Strings.Text("Announcement.Joined"),
+            cancellationToken: ct
+        );
     }
 
     private async Task HandleBringGuestAsync(
         Game game,
-        Team team,
-        Player player,
+        CallbackScope scope,
         CallbackQuery callbackQuery,
-        IStringsFor strings,
         CancellationToken ct
     )
     {
-        var result = await _signups.BringGuestAsync(game, player.Id, ct);
+        var result = await _signups.BringGuestAsync(game, scope.Player.Id, ct);
         if (!result.IsSuccess)
         {
-            await AnswerAlertAsync(callbackQuery, strings.Text(ErrorKey(result.Error)), ct);
+            await AnswerAlertAsync(callbackQuery, scope.Strings.Text(ErrorKey(result.Error)), ct);
             return;
         }
 
-        await _announcements.RefreshAsync(game, team, ct);
+        await _announcements.RefreshAsync(game, scope.Team, ct);
         await _bot.AnswerCallbackQuery(
             callbackQuery.Id,
-            strings.Text("Announcement.GuestAdded"),
+            scope.Strings.Text("Announcement.GuestAdded"),
             cancellationToken: ct
         );
 
-        await StartGuestNamingDialogAsync(team, player, callbackQuery, result.Value, strings, ct);
+        await StartGuestNamingDialogAsync(scope, result.Value, ct);
     }
 
-    private async Task StartGuestNamingDialogAsync(
-        Team team,
-        Player player,
-        CallbackQuery callbackQuery,
-        Signup guestSignup,
-        IStringsFor strings,
-        CancellationToken ct
-    )
+    private async Task StartGuestNamingDialogAsync(CallbackScope scope, Signup guestSignup, CancellationToken ct)
     {
-        var chatId = await ResolveChatIdAsync(new TelegramChatId(callbackQuery.Message!.Chat.Id), ct);
-
-        // One dialog per (chat, player) — a stray earlier one (e.g. from a naming prompt
-        // nobody answered) is replaced rather than left to collide on the unique index.
-        var existing = await _db.DialogStates.SingleOrDefaultAsync(
-            d => d.ChatId == chatId && d.PlayerId == player.Id,
+        await _dialogs.StartAsync(
+            scope.Team.Id,
+            scope.Player.Id,
+            scope.ChatId,
+            DialogKinds.NameGuest,
+            new GuestNameDialogData(guestSignup.Id),
             ct
         );
-        if (existing is not null)
-        {
-            _db.DialogStates.Remove(existing);
-        }
-
-        var now = _clock.GetUtcNow();
-        _db.DialogStates.Add(
-            new DialogState
-            {
-                TeamId = team.Id,
-                PlayerId = player.Id,
-                ChatId = chatId,
-                Kind = DialogKinds.NameGuest,
-                Step = "AwaitingName",
-                Data = JsonSerializer.Serialize(new GuestNameDialogData(guestSignup.Id)),
-                CreatedAt = now,
-                UpdatedAt = now,
-            }
-        );
-        await _db.SaveChangesAsync(ct);
 
         var keyboard = new InlineKeyboardMarkup([
             [
                 InlineKeyboardButton.WithCallbackData(
-                    strings.Text("Guest.SkipButton"),
+                    scope.Strings.Text("Guest.SkipButton"),
                     CallbackData.Format(CallbackData.SkipGuestName, guestSignup.Id)
                 ),
             ],
         ]);
-        await _sender.SendAsync(chatId, strings.Text("Guest.NamePrompt"), keyboard, ct);
+        await _sender.SendAsync(scope.ChatId, scope.Strings.Text("Guest.NamePrompt"), keyboard, ct);
     }
 
     private async Task HandleDropPromptAsync(
         Game game,
-        Player player,
+        CallbackScope scope,
         CallbackQuery callbackQuery,
-        IStringsFor strings,
         CancellationToken ct
     )
     {
         var hasSignup = await _db.Signups.AnyAsync(
-            s => s.GameId == game.Id && s.PlayerId == player.Id && s.CancelledAt == null,
+            s => s.GameId == game.Id && s.PlayerId == scope.Player.Id && s.CancelledAt == null,
             ct
         );
         if (!hasSignup)
         {
-            await AnswerAlertAsync(callbackQuery, strings.Text("Signup.NotSignedUp"), ct);
+            await AnswerAlertAsync(callbackQuery, scope.Strings.Text("Signup.NotSignedUp"), ct);
             return;
         }
 
-        var chatId = await ResolveChatIdAsync(new TelegramChatId(callbackQuery.Message!.Chat.Id), ct);
         var keyboard = new InlineKeyboardMarkup([
             [
                 InlineKeyboardButton.WithCallbackData(
-                    strings.Text("Drop.ConfirmYes"),
+                    scope.Strings.Text("Drop.ConfirmYes"),
                     CallbackData.Format(CallbackData.ConfirmDrop, game.Id)
                 ),
                 InlineKeyboardButton.WithCallbackData(
-                    strings.Text("Drop.ConfirmNo"),
+                    scope.Strings.Text("Drop.ConfirmNo"),
                     CallbackData.Format(CallbackData.Stay, game.Id)
                 ),
             ],
         ]);
         await _sender.SendAsync(
-            chatId,
-            strings.Text("Drop.ConfirmPrompt", new { Title = WebUtility.HtmlEncode(game.Title) }),
+            scope.ChatId,
+            scope.Strings.Text("Drop.ConfirmPrompt", new { Title = WebUtility.HtmlEncode(game.Title) }),
             keyboard,
             ct
         );
@@ -1744,27 +1674,24 @@ public sealed class UpdateRouter
 
     private async Task HandleConfirmDropAsync(
         Game game,
-        Team team,
-        Player player,
+        CallbackScope scope,
         CallbackQuery callbackQuery,
-        IStringsFor strings,
         CancellationToken ct
     )
     {
-        var result = await _signups.DropAsync(game, player.Id, ct);
+        var result = await _signups.DropAsync(game, scope.Player.Id, ct);
         if (!result.IsSuccess)
         {
-            await AnswerAlertAsync(callbackQuery, strings.Text(ErrorKey(result.Error)), ct);
+            await AnswerAlertAsync(callbackQuery, scope.Strings.Text(ErrorKey(result.Error)), ct);
             return;
         }
 
-        await _announcements.RefreshAsync(game, team, ct);
+        await _announcements.RefreshAsync(game, scope.Team, ct);
 
-        var chatId = await ResolveChatIdAsync(new TelegramChatId(callbackQuery.Message!.Chat.Id), ct);
         await _sender.TryEditImmediatelyAsync(
-            chatId,
-            new TelegramMessageId(callbackQuery.Message.MessageId),
-            strings.Text("Drop.Cancelled"),
+            scope.ChatId,
+            scope.MessageId,
+            scope.Strings.Text("Drop.Cancelled"),
             null,
             ct
         );
@@ -1773,19 +1700,18 @@ public sealed class UpdateRouter
         var outcome = result.Value;
         foreach (var guest in outcome.NamedGuestsNeedingChoice)
         {
-            await SendGuestChoicePromptAsync(chatId, guest, strings, ct);
+            await SendGuestChoicePromptAsync(scope.ChatId, guest, scope.Strings, ct);
         }
 
-        await SendPromotionMessagesAsync(chatId, outcome.NewlyPromoted, strings, ct);
+        await SendPromotionMessagesAsync(scope.ChatId, outcome.NewlyPromoted, scope.Strings, ct);
     }
 
-    private async Task HandleStayAsync(CallbackQuery callbackQuery, IStringsFor strings, CancellationToken ct)
+    private async Task HandleStayAsync(CallbackScope scope, CallbackQuery callbackQuery, CancellationToken ct)
     {
-        var chatId = await ResolveChatIdAsync(new TelegramChatId(callbackQuery.Message!.Chat.Id), ct);
         await _sender.TryEditImmediatelyAsync(
-            chatId,
-            new TelegramMessageId(callbackQuery.Message.MessageId),
-            strings.Text("Drop.StillIn"),
+            scope.ChatId,
+            scope.MessageId,
+            scope.Strings.Text("Drop.StillIn"),
             null,
             ct
         );
@@ -1794,17 +1720,15 @@ public sealed class UpdateRouter
 
     private async Task HandleMyGuestsAsync(
         Game game,
-        Player player,
+        CallbackScope scope,
         CallbackQuery callbackQuery,
-        IStringsFor strings,
         CancellationToken ct
     )
     {
-        var guests = await _signups.LoadLiveGuestsAsync(game, player.Id, ct);
-        var chatId = await ResolveChatIdAsync(new TelegramChatId(callbackQuery.Message!.Chat.Id), ct);
-        var (text, keyboard) = BuildMyGuestsView(game, guests, strings);
+        var guests = await _signups.LoadLiveGuestsAsync(game, scope.Player.Id, ct);
+        var (text, keyboard) = BuildMyGuestsView(game, guests, scope.Strings);
 
-        await _sender.SendAsync(chatId, text, keyboard, ct);
+        await _sender.SendAsync(scope.ChatId, text, keyboard, ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
@@ -1846,81 +1770,69 @@ public sealed class UpdateRouter
 
     private async Task HandleRemoveGuestAsync(
         SignupId guestSignupId,
-        Player player,
+        CallbackScope scope,
         CallbackQuery callbackQuery,
         CancellationToken ct
     )
     {
-        var chatId = await ResolveChatIdAsync(new TelegramChatId(callbackQuery.Message!.Chat.Id), ct);
-        var team = await _db.Teams.ByChatId(chatId).SingleAsync(ct);
-        var strings = _strings.For(team.Locale);
-
-        var result = await _signups.RemoveGuestAsync(guestSignupId, player.Id, ct);
+        var result = await _signups.RemoveGuestAsync(guestSignupId, scope.Player.Id, ct);
         if (!result.IsSuccess)
         {
-            await AnswerAlertAsync(callbackQuery, strings.Text(ErrorKey(result.Error)), ct);
+            await AnswerAlertAsync(callbackQuery, scope.Strings.Text(ErrorKey(result.Error)), ct);
             return;
         }
 
         var outcome = result.Value;
         var game = await _db.Games.SingleAsync(g => g.Id == outcome.Guest.GameId, ct);
-        await _announcements.RefreshAsync(game, team, ct);
+        await _announcements.RefreshAsync(game, scope.Team, ct);
 
-        var remaining = await _signups.LoadLiveGuestsAsync(game, player.Id, ct);
-        var (text, keyboard) = BuildMyGuestsView(game, remaining, strings);
-        await _sender.TryEditImmediatelyAsync(
-            chatId,
-            new TelegramMessageId(callbackQuery.Message.MessageId),
-            text,
-            keyboard,
-            ct
-        );
-        await _bot.AnswerCallbackQuery(callbackQuery.Id, strings.Text("MyGuests.Removed"), cancellationToken: ct);
+        var remaining = await _signups.LoadLiveGuestsAsync(game, scope.Player.Id, ct);
+        var (text, keyboard) = BuildMyGuestsView(game, remaining, scope.Strings);
+        await _sender.TryEditImmediatelyAsync(scope.ChatId, scope.MessageId, text, keyboard, ct);
+        await _bot.AnswerCallbackQuery(callbackQuery.Id, scope.Strings.Text("MyGuests.Removed"), cancellationToken: ct);
 
-        await SendPromotionMessagesAsync(chatId, outcome.NewlyPromoted, strings, ct);
+        await SendPromotionMessagesAsync(scope.ChatId, outcome.NewlyPromoted, scope.Strings, ct);
     }
 
     private async Task HandleGuestCallbackAsync(char verb, CallbackQuery callbackQuery, CancellationToken ct)
     {
+        if (await ResolveScopeAsync(callbackQuery, ct) is not { } scope)
+        {
+            await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
+            return;
+        }
+
         _ = CallbackData.TryParse(callbackQuery.Data!, out _, out SignupId signupId);
-        var player = await _playerBootstrap.GetOrCreateAsync(callbackQuery.From, ct);
 
         switch (verb)
         {
             case CallbackData.SkipGuestName:
-                await HandleSkipGuestNameAsync(player, callbackQuery, ct);
+                await HandleSkipGuestNameAsync(scope, callbackQuery, ct);
                 break;
 
             case CallbackData.KeepGuest:
             case CallbackData.RemoveGuestToo:
-                await HandleGuestChoiceAsync(signupId, verb == CallbackData.KeepGuest, player, callbackQuery, ct);
+                await HandleGuestChoiceAsync(signupId, verb == CallbackData.KeepGuest, scope, callbackQuery, ct);
                 break;
 
             case CallbackData.RemoveGuest:
-                await HandleRemoveGuestAsync(signupId, player, callbackQuery, ct);
+                await HandleRemoveGuestAsync(signupId, scope, callbackQuery, ct);
                 break;
         }
     }
 
-    private async Task HandleSkipGuestNameAsync(Player player, CallbackQuery callbackQuery, CancellationToken ct)
+    private async Task HandleSkipGuestNameAsync(CallbackScope scope, CallbackQuery callbackQuery, CancellationToken ct)
     {
-        var chatId = await ResolveChatIdAsync(new TelegramChatId(callbackQuery.Message!.Chat.Id), ct);
-        var dialog = await _db.DialogStates.SingleOrDefaultAsync(
-            d => d.ChatId == chatId && d.PlayerId == player.Id && d.Kind == DialogKinds.NameGuest,
-            ct
-        );
+        var dialog = await _dialogs.LoadOfKindAsync(scope.ChatId, scope.Player.Id, DialogKinds.NameGuest, ct);
         if (dialog is not null)
         {
-            _db.DialogStates.Remove(dialog);
-            await _db.SaveChangesAsync(ct);
+            await _dialogs.ClearAsync(dialog, ct);
         }
 
-        var team = await _db.Teams.ByChatId(chatId).SingleAsync(ct);
-        var strings = _strings.For(team.Locale);
         await _sender.TryEditImmediatelyAsync(
-            chatId,
-            new TelegramMessageId(callbackQuery.Message.MessageId),
-            strings.Text("Guest.SkippedName"),
+            scope.ChatId,
+            scope.MessageId,
+            scope.Strings.Text("Guest.SkippedName"),
             null,
             ct
         );
@@ -1930,37 +1842,33 @@ public sealed class UpdateRouter
     private async Task HandleGuestChoiceAsync(
         SignupId guestSignupId,
         bool keep,
-        Player player,
+        CallbackScope scope,
         CallbackQuery callbackQuery,
         CancellationToken ct
     )
     {
-        var chatId = await ResolveChatIdAsync(new TelegramChatId(callbackQuery.Message!.Chat.Id), ct);
-        var team = await _db.Teams.ByChatId(chatId).SingleAsync(ct);
-        var strings = _strings.For(team.Locale);
-
-        var result = await _signups.ResolveGuestChoiceAsync(guestSignupId, player.Id, keep, ct);
+        var result = await _signups.ResolveGuestChoiceAsync(guestSignupId, scope.Player.Id, keep, ct);
         if (!result.IsSuccess)
         {
-            await AnswerAlertAsync(callbackQuery, strings.Text(ErrorKey(result.Error)), ct);
+            await AnswerAlertAsync(callbackQuery, scope.Strings.Text(ErrorKey(result.Error)), ct);
             return;
         }
 
         var outcome = result.Value;
         var encodedName = WebUtility.HtmlEncode(outcome.Guest.GuestName);
         await _sender.TryEditImmediatelyAsync(
-            chatId,
-            new TelegramMessageId(callbackQuery.Message.MessageId),
-            strings.Text(keep ? "Guest.Kept" : "Guest.Removed", new { Name = encodedName }),
+            scope.ChatId,
+            scope.MessageId,
+            scope.Strings.Text(keep ? "Guest.Kept" : "Guest.Removed", new { Name = encodedName }),
             null,
             ct
         );
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
 
         var game = await _db.Games.SingleAsync(g => g.Id == outcome.Guest.GameId, ct);
-        await _announcements.RefreshAsync(game, team, ct);
+        await _announcements.RefreshAsync(game, scope.Team, ct);
 
-        await SendPromotionMessagesAsync(chatId, outcome.NewlyPromoted, strings, ct);
+        await SendPromotionMessagesAsync(scope.ChatId, outcome.NewlyPromoted, scope.Strings, ct);
     }
 
     private async Task SendGuestChoicePromptAsync(
@@ -1992,72 +1900,70 @@ public sealed class UpdateRouter
 
     private async Task HandleCaptainFlowCallbackAsync(char verb, CallbackQuery callbackQuery, CancellationToken ct)
     {
-        var chatId = await ResolveChatIdAsync(new TelegramChatId(callbackQuery.Message!.Chat.Id), ct);
-        var team = await _db.Teams.ByChatId(chatId).SingleAsync(ct);
-        var strings = _strings.For(team.Locale);
-        var player = await _playerBootstrap.GetOrCreateAsync(callbackQuery.From, ct);
-        var telegramUserId = new TelegramUserId(callbackQuery.From.Id);
-
-        if (!await _teamGuard.IsCaptainAsync(team.Id, player.Id, chatId, telegramUserId, ct))
+        if (await ResolveScopeAsync(callbackQuery, ct) is not { } scope)
         {
-            await AnswerAlertAsync(callbackQuery, strings.Text("NewGame.NotCaptain"), ct);
+            await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
             return;
         }
 
+        // Reaching the dialog at all is the captain-only operation here: most of these verbs
+        // only move dialog state along, so there is no other service call for the check to
+        // live inside. See IDialogService.
+        var loaded = await _dialogs.LoadForCaptainAsync(scope.Team, scope.Actor, ct);
+        if (!loaded.IsSuccess)
+        {
+            await AnswerAlertAsync(callbackQuery, scope.Strings.Text(ErrorKey(loaded.Error)), ct);
+            return;
+        }
+
+        var dialog = loaded.Value;
         _ = CallbackData.TryParse(callbackQuery.Data!, out _, out long value);
-        var dialog = await _db.DialogStates.SingleOrDefaultAsync(
-            d => d.ChatId == chatId && d.PlayerId == player.Id,
-            ct
-        );
 
         switch (verb)
         {
             case CallbackData.PickFranchise:
-                await HandlePickFranchiseAsync(dialog, team, player, chatId, value, callbackQuery, strings, ct);
+                await HandlePickFranchiseAsync(dialog, scope, value, callbackQuery, ct);
                 break;
 
             case CallbackData.ArchiveFranchise:
-                await HandleArchiveFranchiseAsync(new FranchiseId(value), chatId, callbackQuery, strings, ct);
+                await HandleArchiveFranchiseAsync(new FranchiseId(value), scope, callbackQuery, ct);
                 break;
 
             case CallbackData.OneOff:
-                await HandleOneOffAsync(dialog, chatId, callbackQuery, strings, ct);
+                await HandleOneOffAsync(dialog, scope, callbackQuery, ct);
                 break;
 
             case CallbackData.PickDate:
-                await HandlePickDateAsync(dialog, chatId, (int)value, callbackQuery, strings, ct);
+                await HandlePickDateAsync(dialog, scope, (int)value, callbackQuery, ct);
                 break;
 
             case CallbackData.CustomDate:
-                await HandleCustomDateAsync(dialog, chatId, callbackQuery, strings, ct);
+                await HandleCustomDateAsync(dialog, scope, callbackQuery, ct);
                 break;
 
             case CallbackData.EditField:
-                await HandleEditFieldAsync(dialog, chatId, (int)value, callbackQuery, strings, ct);
+                await HandleEditFieldAsync(dialog, scope, (int)value, callbackQuery, ct);
                 break;
 
             case CallbackData.Confirm:
-                await HandleConfirmNewGameAsync(dialog, team, player, chatId, callbackQuery, strings, ct);
+                await HandleConfirmNewGameAsync(dialog, scope, callbackQuery, ct);
                 break;
 
             case CallbackData.CancelDialog:
-                await HandleCancelDialogAsync(dialog, chatId, callbackQuery, strings, ct);
+                await HandleCancelDialogAsync(dialog, scope, callbackQuery, ct);
                 break;
 
             case CallbackData.PickGameToEdit:
-                await HandlePickGameToEditAsync(new GameId(value), team, player, chatId, callbackQuery, strings, ct);
+                await HandlePickGameToEditAsync(new GameId(value), scope, callbackQuery, ct);
                 break;
         }
     }
 
     private async Task HandlePickFranchiseAsync(
         DialogState? dialog,
-        Team team,
-        Player player,
-        TelegramChatId chatId,
+        CallbackScope scope,
         long rawFranchiseId,
         CallbackQuery callbackQuery,
-        IStringsFor strings,
         CancellationToken ct
     )
     {
@@ -2078,10 +1984,8 @@ public sealed class UpdateRouter
                     newGameDialog,
                     newGameData,
                     franchise,
-                    team,
-                    chatId,
+                    scope,
                     callbackQuery,
-                    strings,
                     ct
                 );
                 return;
@@ -2089,18 +1993,18 @@ public sealed class UpdateRouter
         }
 
         // Otherwise: the /editfranchise picker (design decision #1).
-        await StartDialogAsync(
-            team.Id,
-            player.Id,
-            chatId,
+        await _dialogs.StartAsync(
+            scope.Team.Id,
+            scope.Player.Id,
+            scope.ChatId,
             DialogKinds.EditFranchise,
             new EditFranchiseDialogData(franchiseId, null),
             ct
         );
         await _sender.SendAsync(
-            chatId,
-            FranchiseRenderer.RenderSummary(franchise, strings),
-            FranchiseRenderer.RenderFieldPicker(franchise, strings),
+            scope.ChatId,
+            FranchiseRenderer.RenderSummary(franchise, scope.Strings),
+            FranchiseRenderer.RenderFieldPicker(franchise, scope.Strings),
             ct
         );
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
@@ -2110,14 +2014,13 @@ public sealed class UpdateRouter
         DialogState dialog,
         NewGameDialogData data,
         Franchise franchise,
-        Team team,
-        TelegramChatId chatId,
+        CallbackScope scope,
         CallbackQuery callbackQuery,
-        IStringsFor strings,
         CancellationToken ct
     )
     {
-        var today = DateOnly.FromDateTime(TeamTime.ConvertToLocal(_clock.GetUtcNow(), team.TimeZoneId!).Date);
+        var strings = scope.Strings;
+        var today = DateOnly.FromDateTime(TeamTime.ConvertToLocal(_clock.GetUtcNow(), scope.Team.TimeZoneId!).Date);
         var candidateDates = GameService.NextCandidateDates(today, franchise.Schedule, 8);
         var title = await _games.PreviewFranchiseTitleAsync(franchise, ct);
 
@@ -2131,7 +2034,7 @@ public sealed class UpdateRouter
             Capacity = franchise.DefaultCapacity,
             Price = franchise.DefaultPrice,
         };
-        await SaveDialogDataAsync(dialog, updated, ct);
+        await _dialogs.SaveDataAsync(dialog, updated, ct);
 
         var rows = candidateDates
             .Select(
@@ -2153,15 +2056,14 @@ public sealed class UpdateRouter
         ]);
         rows.Add(CancelButton.Row(strings));
 
-        await _sender.SendAsync(chatId, strings.Text("NewGame.PickDate"), new InlineKeyboardMarkup(rows), ct);
+        await _sender.SendAsync(scope.ChatId, strings.Text("NewGame.PickDate"), new InlineKeyboardMarkup(rows), ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
     private async Task HandleCustomDateAsync(
         DialogState? dialog,
-        TelegramChatId chatId,
+        CallbackScope scope,
         CallbackQuery callbackQuery,
-        IStringsFor strings,
         CancellationToken ct
     )
     {
@@ -2178,16 +2080,21 @@ public sealed class UpdateRouter
             return;
         }
 
-        await SaveDialogDataAsync(dialog, data with { Step = NewGameDialogData.FranchiseCustomDate }, ct);
-        await SendPromptAsync(dialog, chatId, strings.Text("NewGame.AskDate"), CancelButton.Keyboard(strings), ct);
+        await _dialogs.SaveDataAsync(dialog, data with { Step = NewGameDialogData.FranchiseCustomDate }, ct);
+        await SendPromptAsync(
+            dialog,
+            scope.ChatId,
+            scope.Strings.Text("NewGame.AskDate"),
+            CancelButton.Keyboard(scope.Strings),
+            ct
+        );
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
     private async Task HandleArchiveFranchiseAsync(
         FranchiseId franchiseId,
-        TelegramChatId chatId,
+        CallbackScope scope,
         CallbackQuery callbackQuery,
-        IStringsFor strings,
         CancellationToken ct
     )
     {
@@ -2198,11 +2105,17 @@ public sealed class UpdateRouter
             return;
         }
 
-        await _franchises.ArchiveAsync(franchise, ct);
+        var result = await _franchises.ArchiveAsync(franchise, scope.Team, scope.Actor, ct);
+        if (!result.IsSuccess)
+        {
+            await AnswerAlertAsync(callbackQuery, scope.Strings.Text(ErrorKey(result.Error)), ct);
+            return;
+        }
+
         await _sender.TryEditImmediatelyAsync(
-            chatId,
-            new TelegramMessageId(callbackQuery.Message!.MessageId),
-            strings.Text("Franchise.ArchivedConfirm", new { Name = WebUtility.HtmlEncode(franchise.Name) }),
+            scope.ChatId,
+            scope.MessageId,
+            scope.Strings.Text("Franchise.ArchivedConfirm", new { Name = WebUtility.HtmlEncode(franchise.Name) }),
             null,
             ct
         );
@@ -2211,9 +2124,8 @@ public sealed class UpdateRouter
 
     private async Task HandleOneOffAsync(
         DialogState? dialog,
-        TelegramChatId chatId,
+        CallbackScope scope,
         CallbackQuery callbackQuery,
-        IStringsFor strings,
         CancellationToken ct
     )
     {
@@ -2230,17 +2142,22 @@ public sealed class UpdateRouter
             return;
         }
 
-        await SaveDialogDataAsync(dialog, data with { Step = NewGameDialogData.OneOffTitle }, ct);
-        await SendPromptAsync(dialog, chatId, strings.Text("NewGame.AskTitle"), CancelButton.Keyboard(strings), ct);
+        await _dialogs.SaveDataAsync(dialog, data with { Step = NewGameDialogData.OneOffTitle }, ct);
+        await SendPromptAsync(
+            dialog,
+            scope.ChatId,
+            scope.Strings.Text("NewGame.AskTitle"),
+            CancelButton.Keyboard(scope.Strings),
+            ct
+        );
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
     private async Task HandlePickDateAsync(
         DialogState? dialog,
-        TelegramChatId chatId,
+        CallbackScope scope,
         int index,
         CallbackQuery callbackQuery,
-        IStringsFor strings,
         CancellationToken ct
     )
     {
@@ -2266,20 +2183,22 @@ public sealed class UpdateRouter
         var time = franchise.Schedule[dates[index].DayOfWeek];
 
         var updated = data with { Step = NewGameDialogData.Confirm, Date = dates[index], Time = time };
-        await SaveDialogDataAsync(dialog, updated, ct);
-        await SendConfirmScreenAsync(dialog, chatId, updated, strings, ct);
+        await _dialogs.SaveDataAsync(dialog, updated, ct);
+        await SendConfirmScreenAsync(dialog, scope.ChatId, updated, scope.Strings, ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
     private async Task HandleEditFieldAsync(
         DialogState? dialog,
-        TelegramChatId chatId,
+        CallbackScope scope,
         int fieldIndex,
         CallbackQuery callbackQuery,
-        IStringsFor strings,
         CancellationToken ct
     )
     {
+        var chatId = scope.ChatId;
+        var strings = scope.Strings;
+
         // Reached by tapping an edit button on either the field-picker (its own keyboard is a
         // persistent parent menu, not superseded here) or the NewGame confirm screen (which
         // does get superseded by the Ask-field prompt below, and needs its own Cancel button
@@ -2291,7 +2210,7 @@ public sealed class UpdateRouter
             case DialogKinds.EditFranchise:
             {
                 var data = JsonSerializer.Deserialize<EditFranchiseDialogData>(dialog.Data)!;
-                await SaveDialogDataAsync(dialog, data with { FieldIndex = fieldIndex }, ct);
+                await _dialogs.SaveDataAsync(dialog, data with { FieldIndex = fieldIndex }, ct);
                 await SendPromptAsync(
                     dialog,
                     chatId,
@@ -2308,7 +2227,7 @@ public sealed class UpdateRouter
             {
                 var data = JsonSerializer.Deserialize<NewGameDialogData>(dialog.Data)!;
                 var updated = data with { Step = NewGameDialogData.EditingField, EditingFieldIndex = fieldIndex };
-                await SaveDialogDataAsync(dialog, updated, ct);
+                await _dialogs.SaveDataAsync(dialog, updated, ct);
                 await SendPromptAsync(
                     dialog,
                     chatId,
@@ -2324,7 +2243,7 @@ public sealed class UpdateRouter
             case DialogKinds.EditGame:
             {
                 var data = JsonSerializer.Deserialize<EditGameDialogData>(dialog.Data)!;
-                await SaveDialogDataAsync(dialog, data with { FieldIndex = fieldIndex }, ct);
+                await _dialogs.SaveDataAsync(dialog, data with { FieldIndex = fieldIndex }, ct);
                 await SendPromptAsync(
                     dialog,
                     chatId,
@@ -2414,14 +2333,14 @@ public sealed class UpdateRouter
 
     private async Task HandleConfirmNewGameAsync(
         DialogState? dialog,
-        Team team,
-        Player player,
-        TelegramChatId chatId,
+        CallbackScope scope,
         CallbackQuery callbackQuery,
-        IStringsFor strings,
         CancellationToken ct
     )
     {
+        var team = scope.Team;
+        var strings = scope.Strings;
+
         if (dialog is not { Kind: DialogKinds.NewGame })
         {
             await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
@@ -2443,11 +2362,13 @@ public sealed class UpdateRouter
             return;
         }
 
-        Game game;
+        Result<Game> created;
         if (data.FranchiseId is { } franchiseId)
         {
             var franchise = await _db.Franchises.SingleAsync(f => f.Id == franchiseId, ct);
-            game = await _games.CreateFromFranchiseAsync(
+            created = await _games.CreateFromFranchiseAsync(
+                team,
+                scope.Actor,
                 franchise,
                 data.Title!,
                 data.Date!.Value,
@@ -2457,59 +2378,59 @@ public sealed class UpdateRouter
                 data.Price,
                 data.Notes,
                 data.Tags ?? [],
-                player.Id,
-                team.TimeZoneId!,
                 ct
             );
         }
         else
         {
-            game = await _games.CreateOneOffAsync(
-                team.Id,
+            created = await _games.CreateOneOffAsync(
+                team,
+                scope.Actor,
                 data.Title!,
                 data.Venue!,
                 data.Date!.Value,
                 data.Time!.Value,
                 data.Capacity!.Value,
                 data.Price,
-                player.Id,
-                team.TimeZoneId!,
                 ct
             );
+        }
+
+        if (!created.IsSuccess)
+        {
+            await AnswerAlertAsync(callbackQuery, strings.Text(ErrorKey(created.Error)), ct);
+            return;
+        }
+
+        var game = created.Value;
+        if (data.FranchiseId is null)
+        {
             if (!string.IsNullOrWhiteSpace(data.Notes))
             {
-                await _games.SetNotesAsync(game, data.Notes, ct);
+                _ = await _games.SetNotesAsync(game, team, scope.Actor, data.Notes, ct);
             }
 
             if (data.Tags is { Count: > 0 })
             {
-                await _games.SetTagsAsync(game, data.Tags, ct);
+                _ = await _games.SetTagsAsync(game, team, scope.Actor, data.Tags, ct);
             }
         }
 
-        _db.DialogStates.Remove(dialog);
-        await _db.SaveChangesAsync(ct);
+        await _dialogs.ClearAsync(dialog, ct);
 
         var messageId = await _announcements.PostAsync(game, team, ct);
         game.AnnouncementMessageId = messageId;
         await _db.SaveChangesAsync(ct);
         await _board.RefreshAsync(team, ct);
 
-        await _sender.TryEditImmediatelyAsync(
-            chatId,
-            new TelegramMessageId(callbackQuery.Message!.MessageId),
-            strings.Text("NewGame.Created"),
-            null,
-            ct
-        );
+        await _sender.TryEditImmediatelyAsync(scope.ChatId, scope.MessageId, strings.Text("NewGame.Created"), null, ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
     private async Task HandleCancelDialogAsync(
         DialogState? dialog,
-        TelegramChatId chatId,
+        CallbackScope scope,
         CallbackQuery callbackQuery,
-        IStringsFor strings,
         CancellationToken ct
     )
     {
@@ -2517,17 +2438,10 @@ public sealed class UpdateRouter
 
         if (dialog is not null)
         {
-            _db.DialogStates.Remove(dialog);
-            await _db.SaveChangesAsync(ct);
+            await _dialogs.ClearAsync(dialog, ct);
         }
 
-        await _sender.TryEditImmediatelyAsync(
-            chatId,
-            new TelegramMessageId(callbackQuery.Message!.MessageId),
-            strings.Text(key),
-            null,
-            ct
-        );
+        await _sender.TryEditImmediatelyAsync(scope.ChatId, scope.MessageId, scope.Strings.Text(key), null, ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
@@ -2538,10 +2452,7 @@ public sealed class UpdateRouter
     private async Task HandleCancelCommandAsync(Team team, Player player, TelegramChatId chatId, CancellationToken ct)
     {
         var strings = _strings.For(team.Locale);
-        var dialog = await _db.DialogStates.SingleOrDefaultAsync(
-            d => d.ChatId == chatId && d.PlayerId == player.Id,
-            ct
-        );
+        var dialog = await _dialogs.LoadAsync(chatId, player.Id, ct);
         if (dialog is null)
         {
             await _sender.SendAsync(chatId, strings.Text("Cancel.NothingToCancel"), null, ct);
@@ -2549,8 +2460,7 @@ public sealed class UpdateRouter
         }
 
         var key = dialog.Kind == DialogKinds.Nudge ? "Nudge.Cancelled" : "NewGame.Cancelled";
-        _db.DialogStates.Remove(dialog);
-        await _db.SaveChangesAsync(ct);
+        await _dialogs.ClearAsync(dialog, ct);
 
         // The dialog's own prompt (if any) had a Cancel/Skip keyboard of its own — this
         // command is the escape hatch for exactly the steps that show one (see this method's
@@ -2565,11 +2475,8 @@ public sealed class UpdateRouter
 
     private async Task HandlePickGameToEditAsync(
         GameId gameId,
-        Team team,
-        Player player,
-        TelegramChatId chatId,
+        CallbackScope scope,
         CallbackQuery callbackQuery,
-        IStringsFor strings,
         CancellationToken ct
     )
     {
@@ -2580,18 +2487,18 @@ public sealed class UpdateRouter
             return;
         }
 
-        await StartDialogAsync(
-            team.Id,
-            player.Id,
-            chatId,
+        await _dialogs.StartAsync(
+            scope.Team.Id,
+            scope.Player.Id,
+            scope.ChatId,
             DialogKinds.EditGame,
             new EditGameDialogData(gameId, null),
             ct
         );
         await _sender.SendAsync(
-            chatId,
-            strings.Text("EditGame.PickField", new { Title = WebUtility.HtmlEncode(game.Title) }),
-            RenderEditGameFieldPicker(strings),
+            scope.ChatId,
+            scope.Strings.Text("EditGame.PickField", new { Title = WebUtility.HtmlEncode(game.Title) }),
+            RenderEditGameFieldPicker(scope.Strings),
             ct
         );
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
@@ -2643,58 +2550,41 @@ public sealed class UpdateRouter
 
     private async Task HandleManageRosterButtonAsync(
         Game game,
-        Team team,
-        Player player,
+        CallbackScope scope,
         CallbackQuery callbackQuery,
-        IStringsFor strings,
         CancellationToken ct
     )
     {
-        var chatId = await ResolveChatIdAsync(new TelegramChatId(callbackQuery.Message!.Chat.Id), ct);
-        var telegramUserId = new TelegramUserId(callbackQuery.From.Id);
-        if (!await _teamGuard.IsCaptainAsync(team.Id, player.Id, chatId, telegramUserId, ct))
+        var roster = await _participations.LoadRosterAsync(game, scope.Team, scope.Actor, ct);
+        if (!roster.IsSuccess)
         {
-            await AnswerAlertAsync(callbackQuery, strings.Text("NewGame.NotCaptain"), ct);
+            await AnswerAlertAsync(callbackQuery, scope.Strings.Text(ErrorKey(roster.Error)), ct);
             return;
         }
 
-        await SendRosterViewAsync(game, chatId, strings, ct);
+        await SendRosterViewAsync(game, roster.Value, scope.ChatId, scope.Strings, ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
-    private async Task SendRosterViewAsync(Game game, TelegramChatId chatId, IStringsFor strings, CancellationToken ct)
-    {
-        var participations = await LoadParticipationsAsync(game, ct);
+    private async Task SendRosterViewAsync(
+        Game game,
+        IReadOnlyList<Participation> participations,
+        TelegramChatId chatId,
+        IStringsFor strings,
+        CancellationToken ct
+    ) =>
         await _sender.SendAsync(
             chatId,
             RosterManagementRenderer.RenderText(game, participations, strings),
             RosterManagementRenderer.RenderKeyboard(game, participations, strings),
             ct
         );
-    }
-
-    private async Task<IReadOnlyList<Participation>> LoadParticipationsAsync(Game game, CancellationToken ct) =>
-        await _db
-            .Participations.AsNoTracking()
-            .Include(p => p.Player)
-            .Where(p => p.GameId == game.Id)
-            // Id breaks ties on identical CreatedAt (FinishGameAsync stamps a whole batch with
-            // the same instant) — same reasoning as Roster.Split.
-            .OrderBy(p => p.CreatedAt)
-            .ThenBy(p => p.Id)
-            .ToListAsync(ct);
 
     private async Task HandleRosterCallbackAsync(char verb, CallbackQuery callbackQuery, CancellationToken ct)
     {
-        var chatId = await ResolveChatIdAsync(new TelegramChatId(callbackQuery.Message!.Chat.Id), ct);
-        var team = await _db.Teams.ByChatId(chatId).SingleAsync(ct);
-        var strings = _strings.For(team.Locale);
-        var player = await _playerBootstrap.GetOrCreateAsync(callbackQuery.From, ct);
-        var telegramUserId = new TelegramUserId(callbackQuery.From.Id);
-
-        if (!await _teamGuard.IsCaptainAsync(team.Id, player.Id, chatId, telegramUserId, ct))
+        if (await ResolveScopeAsync(callbackQuery, ct) is not { } scope)
         {
-            await AnswerAlertAsync(callbackQuery, strings.Text("NewGame.NotCaptain"), ct);
+            await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
             return;
         }
 
@@ -2703,28 +2593,19 @@ public sealed class UpdateRouter
         switch (verb)
         {
             case CallbackData.TogglePlayed:
-                await HandleToggleParticipationAsync(
-                    new ParticipationId(value),
-                    player.Id,
-                    chatId,
-                    callbackQuery,
-                    strings,
-                    ct
-                );
+                await HandleToggleParticipationAsync(new ParticipationId(value), scope, callbackQuery, ct);
                 break;
 
             case CallbackData.AddPlayer:
-                await HandleAddPlayerButtonAsync(new GameId(value), team, player, chatId, callbackQuery, strings, ct);
+                await HandleAddPlayerButtonAsync(new GameId(value), scope, callbackQuery, ct);
                 break;
         }
     }
 
     private async Task HandleToggleParticipationAsync(
         ParticipationId participationId,
-        PlayerId actorPlayerId,
-        TelegramChatId chatId,
+        CallbackScope scope,
         CallbackQuery callbackQuery,
-        IStringsFor strings,
         CancellationToken ct
     )
     {
@@ -2737,15 +2618,26 @@ public sealed class UpdateRouter
             return;
         }
 
-        _ = await _participations.TogglePlayedAsync(participation, actorPlayerId, ct);
+        var toggled = await _participations.TogglePlayedAsync(participation, scope.Team, scope.Actor, ct);
+        if (!toggled.IsSuccess)
+        {
+            await AnswerAlertAsync(callbackQuery, scope.Strings.Text(ErrorKey(toggled.Error)), ct);
+            return;
+        }
 
         var game = participation.Game;
-        var participations = await LoadParticipationsAsync(game, ct);
+        var roster = await _participations.LoadRosterAsync(game, scope.Team, scope.Actor, ct);
+        if (!roster.IsSuccess)
+        {
+            await AnswerAlertAsync(callbackQuery, scope.Strings.Text(ErrorKey(roster.Error)), ct);
+            return;
+        }
+
         await _sender.TryEditImmediatelyAsync(
-            chatId,
-            new TelegramMessageId(callbackQuery.Message!.MessageId),
-            RosterManagementRenderer.RenderText(game, participations, strings),
-            RosterManagementRenderer.RenderKeyboard(game, participations, strings),
+            scope.ChatId,
+            scope.MessageId,
+            RosterManagementRenderer.RenderText(game, roster.Value, scope.Strings),
+            RosterManagementRenderer.RenderKeyboard(game, roster.Value, scope.Strings),
             ct
         );
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
@@ -2753,23 +2645,25 @@ public sealed class UpdateRouter
 
     private async Task HandleAddPlayerButtonAsync(
         GameId gameId,
-        Team team,
-        Player player,
-        TelegramChatId chatId,
+        CallbackScope scope,
         CallbackQuery callbackQuery,
-        IStringsFor strings,
         CancellationToken ct
     )
     {
-        await StartDialogAsync(
-            team.Id,
-            player.Id,
-            chatId,
+        var started = await _dialogs.StartForCaptainAsync(
+            scope.Team,
+            scope.Actor,
             DialogKinds.AddVenuePlayer,
             new AddVenuePlayerDialogData(gameId),
             ct
         );
-        await _sender.SendAsync(chatId, strings.Text("Roster.AskPlayerName"), null, ct);
+        if (!started.IsSuccess)
+        {
+            await AnswerAlertAsync(callbackQuery, scope.Strings.Text(ErrorKey(started.Error)), ct);
+            return;
+        }
+
+        await _sender.SendAsync(scope.ChatId, scope.Strings.Text("Roster.AskPlayerName"), null, ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
@@ -2777,28 +2671,25 @@ public sealed class UpdateRouter
 
     private async Task HandleNudgeButtonAsync(
         Game game,
-        Team team,
-        Player player,
+        CallbackScope scope,
         CallbackQuery callbackQuery,
-        IStringsFor strings,
         CancellationToken ct
     )
     {
-        var chatId = await ResolveChatIdAsync(new TelegramChatId(callbackQuery.Message!.Chat.Id), ct);
-        var telegramUserId = new TelegramUserId(callbackQuery.From.Id);
-        if (!await _teamGuard.IsCaptainAsync(team.Id, player.Id, chatId, telegramUserId, ct))
+        var loaded = await _games.LoadPlayingMembersAsync(game, scope.Team, scope.Actor, ct);
+        if (!loaded.IsSuccess)
         {
-            await AnswerAlertAsync(callbackQuery, strings.Text("NewGame.NotCaptain"), ct);
+            await AnswerAlertAsync(callbackQuery, scope.Strings.Text(ErrorKey(loaded.Error)), ct);
             return;
         }
 
         // The captain doing the nudging is presumably at the venue themselves — that's why
         // they're the one noticing who's late — so they're never a nudge target even if
         // they're also signed up to play.
-        var playing = (await _games.LoadPlayingMembersAsync(game, ct)).Where(m => m.PlayerId != player.Id).ToList();
+        var playing = loaded.Value.Where(m => m.PlayerId != scope.Player.Id).ToList();
         if (playing.Count == 0)
         {
-            await AnswerAlertAsync(callbackQuery, strings.Text("Nudge.NobodyToNudge"), ct);
+            await AnswerAlertAsync(callbackQuery, scope.Strings.Text("Nudge.NobodyToNudge"), ct);
             return;
         }
 
@@ -2806,17 +2697,17 @@ public sealed class UpdateRouter
         // check-in feature), so the captain's job is to uncheck whoever they can already see
         // is there, leaving the late arrivals checked before sending.
         var selected = playing.Select(m => m.PlayerId.Value).ToList();
-        await StartDialogAsync(
-            team.Id,
-            player.Id,
-            chatId,
+        await _dialogs.StartAsync(
+            scope.Team.Id,
+            scope.Player.Id,
+            scope.ChatId,
             DialogKinds.Nudge,
             new NudgeDialogData(game.Id, selected),
             ct
         );
 
-        var (text, keyboard) = BuildNudgeView(game, playing, selected, strings);
-        await _sender.SendAsync(chatId, text, keyboard, ct);
+        var (text, keyboard) = BuildNudgeView(game, playing, selected, scope.Strings);
+        await _sender.SendAsync(scope.ChatId, text, keyboard, ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
@@ -2858,23 +2749,20 @@ public sealed class UpdateRouter
 
     private async Task HandleNudgeCallbackAsync(char verb, CallbackQuery callbackQuery, CancellationToken ct)
     {
-        var chatId = await ResolveChatIdAsync(new TelegramChatId(callbackQuery.Message!.Chat.Id), ct);
-        var team = await _db.Teams.ByChatId(chatId).SingleAsync(ct);
-        var strings = _strings.For(team.Locale);
-        var player = await _playerBootstrap.GetOrCreateAsync(callbackQuery.From, ct);
-        var telegramUserId = new TelegramUserId(callbackQuery.From.Id);
-
-        if (!await _teamGuard.IsCaptainAsync(team.Id, player.Id, chatId, telegramUserId, ct))
+        if (await ResolveScopeAsync(callbackQuery, ct) is not { } scope)
         {
-            await AnswerAlertAsync(callbackQuery, strings.Text("NewGame.NotCaptain"), ct);
+            await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
             return;
         }
 
-        var dialog = await _db.DialogStates.SingleOrDefaultAsync(
-            d => d.ChatId == chatId && d.PlayerId == player.Id && d.Kind == DialogKinds.Nudge,
-            ct
-        );
-        if (dialog is null)
+        var loaded = await _dialogs.LoadForCaptainAsync(scope.Team, scope.Actor, DialogKinds.Nudge, ct);
+        if (!loaded.IsSuccess)
+        {
+            await AnswerAlertAsync(callbackQuery, scope.Strings.Text(ErrorKey(loaded.Error)), ct);
+            return;
+        }
+
+        if (loaded.Value is not { } dialog)
         {
             await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
             return;
@@ -2886,32 +2774,20 @@ public sealed class UpdateRouter
 
         if (verb == CallbackData.ToggleNudgeTarget)
         {
-            await HandleToggleNudgeTargetAsync(
-                dialog,
-                data,
-                game,
-                player.Id,
-                value,
-                chatId,
-                callbackQuery,
-                strings,
-                ct
-            );
+            await HandleToggleNudgeTargetAsync(dialog, data, game, scope, value, callbackQuery, ct);
             return;
         }
 
-        await HandleSendNudgeAsync(dialog, data, game, chatId, callbackQuery, strings, ct);
+        await HandleSendNudgeAsync(dialog, data, game, scope, callbackQuery, ct);
     }
 
     private async Task HandleToggleNudgeTargetAsync(
         DialogState dialog,
         NudgeDialogData data,
         Game game,
-        PlayerId actorId,
+        CallbackScope scope,
         long targetPlayerId,
-        TelegramChatId chatId,
         CallbackQuery callbackQuery,
-        IStringsFor strings,
         CancellationToken ct
     )
     {
@@ -2921,17 +2797,18 @@ public sealed class UpdateRouter
             selected.Add(targetPlayerId);
         }
 
-        await SaveDialogDataAsync(dialog, data with { SelectedPlayerIds = selected }, ct);
+        await _dialogs.SaveDataAsync(dialog, data with { SelectedPlayerIds = selected }, ct);
 
-        var playing = (await _games.LoadPlayingMembersAsync(game, ct)).Where(m => m.PlayerId != actorId).ToList();
-        var (text, keyboard) = BuildNudgeView(game, playing, selected, strings);
-        await _sender.TryEditImmediatelyAsync(
-            chatId,
-            new TelegramMessageId(callbackQuery.Message!.MessageId),
-            text,
-            keyboard,
-            ct
-        );
+        var loaded = await _games.LoadPlayingMembersAsync(game, scope.Team, scope.Actor, ct);
+        if (!loaded.IsSuccess)
+        {
+            await AnswerAlertAsync(callbackQuery, scope.Strings.Text(ErrorKey(loaded.Error)), ct);
+            return;
+        }
+
+        var playing = loaded.Value.Where(m => m.PlayerId != scope.Player.Id).ToList();
+        var (text, keyboard) = BuildNudgeView(game, playing, selected, scope.Strings);
+        await _sender.TryEditImmediatelyAsync(scope.ChatId, scope.MessageId, text, keyboard, ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
@@ -2939,19 +2816,20 @@ public sealed class UpdateRouter
         DialogState dialog,
         NudgeDialogData data,
         Game game,
-        TelegramChatId chatId,
+        CallbackScope scope,
         CallbackQuery callbackQuery,
-        IStringsFor strings,
         CancellationToken ct
     )
     {
+        var strings = scope.Strings;
+
         if (data.SelectedPlayerIds.Count == 0)
         {
             await AnswerAlertAsync(callbackQuery, strings.Text("Nudge.NoneSelected"), ct);
             return;
         }
 
-        var result = await _games.TryNudgeAsync(game, ct);
+        var result = await _games.TryNudgeAsync(game, scope.Team, scope.Actor, ct);
         if (!result.IsSuccess)
         {
             await AnswerAlertAsync(callbackQuery, strings.Text(ErrorKey(result.Error)), ct);
@@ -2962,18 +2840,17 @@ public sealed class UpdateRouter
         var players = await _db.Players.AsNoTracking().Where(p => selectedIds.Contains(p.Id)).ToListAsync(ct);
         var mentions = string.Join(", ", players.Select(Mention));
 
-        _db.DialogStates.Remove(dialog);
-        await _db.SaveChangesAsync(ct);
+        await _dialogs.ClearAsync(dialog, ct);
 
         await _sender.SendAsync(
-            chatId,
+            scope.ChatId,
             strings.Text("Nudge.Sent", new { Mentions = mentions, Title = WebUtility.HtmlEncode(game.Title) }),
             null,
             ct
         );
         await _sender.TryEditImmediatelyAsync(
-            chatId,
-            new TelegramMessageId(callbackQuery.Message!.MessageId),
+            scope.ChatId,
+            scope.MessageId,
             strings.Text("Nudge.PickerClosed"),
             null,
             ct
@@ -3021,18 +2898,17 @@ public sealed class UpdateRouter
 
     private async Task HandleDeclinePromptAsync(
         Game game,
-        Team team,
-        Player player,
+        CallbackScope scope,
         CallbackQuery callbackQuery,
-        IStringsFor strings,
         CancellationToken ct
     )
     {
-        var chatId = await ResolveChatIdAsync(new TelegramChatId(callbackQuery.Message!.Chat.Id), ct);
-        var telegramUserId = new TelegramUserId(callbackQuery.From.Id);
-        if (!await _teamGuard.IsCaptainAsync(team.Id, player.Id, chatId, telegramUserId, ct))
+        var strings = scope.Strings;
+
+        var allowed = await _games.EnsureCanManageAsync(scope.Team, scope.Actor, ct);
+        if (!allowed.IsSuccess)
         {
-            await AnswerAlertAsync(callbackQuery, strings.Text("NewGame.NotCaptain"), ct);
+            await AnswerAlertAsync(callbackQuery, strings.Text(ErrorKey(allowed.Error)), ct);
             return;
         }
 
@@ -3049,7 +2925,7 @@ public sealed class UpdateRouter
             ],
         ]);
         await _sender.SendAsync(
-            chatId,
+            scope.ChatId,
             strings.Text("Decline.ConfirmPrompt", new { Title = WebUtility.HtmlEncode(game.Title) }),
             keyboard,
             ct
@@ -3059,42 +2935,37 @@ public sealed class UpdateRouter
 
     private async Task HandleConfirmDeclineAsync(
         Game game,
-        Team team,
-        Player player,
+        CallbackScope scope,
         CallbackQuery callbackQuery,
-        IStringsFor strings,
         CancellationToken ct
     )
     {
-        var chatId = await ResolveChatIdAsync(new TelegramChatId(callbackQuery.Message!.Chat.Id), ct);
-        var telegramUserId = new TelegramUserId(callbackQuery.From.Id);
-        if (!await _teamGuard.IsCaptainAsync(team.Id, player.Id, chatId, telegramUserId, ct))
+        var result = await _games.DeclineAsync(game, scope.Team, scope.Actor, ct);
+        if (!result.IsSuccess)
         {
-            await AnswerAlertAsync(callbackQuery, strings.Text("NewGame.NotCaptain"), ct);
+            await AnswerAlertAsync(callbackQuery, scope.Strings.Text(ErrorKey(result.Error)), ct);
             return;
         }
 
-        await _games.DeclineAsync(game, player.Id, ct);
-        await _announcements.RefreshAsync(game, team, ct);
-        await _board.RefreshAsync(team, ct);
+        await _announcements.RefreshAsync(game, scope.Team, ct);
+        await _board.RefreshAsync(scope.Team, ct);
 
         await _sender.TryEditImmediatelyAsync(
-            chatId,
-            new TelegramMessageId(callbackQuery.Message.MessageId),
-            strings.Text("Decline.Declined"),
+            scope.ChatId,
+            scope.MessageId,
+            scope.Strings.Text("Decline.Declined"),
             null,
             ct
         );
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
-    private async Task HandleCancelDeclineAsync(CallbackQuery callbackQuery, IStringsFor strings, CancellationToken ct)
+    private async Task HandleCancelDeclineAsync(CallbackScope scope, CallbackQuery callbackQuery, CancellationToken ct)
     {
-        var chatId = await ResolveChatIdAsync(new TelegramChatId(callbackQuery.Message!.Chat.Id), ct);
         await _sender.TryEditImmediatelyAsync(
-            chatId,
-            new TelegramMessageId(callbackQuery.Message!.MessageId),
-            strings.Text("Decline.Cancelled"),
+            scope.ChatId,
+            scope.MessageId,
+            scope.Strings.Text("Decline.Cancelled"),
             null,
             ct
         );
@@ -3103,61 +2974,57 @@ public sealed class UpdateRouter
 
     private async Task HandleFinishButtonAsync(
         Game game,
-        Team team,
-        Player player,
+        CallbackScope scope,
         CallbackQuery callbackQuery,
-        IStringsFor strings,
         CancellationToken ct
     )
     {
-        var chatId = await ResolveChatIdAsync(new TelegramChatId(callbackQuery.Message!.Chat.Id), ct);
-        var telegramUserId = new TelegramUserId(callbackQuery.From.Id);
-        if (!await _teamGuard.IsCaptainAsync(team.Id, player.Id, chatId, telegramUserId, ct))
+        var result = await _games.FinishAsync(game, scope.Team, scope.Actor, ct);
+        if (!result.IsSuccess)
         {
-            await AnswerAlertAsync(callbackQuery, strings.Text("NewGame.NotCaptain"), ct);
+            await AnswerAlertAsync(callbackQuery, scope.Strings.Text(ErrorKey(result.Error)), ct);
             return;
         }
 
-        await _games.FinishAsync(game, player.Id, ct);
-        await _announcements.RefreshAsync(game, team, ct);
-        await _board.RefreshAsync(team, ct);
+        await _announcements.RefreshAsync(game, scope.Team, ct);
+        await _board.RefreshAsync(scope.Team, ct);
 
-        await _bot.AnswerCallbackQuery(callbackQuery.Id, strings.Text("Finish.Finished"), cancellationToken: ct);
+        await _bot.AnswerCallbackQuery(callbackQuery.Id, scope.Strings.Text("Finish.Finished"), cancellationToken: ct);
     }
 
     // --- Act on behalf of a player ("Manage players", design decision #2 of M9) ---
 
     private async Task HandleManagePlayersButtonAsync(
         Game game,
-        Team team,
-        Player player,
+        CallbackScope scope,
         CallbackQuery callbackQuery,
-        IStringsFor strings,
         CancellationToken ct
     )
     {
-        var chatId = await ResolveChatIdAsync(new TelegramChatId(callbackQuery.Message!.Chat.Id), ct);
-        var telegramUserId = new TelegramUserId(callbackQuery.From.Id);
-        if (!await _teamGuard.IsCaptainAsync(team.Id, player.Id, chatId, telegramUserId, ct))
-        {
-            await AnswerAlertAsync(callbackQuery, strings.Text("NewGame.NotCaptain"), ct);
-            return;
-        }
-
-        await StartDialogAsync(
-            team.Id,
-            player.Id,
-            chatId,
+        var started = await _dialogs.StartForCaptainAsync(
+            scope.Team,
+            scope.Actor,
             DialogKinds.ManagePlayers,
             new ManagePlayersDialogData(game.Id),
             ct
         );
+        if (!started.IsSuccess)
+        {
+            await AnswerAlertAsync(callbackQuery, scope.Strings.Text(ErrorKey(started.Error)), ct);
+            return;
+        }
 
-        var statuses = await _games.LoadMemberStatusesAsync(game, ct);
+        var statuses = await _games.LoadMemberStatusesAsync(game, scope.Team, scope.Actor, ct);
+        if (!statuses.IsSuccess)
+        {
+            await AnswerAlertAsync(callbackQuery, scope.Strings.Text(ErrorKey(statuses.Error)), ct);
+            return;
+        }
+
         await _sender.SendAsync(
-            chatId,
-            ManagePlayersRenderer.RenderText(game, statuses, strings),
-            ManagePlayersRenderer.RenderKeyboard(statuses, strings),
+            scope.ChatId,
+            ManagePlayersRenderer.RenderText(game, statuses.Value, scope.Strings),
+            ManagePlayersRenderer.RenderKeyboard(statuses.Value, scope.Strings),
             ct
         );
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
@@ -3165,28 +3032,26 @@ public sealed class UpdateRouter
 
     private async Task HandleManagePlayersCallbackAsync(CallbackQuery callbackQuery, CancellationToken ct)
     {
-        var chatId = await ResolveChatIdAsync(new TelegramChatId(callbackQuery.Message!.Chat.Id), ct);
-        var team = await _db.Teams.ByChatId(chatId).SingleAsync(ct);
-        var strings = _strings.For(team.Locale);
-        var actor = await _playerBootstrap.GetOrCreateAsync(callbackQuery.From, ct);
-        var telegramUserId = new TelegramUserId(callbackQuery.From.Id);
-
-        if (!await _teamGuard.IsCaptainAsync(team.Id, actor.Id, chatId, telegramUserId, ct))
-        {
-            await AnswerAlertAsync(callbackQuery, strings.Text("NewGame.NotCaptain"), ct);
-            return;
-        }
-
-        var dialog = await _db.DialogStates.SingleOrDefaultAsync(
-            d => d.ChatId == chatId && d.PlayerId == actor.Id && d.Kind == DialogKinds.ManagePlayers,
-            ct
-        );
-        if (dialog is null)
+        if (await ResolveScopeAsync(callbackQuery, ct) is not { } scope)
         {
             await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
             return;
         }
 
+        var loaded = await _dialogs.LoadForCaptainAsync(scope.Team, scope.Actor, DialogKinds.ManagePlayers, ct);
+        if (!loaded.IsSuccess)
+        {
+            await AnswerAlertAsync(callbackQuery, scope.Strings.Text(ErrorKey(loaded.Error)), ct);
+            return;
+        }
+
+        if (loaded.Value is not { } dialog)
+        {
+            await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
+            return;
+        }
+
+        var strings = scope.Strings;
         var data = JsonSerializer.Deserialize<ManagePlayersDialogData>(dialog.Data)!;
         var game = await _db.Games.SingleAsync(g => g.Id == data.GameId, ct);
         _ = CallbackData.TryParse(callbackQuery.Data!, out _, out PlayerId targetPlayerId);
@@ -3207,23 +3072,23 @@ public sealed class UpdateRouter
 
             AuditRecorder.Record(
                 _db,
-                team.Id,
+                scope.Team.Id,
                 game.Id,
-                actor.Id,
+                scope.Player.Id,
                 AuditActions.PlayerDroppedOnBehalf,
                 new { TargetPlayerId = targetPlayerId.Value },
                 _clock
             );
             await _db.SaveChangesAsync(ct);
-            await _announcements.RefreshAsync(game, team, ct);
+            await _announcements.RefreshAsync(game, scope.Team, ct);
 
             var outcome = result.Value;
             foreach (var guest in outcome.NamedGuestsNeedingChoice)
             {
-                await SendGuestChoicePromptAsync(chatId, guest, strings, ct);
+                await SendGuestChoicePromptAsync(scope.ChatId, guest, strings, ct);
             }
 
-            await SendPromotionMessagesAsync(chatId, outcome.NewlyPromoted, strings, ct);
+            await SendPromotionMessagesAsync(scope.ChatId, outcome.NewlyPromoted, strings, ct);
         }
         else
         {
@@ -3236,23 +3101,29 @@ public sealed class UpdateRouter
 
             AuditRecorder.Record(
                 _db,
-                team.Id,
+                scope.Team.Id,
                 game.Id,
-                actor.Id,
+                scope.Player.Id,
                 AuditActions.PlayerRegisteredOnBehalf,
                 new { TargetPlayerId = targetPlayerId.Value },
                 _clock
             );
             await _db.SaveChangesAsync(ct);
-            await _announcements.RefreshAsync(game, team, ct);
+            await _announcements.RefreshAsync(game, scope.Team, ct);
         }
 
-        var statuses = await _games.LoadMemberStatusesAsync(game, ct);
+        var statuses = await _games.LoadMemberStatusesAsync(game, scope.Team, scope.Actor, ct);
+        if (!statuses.IsSuccess)
+        {
+            await AnswerAlertAsync(callbackQuery, strings.Text(ErrorKey(statuses.Error)), ct);
+            return;
+        }
+
         await _sender.TryEditImmediatelyAsync(
-            chatId,
-            new TelegramMessageId(callbackQuery.Message!.MessageId),
-            ManagePlayersRenderer.RenderText(game, statuses, strings),
-            ManagePlayersRenderer.RenderKeyboard(statuses, strings),
+            scope.ChatId,
+            scope.MessageId,
+            ManagePlayersRenderer.RenderText(game, statuses.Value, strings),
+            ManagePlayersRenderer.RenderKeyboard(statuses.Value, strings),
             ct
         );
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
@@ -3267,24 +3138,20 @@ public sealed class UpdateRouter
 
     private async Task HandleManageGuestsButtonAsync(
         Game game,
-        Team team,
-        Player player,
+        CallbackScope scope,
         CallbackQuery callbackQuery,
-        IStringsFor strings,
         CancellationToken ct
     )
     {
-        var chatId = await ResolveChatIdAsync(new TelegramChatId(callbackQuery.Message!.Chat.Id), ct);
-        var telegramUserId = new TelegramUserId(callbackQuery.From.Id);
-        if (!await _teamGuard.IsCaptainAsync(team.Id, player.Id, chatId, telegramUserId, ct))
+        var guests = await _signups.LoadAllLiveGuestsAsync(game, scope.Team, scope.Actor, ct);
+        if (!guests.IsSuccess)
         {
-            await AnswerAlertAsync(callbackQuery, strings.Text("NewGame.NotCaptain"), ct);
+            await AnswerAlertAsync(callbackQuery, scope.Strings.Text(ErrorKey(guests.Error)), ct);
             return;
         }
 
-        var guests = await _signups.LoadAllLiveGuestsAsync(game, ct);
-        var (text, keyboard) = BuildManageGuestsView(game, guests, strings);
-        await _sender.SendAsync(chatId, text, keyboard, ct);
+        var (text, keyboard) = BuildManageGuestsView(game, guests.Value, scope.Strings);
+        await _sender.SendAsync(scope.ChatId, text, keyboard, ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
@@ -3343,36 +3210,37 @@ public sealed class UpdateRouter
 
     private async Task HandleManageGuestsCallbackAsync(char verb, CallbackQuery callbackQuery, CancellationToken ct)
     {
-        var chatId = await ResolveChatIdAsync(new TelegramChatId(callbackQuery.Message!.Chat.Id), ct);
-        var team = await _db.Teams.ByChatId(chatId).SingleAsync(ct);
-        var strings = _strings.For(team.Locale);
-        var actor = await _playerBootstrap.GetOrCreateAsync(callbackQuery.From, ct);
-        var telegramUserId = new TelegramUserId(callbackQuery.From.Id);
-
-        if (!await _teamGuard.IsCaptainAsync(team.Id, actor.Id, chatId, telegramUserId, ct))
+        if (await ResolveScopeAsync(callbackQuery, ct) is not { } scope)
         {
-            await AnswerAlertAsync(callbackQuery, strings.Text("NewGame.NotCaptain"), ct);
+            await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
             return;
         }
+
+        var strings = scope.Strings;
 
         if (verb == CallbackData.AddTeamGuest)
         {
             _ = CallbackData.TryParse(callbackQuery.Data!, out _, out GameId gameId);
-            await StartDialogAsync(
-                team.Id,
-                actor.Id,
-                chatId,
+            var started = await _dialogs.StartForCaptainAsync(
+                scope.Team,
+                scope.Actor,
                 DialogKinds.AddTeamGuest,
                 new AddTeamGuestDialogData(gameId),
                 ct
             );
-            await _sender.SendAsync(chatId, strings.Text("ManageGuests.AskName"), null, ct);
+            if (!started.IsSuccess)
+            {
+                await AnswerAlertAsync(callbackQuery, strings.Text(ErrorKey(started.Error)), ct);
+                return;
+            }
+
+            await _sender.SendAsync(scope.ChatId, strings.Text("ManageGuests.AskName"), null, ct);
             await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
             return;
         }
 
         _ = CallbackData.TryParse(callbackQuery.Data!, out _, out SignupId guestSignupId);
-        var result = await _signups.RemoveGuestOnBehalfAsync(guestSignupId, actor.Id, ct);
+        var result = await _signups.RemoveGuestOnBehalfAsync(guestSignupId, scope.Team, scope.Actor, ct);
         if (!result.IsSuccess)
         {
             await AnswerAlertAsync(callbackQuery, strings.Text(ErrorKey(result.Error)), ct);
@@ -3384,28 +3252,28 @@ public sealed class UpdateRouter
 
         AuditRecorder.Record(
             _db,
-            team.Id,
+            scope.Team.Id,
             game.Id,
-            actor.Id,
+            scope.Player.Id,
             AuditActions.GuestRemovedOnBehalf,
             new { GuestSignupId = guestSignupId.Value },
             _clock
         );
         await _db.SaveChangesAsync(ct);
-        await _announcements.RefreshAsync(game, team, ct);
+        await _announcements.RefreshAsync(game, scope.Team, ct);
 
-        var remaining = await _signups.LoadAllLiveGuestsAsync(game, ct);
-        var (text, keyboard) = BuildManageGuestsView(game, remaining, strings);
-        await _sender.TryEditImmediatelyAsync(
-            chatId,
-            new TelegramMessageId(callbackQuery.Message!.MessageId),
-            text,
-            keyboard,
-            ct
-        );
+        var remaining = await _signups.LoadAllLiveGuestsAsync(game, scope.Team, scope.Actor, ct);
+        if (!remaining.IsSuccess)
+        {
+            await AnswerAlertAsync(callbackQuery, strings.Text(ErrorKey(remaining.Error)), ct);
+            return;
+        }
+
+        var (text, keyboard) = BuildManageGuestsView(game, remaining.Value, strings);
+        await _sender.TryEditImmediatelyAsync(scope.ChatId, scope.MessageId, text, keyboard, ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
 
-        await SendPromotionMessagesAsync(chatId, outcome.NewlyPromoted, strings, ct);
+        await SendPromotionMessagesAsync(scope.ChatId, outcome.NewlyPromoted, strings, ct);
     }
 
     // --- Reminder settings (/myreminders) — self-service, no captain check, no dialog. ---
@@ -3417,7 +3285,7 @@ public sealed class UpdateRouter
         CancellationToken ct
     )
     {
-        var membership = await _db.Memberships.SingleAsync(m => m.TeamId == team.Id && m.PlayerId == playerId, ct);
+        var membership = await _teams.LoadOwnMembershipAsync(team, playerId, ct);
         var strings = _strings.For(team.Locale);
         var (text, keyboard) = BuildReminderSettingsView(membership, strings);
         await _sender.SendAsync(chatId, text, keyboard, ct);
@@ -3425,11 +3293,14 @@ public sealed class UpdateRouter
 
     private async Task HandleReminderSettingsCallbackAsync(char verb, CallbackQuery callbackQuery, CancellationToken ct)
     {
-        var chatId = await ResolveChatIdAsync(new TelegramChatId(callbackQuery.Message!.Chat.Id), ct);
-        var team = await _db.Teams.ByChatId(chatId).SingleAsync(ct);
-        var player = await _playerBootstrap.GetOrCreateAsync(callbackQuery.From, ct);
-        var membership = await _db.Memberships.SingleAsync(m => m.TeamId == team.Id && m.PlayerId == player.Id, ct);
-        var strings = _strings.For(team.Locale);
+        if (await ResolveScopeAsync(callbackQuery, ct) is not { } scope)
+        {
+            await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
+            return;
+        }
+
+        var membership = await _teams.LoadOwnMembershipAsync(scope.Team, scope.Player.Id, ct);
+        var strings = scope.Strings;
 
         if (verb == CallbackData.CycleReminderChannel)
         {
@@ -3445,13 +3316,7 @@ public sealed class UpdateRouter
         await _db.SaveChangesAsync(ct);
 
         var (text, keyboard) = BuildReminderSettingsView(membership, strings);
-        await _sender.TryEditImmediatelyAsync(
-            chatId,
-            new TelegramMessageId(callbackQuery.Message!.MessageId),
-            text,
-            keyboard,
-            ct
-        );
+        await _sender.TryEditImmediatelyAsync(scope.ChatId, scope.MessageId, text, keyboard, ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
@@ -3540,70 +3405,45 @@ public sealed class UpdateRouter
 
     private async Task HandleManageCaptainsCommandAsync(
         Team team,
-        PlayerId playerId,
+        Actor actor,
         TelegramChatId chatId,
-        TelegramUserId telegramUserId,
         CancellationToken ct
     )
     {
         var strings = _strings.For(team.Locale);
-        if (!await _teamGuard.IsCaptainAsync(team.Id, playerId, chatId, telegramUserId, ct))
+
+        var result = await _teams.LoadMembersAsync(team, actor, ct);
+        if (!result.IsSuccess)
         {
-            await _sender.SendAsync(chatId, strings.Text("NewGame.NotCaptain"), null, ct);
+            await _sender.SendAsync(chatId, strings.Text(ErrorKey(result.Error)), null, ct);
             return;
         }
 
-        var members = await LoadMembersAsync(team.Id, ct);
-        var (text, keyboard) = BuildManageCaptainsView(members, strings);
+        var (text, keyboard) = BuildManageCaptainsView(result.Value, strings);
         await _sender.SendAsync(chatId, text, keyboard, ct);
     }
 
     private async Task HandleManageCaptainsCallbackAsync(CallbackQuery callbackQuery, CancellationToken ct)
     {
-        var chatId = await ResolveChatIdAsync(new TelegramChatId(callbackQuery.Message!.Chat.Id), ct);
-        var team = await _db.Teams.ByChatId(chatId).SingleAsync(ct);
-        var strings = _strings.For(team.Locale);
-        var actor = await _playerBootstrap.GetOrCreateAsync(callbackQuery.From, ct);
-        var telegramUserId = new TelegramUserId(callbackQuery.From.Id);
-
-        if (!await _teamGuard.IsCaptainAsync(team.Id, actor.Id, chatId, telegramUserId, ct))
+        if (await ResolveScopeAsync(callbackQuery, ct) is not { } scope)
         {
-            await AnswerAlertAsync(callbackQuery, strings.Text("NewGame.NotCaptain"), ct);
+            await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
             return;
         }
 
         _ = CallbackData.TryParse(callbackQuery.Data!, out _, out PlayerId targetPlayerId);
-        var membership = await _db.Memberships.SingleAsync(
-            m => m.TeamId == team.Id && m.PlayerId == targetPlayerId,
-            ct
-        );
-        membership.IsCaptain = !membership.IsCaptain;
 
-        AuditRecorder.Record(
-            _db,
-            team.Id,
-            null,
-            actor.Id,
-            membership.IsCaptain ? AuditActions.CaptainGranted : AuditActions.CaptainRevoked,
-            new { TargetPlayerId = targetPlayerId.Value },
-            _clock
-        );
-        await _db.SaveChangesAsync(ct);
+        var result = await _teams.ToggleCaptainAsync(scope.Team, scope.Actor, targetPlayerId, ct);
+        if (!result.IsSuccess)
+        {
+            await AnswerAlertAsync(callbackQuery, scope.Strings.Text(ErrorKey(result.Error)), ct);
+            return;
+        }
 
-        var members = await LoadMembersAsync(team.Id, ct);
-        var (text, keyboard) = BuildManageCaptainsView(members, strings);
-        await _sender.TryEditImmediatelyAsync(
-            chatId,
-            new TelegramMessageId(callbackQuery.Message!.MessageId),
-            text,
-            keyboard,
-            ct
-        );
+        var (text, keyboard) = BuildManageCaptainsView(result.Value, scope.Strings);
+        await _sender.TryEditImmediatelyAsync(scope.ChatId, scope.MessageId, text, keyboard, ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
-
-    private async Task<IReadOnlyList<Membership>> LoadMembersAsync(TeamId teamId, CancellationToken ct) =>
-        await _db.Memberships.AsNoTracking().Include(m => m.Player).Where(m => m.TeamId == teamId).ToListAsync(ct);
 
     private static (string Text, InlineKeyboardMarkup Keyboard) BuildManageCaptainsView(
         IReadOnlyList<Membership> members,
@@ -3679,14 +3519,9 @@ public sealed class UpdateRouter
         var chatId = await ResolveChatIdAsync(new TelegramChatId(callbackQuery.Message!.Chat.Id), ct);
         var player = await _playerBootstrap.GetOrCreateAsync(callbackQuery.From, ct);
 
-        var dialog = await _db.DialogStates.SingleOrDefaultAsync(
-            d => d.ChatId == chatId && d.PlayerId == player.Id,
-            ct
-        );
-        if (dialog is not null)
+        if (await _dialogs.LoadAsync(chatId, player.Id, ct) is { } dialog)
         {
-            _db.DialogStates.Remove(dialog);
-            await _db.SaveChangesAsync(ct);
+            await _dialogs.ClearAsync(dialog, ct);
         }
 
         await _bot.SendRequest(
@@ -3711,11 +3546,7 @@ public sealed class UpdateRouter
     {
         var chatId = await ResolveChatIdAsync(new TelegramChatId(callbackQuery.Message!.Chat.Id), ct);
         var player = await _playerBootstrap.GetOrCreateAsync(callbackQuery.From, ct);
-        var dialog = await _db.DialogStates.SingleOrDefaultAsync(
-            d => d.ChatId == chatId && d.PlayerId == player.Id,
-            ct
-        );
-        if (dialog is null)
+        if (await _dialogs.LoadAsync(chatId, player.Id, ct) is not { } dialog)
         {
             await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
             return;
@@ -3725,6 +3556,7 @@ public sealed class UpdateRouter
         {
             Id = callbackQuery.Message.MessageId,
             Chat = callbackQuery.Message.Chat,
+            From = callbackQuery.From,
             Date = DateTime.UtcNow,
             Text = "skip",
         };
@@ -3736,6 +3568,10 @@ public sealed class UpdateRouter
 
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
+
+    // The edit wizards funnel both a parse failure and a rejected write through one errorKey,
+    // so a Result reads back as "no key" on success.
+    private static string? FailureKey<T>(Result<T> result) => result.IsSuccess ? null : ErrorKey(result.Error);
 
     private static string ErrorKey(BusinessError error) =>
         error switch

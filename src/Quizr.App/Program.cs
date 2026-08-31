@@ -101,6 +101,8 @@ builder.Services.AddSingleton<IAlertSender>(sp => new AlertSender(
 builder.Services.AddScoped<TeamGuard>();
 builder.Services.AddScoped<TeamBootstrapService>();
 builder.Services.AddScoped<PlayerBootstrapService>();
+builder.Services.AddScoped<ITeamService, TeamService>();
+builder.Services.AddScoped<IDialogService, DialogService>();
 builder.Services.AddScoped<ISignupService, SignupService>();
 builder.Services.AddScoped<IFranchiseService, FranchiseService>();
 builder.Services.AddScoped<IGameService, GameService>();

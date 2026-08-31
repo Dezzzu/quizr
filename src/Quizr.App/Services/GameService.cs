@@ -18,7 +18,21 @@ public interface IGameService
     // created game show the same number rather than two independent counts that could drift.
     Task<string> PreviewFranchiseTitleAsync(Franchise franchise, CancellationToken ct);
 
-    Task<Game> CreateFromFranchiseAsync(
+    // The franchise list a new game can be built from, plus the timezone guard that has to
+    // pass before any of it means anything — one call, because /newgame needs both answers
+    // and either one failing stops it.
+    Task<Result<IReadOnlyList<Franchise>>> LoadNewGameOptionsAsync(Team team, Actor actor, CancellationToken ct);
+
+    // The games /editgame offers: live ones only, soonest first.
+    Task<Result<IReadOnlyList<Game>>> LoadEditableGamesAsync(Team team, Actor actor, CancellationToken ct);
+
+    Task<Result<Game>> LoadForEditAsync(Team team, Actor actor, GameId gameId, CancellationToken ct);
+
+    // The team carries the timezone every start instant is computed against, so these take it
+    // rather than a separate id, and answer TeamNotConfigured themselves if it isn't set yet.
+    Task<Result<Game>> CreateFromFranchiseAsync(
+        Team team,
+        Actor actor,
         Franchise franchise,
         string title,
         DateOnly gameDate,
@@ -28,54 +42,76 @@ public interface IGameService
         decimal? price,
         string? notes,
         List<string> tags,
-        PlayerId createdByPlayerId,
-        string timeZoneId,
         CancellationToken ct
     );
 
-    Task<Game> CreateOneOffAsync(
-        TeamId teamId,
+    Task<Result<Game>> CreateOneOffAsync(
+        Team team,
+        Actor actor,
         string title,
         string venue,
         DateOnly gameDate,
         TimeOnly time,
         int capacity,
         decimal? price,
-        PlayerId createdByPlayerId,
-        string timeZoneId,
         CancellationToken ct
     );
 
-    Task SetTitleAsync(Game game, string title, CancellationToken ct);
+    // Editing a game is captain-only like creating one, so every setter carries the same check
+    // rather than trusting whichever screen led here to have made it.
+    Task<Result<Unit>> SetTitleAsync(Game game, Team team, Actor actor, string title, CancellationToken ct);
 
-    Task SetVenueAsync(Game game, string venue, CancellationToken ct);
+    Task<Result<Unit>> SetVenueAsync(Game game, Team team, Actor actor, string venue, CancellationToken ct);
 
-    Task<IReadOnlyList<Signup>> SetCapacityAsync(Game game, int capacity, CancellationToken ct);
+    Task<Result<IReadOnlyList<Signup>>> SetCapacityAsync(
+        Game game,
+        Team team,
+        Actor actor,
+        int capacity,
+        CancellationToken ct
+    );
 
-    Task SetPriceAsync(Game game, decimal? price, CancellationToken ct);
+    Task<Result<Unit>> SetPriceAsync(Game game, Team team, Actor actor, decimal? price, CancellationToken ct);
 
-    Task SetNotesAsync(Game game, string? notes, CancellationToken ct);
+    Task<Result<Unit>> SetNotesAsync(Game game, Team team, Actor actor, string? notes, CancellationToken ct);
 
-    Task SetTagsAsync(Game game, List<string> tags, CancellationToken ct);
+    Task<Result<Unit>> SetTagsAsync(Game game, Team team, Actor actor, List<string> tags, CancellationToken ct);
 
-    Task SetStartTimeAsync(Game game, TimeOnly time, string timeZoneId, CancellationToken ct);
+    Task<Result<Unit>> SetStartTimeAsync(Game game, Team team, Actor actor, TimeOnly time, CancellationToken ct);
 
     // Nudge's target list — CLAUDE.md/VISION.md: "ping the players who haven't arrived yet,"
     // meaning people who signed up and are late, not people who never signed up at all.
     // Guests are excluded: a guest signup has no PlayerId, so there's nobody to @mention.
-    Task<IReadOnlyList<Membership>> LoadPlayingMembersAsync(Game game, CancellationToken ct);
+    Task<Result<IReadOnlyList<Membership>>> LoadPlayingMembersAsync(
+        Game game,
+        Team team,
+        Actor actor,
+        CancellationToken ct
+    );
 
-    Task<IReadOnlyList<MemberSignupStatus>> LoadMemberStatusesAsync(Game game, CancellationToken ct);
+    Task<Result<IReadOnlyList<MemberSignupStatus>>> LoadMemberStatusesAsync(
+        Game game,
+        Team team,
+        Actor actor,
+        CancellationToken ct
+    );
 
-    Task<Result<Unit>> TryNudgeAsync(Game game, CancellationToken ct);
+    Task<Result<Unit>> TryNudgeAsync(Game game, Team team, Actor actor, CancellationToken ct);
 
-    // Captain-only (invariant 13's GameDeclined). No un-decline flow exists, so this is meant
-    // to be gated by a confirm step at the call site.
-    Task DeclineAsync(Game game, PlayerId actorPlayerId, CancellationToken ct);
+    // The gate for a confirm step that has nothing to load or write yet — declining asks
+    // "are you sure?" first, and offering that keyboard to someone who could never go through
+    // with it is worse than refusing up front. Everywhere else the check rides along on the
+    // load or the write the handler was making anyway.
+    Task<Result<Unit>> EnsureCanManageAsync(Team team, Actor actor, CancellationToken ct);
+
+    // Invariant 13's GameDeclined. No un-decline flow exists, so the call site is still
+    // expected to put a confirm step in front of it.
+    Task<Result<Unit>> DeclineAsync(Game game, Team team, Actor actor, CancellationToken ct);
 
     // Shared by the scheduler's auto-finish and the manual Finish button (invariant 8) — one
-    // materialization path, not two. actorPlayerId null means the system did it.
-    Task FinishAsync(Game game, PlayerId? actorPlayerId, CancellationToken ct);
+    // materialization path, not two. A null actor means the system did it, which is also the
+    // one case that skips the captain check: the scheduler has nobody to check.
+    Task<Result<Unit>> FinishAsync(Game game, Team team, Actor? actor, CancellationToken ct);
 }
 
 // Whether this member currently has a live signup for the game — the "Manage players" view's
@@ -120,11 +156,13 @@ public sealed class GameService : IGameService
     }
 
     private readonly QuizrDb _db;
+    private readonly TeamGuard _guard;
     private readonly TimeProvider _clock;
 
-    public GameService(QuizrDb db, TimeProvider clock)
+    public GameService(QuizrDb db, TeamGuard guard, TimeProvider clock)
     {
         _db = db;
+        _guard = guard;
         _clock = clock;
     }
 
@@ -134,7 +172,59 @@ public sealed class GameService : IGameService
         return $"{franchise.Name} #{number}";
     }
 
-    public async Task<Game> CreateFromFranchiseAsync(
+    public async Task<Result<IReadOnlyList<Franchise>>> LoadNewGameOptionsAsync(
+        Team team,
+        Actor actor,
+        CancellationToken ct
+    )
+    {
+        var allowed = await _guard.RequireCaptainAsync(team, actor, ct);
+        if (!allowed.IsSuccess)
+        {
+            return allowed.Error;
+        }
+
+        var configured = TeamGuard.EnsureTimeZoneConfigured(team);
+        if (!configured.IsSuccess)
+        {
+            return configured.Error;
+        }
+
+        return await _db
+            .Franchises.AsNoTracking()
+            .Where(f => f.TeamId == team.Id && f.ArchivedAt == null)
+            .ToListAsync(ct);
+    }
+
+    public async Task<Result<IReadOnlyList<Game>>> LoadEditableGamesAsync(Team team, Actor actor, CancellationToken ct)
+    {
+        var allowed = await _guard.RequireCaptainAsync(team, actor, ct);
+        if (!allowed.IsSuccess)
+        {
+            return allowed.Error;
+        }
+
+        return await _db
+            .Games.AsNoTracking()
+            .Where(g => g.TeamId == team.Id && g.FinishedAt == null && g.DeclinedAt == null)
+            .OrderBy(g => g.StartsAt)
+            .ToListAsync(ct);
+    }
+
+    public async Task<Result<Game>> LoadForEditAsync(Team team, Actor actor, GameId gameId, CancellationToken ct)
+    {
+        var allowed = await _guard.RequireCaptainAsync(team, actor, ct);
+        if (!allowed.IsSuccess)
+        {
+            return allowed.Error;
+        }
+
+        return await _db.Games.SingleAsync(g => g.Id == gameId, ct);
+    }
+
+    public async Task<Result<Game>> CreateFromFranchiseAsync(
+        Team team,
+        Actor actor,
         Franchise franchise,
         string title,
         DateOnly gameDate,
@@ -144,24 +234,28 @@ public sealed class GameService : IGameService
         decimal? price,
         string? notes,
         List<string> tags,
-        PlayerId createdByPlayerId,
-        string timeZoneId,
         CancellationToken ct
     )
     {
+        var ready = await EnsureCaptainOfConfiguredTeamAsync(team, actor, ct);
+        if (!ready.IsSuccess)
+        {
+            return ready.Error;
+        }
+
         var game = new Game
         {
             TeamId = franchise.TeamId,
             FranchiseId = franchise.Id,
             Title = title,
             Venue = venue,
-            StartsAt = TeamTime.ConvertToUtc(gameDate, time, timeZoneId),
+            StartsAt = TeamTime.ConvertToUtc(gameDate, time, team.TimeZoneId!),
             Capacity = capacity,
             Price = price,
             Notes = notes,
             Tags = tags,
             CreatedAt = _clock.GetUtcNow(),
-            CreatedByPlayerId = createdByPlayerId,
+            CreatedByPlayerId = actor.PlayerId,
         };
         _db.Games.Add(game);
         await _db.SaveChangesAsync(ct);
@@ -169,29 +263,34 @@ public sealed class GameService : IGameService
         return game;
     }
 
-    public async Task<Game> CreateOneOffAsync(
-        TeamId teamId,
+    public async Task<Result<Game>> CreateOneOffAsync(
+        Team team,
+        Actor actor,
         string title,
         string venue,
         DateOnly gameDate,
         TimeOnly time,
         int capacity,
         decimal? price,
-        PlayerId createdByPlayerId,
-        string timeZoneId,
         CancellationToken ct
     )
     {
+        var ready = await EnsureCaptainOfConfiguredTeamAsync(team, actor, ct);
+        if (!ready.IsSuccess)
+        {
+            return ready.Error;
+        }
+
         var game = new Game
         {
-            TeamId = teamId,
+            TeamId = team.Id,
             Title = title,
             Venue = venue,
-            StartsAt = TeamTime.ConvertToUtc(gameDate, time, timeZoneId),
+            StartsAt = TeamTime.ConvertToUtc(gameDate, time, team.TimeZoneId!),
             Capacity = capacity,
             Price = price,
             CreatedAt = _clock.GetUtcNow(),
-            CreatedByPlayerId = createdByPlayerId,
+            CreatedByPlayerId = actor.PlayerId,
         };
         _db.Games.Add(game);
         await _db.SaveChangesAsync(ct);
@@ -199,20 +298,26 @@ public sealed class GameService : IGameService
         return game;
     }
 
-    public async Task SetTitleAsync(Game game, string title, CancellationToken ct)
-    {
-        game.Title = title;
-        await _db.SaveChangesAsync(ct);
-    }
+    public Task<Result<Unit>> SetTitleAsync(Game game, Team team, Actor actor, string title, CancellationToken ct) =>
+        ApplyAsync(team, actor, () => game.Title = title, ct);
 
-    public async Task SetVenueAsync(Game game, string venue, CancellationToken ct)
-    {
-        game.Venue = venue;
-        await _db.SaveChangesAsync(ct);
-    }
+    public Task<Result<Unit>> SetVenueAsync(Game game, Team team, Actor actor, string venue, CancellationToken ct) =>
+        ApplyAsync(team, actor, () => game.Venue = venue, ct);
 
-    public async Task<IReadOnlyList<Signup>> SetCapacityAsync(Game game, int capacity, CancellationToken ct)
+    public async Task<Result<IReadOnlyList<Signup>>> SetCapacityAsync(
+        Game game,
+        Team team,
+        Actor actor,
+        int capacity,
+        CancellationToken ct
+    )
     {
+        var allowed = await _guard.RequireCaptainAsync(team, actor, ct);
+        if (!allowed.IsSuccess)
+        {
+            return allowed.Error;
+        }
+
         var liveSignups = await _db
             .Signups.AsNoTracking()
             .Include(s => s.Player)
@@ -240,33 +345,78 @@ public sealed class GameService : IGameService
         return newlyNotified;
     }
 
-    public async Task SetPriceAsync(Game game, decimal? price, CancellationToken ct)
-    {
-        game.Price = price;
-        await _db.SaveChangesAsync(ct);
-    }
+    public Task<Result<Unit>> SetPriceAsync(Game game, Team team, Actor actor, decimal? price, CancellationToken ct) =>
+        ApplyAsync(team, actor, () => game.Price = price, ct);
 
-    public async Task SetNotesAsync(Game game, string? notes, CancellationToken ct)
-    {
-        game.Notes = notes;
-        await _db.SaveChangesAsync(ct);
-    }
+    public Task<Result<Unit>> SetNotesAsync(Game game, Team team, Actor actor, string? notes, CancellationToken ct) =>
+        ApplyAsync(team, actor, () => game.Notes = notes, ct);
 
-    public async Task SetTagsAsync(Game game, List<string> tags, CancellationToken ct)
-    {
-        game.Tags = tags;
-        await _db.SaveChangesAsync(ct);
-    }
+    public Task<Result<Unit>> SetTagsAsync(
+        Game game,
+        Team team,
+        Actor actor,
+        List<string> tags,
+        CancellationToken ct
+    ) => ApplyAsync(team, actor, () => game.Tags = tags, ct);
 
-    public async Task SetStartTimeAsync(Game game, TimeOnly time, string timeZoneId, CancellationToken ct)
+    public async Task<Result<Unit>> SetStartTimeAsync(
+        Game game,
+        Team team,
+        Actor actor,
+        TimeOnly time,
+        CancellationToken ct
+    )
     {
+        var ready = await EnsureCaptainOfConfiguredTeamAsync(team, actor, ct);
+        if (!ready.IsSuccess)
+        {
+            return ready.Error;
+        }
+
+        // The date is the game's existing local one — only the time of day is being moved.
+        var timeZoneId = team.TimeZoneId!;
         var localDate = DateOnly.FromDateTime(TeamTime.ConvertToLocal(game.StartsAt, timeZoneId).Date);
         game.StartsAt = TeamTime.ConvertToUtc(localDate, time, timeZoneId);
         await _db.SaveChangesAsync(ct);
+
+        return new Unit();
     }
 
-    public async Task<IReadOnlyList<Membership>> LoadPlayingMembersAsync(Game game, CancellationToken ct)
+    // Every plain field setter is the same three steps: check, mutate, save.
+    private async Task<Result<Unit>> ApplyAsync(Team team, Actor actor, Action mutate, CancellationToken ct)
     {
+        var allowed = await _guard.RequireCaptainAsync(team, actor, ct);
+        if (!allowed.IsSuccess)
+        {
+            return allowed.Error;
+        }
+
+        mutate();
+        await _db.SaveChangesAsync(ct);
+
+        return new Unit();
+    }
+
+    // Anything that computes an instant needs both answers before it can run.
+    private async Task<Result<Unit>> EnsureCaptainOfConfiguredTeamAsync(Team team, Actor actor, CancellationToken ct)
+    {
+        var allowed = await _guard.RequireCaptainAsync(team, actor, ct);
+        return allowed.IsSuccess ? TeamGuard.EnsureTimeZoneConfigured(team) : allowed.Error;
+    }
+
+    public async Task<Result<IReadOnlyList<Membership>>> LoadPlayingMembersAsync(
+        Game game,
+        Team team,
+        Actor actor,
+        CancellationToken ct
+    )
+    {
+        var allowed = await _guard.RequireCaptainAsync(team, actor, ct);
+        if (!allowed.IsSuccess)
+        {
+            return allowed.Error;
+        }
+
         var liveSignups = await _db
             .Signups.AsNoTracking()
             .Where(s => s.GameId == game.Id && s.CancelledAt == null)
@@ -287,8 +437,19 @@ public sealed class GameService : IGameService
             .ToListAsync(ct);
     }
 
-    public async Task<IReadOnlyList<MemberSignupStatus>> LoadMemberStatusesAsync(Game game, CancellationToken ct)
+    public async Task<Result<IReadOnlyList<MemberSignupStatus>>> LoadMemberStatusesAsync(
+        Game game,
+        Team team,
+        Actor actor,
+        CancellationToken ct
+    )
     {
+        var allowed = await _guard.RequireCaptainAsync(team, actor, ct);
+        if (!allowed.IsSuccess)
+        {
+            return allowed.Error;
+        }
+
         var signedUpPlayerIds = await _db
             .Signups.AsNoTracking()
             .Where(s => s.GameId == game.Id && s.CancelledAt == null && s.PlayerId != null)
@@ -305,8 +466,14 @@ public sealed class GameService : IGameService
         return members.Select(m => new MemberSignupStatus(m, signedUpSet.Contains(m.PlayerId))).ToList();
     }
 
-    public async Task<Result<Unit>> TryNudgeAsync(Game game, CancellationToken ct)
+    public async Task<Result<Unit>> TryNudgeAsync(Game game, Team team, Actor actor, CancellationToken ct)
     {
+        var allowed = await _guard.RequireCaptainAsync(team, actor, ct);
+        if (!allowed.IsSuccess)
+        {
+            return allowed.Error;
+        }
+
         var now = _clock.GetUtcNow();
         if (game.LastNudgedAt is { } lastNudgedAt && now < lastNudgedAt + NudgeCooldown)
         {
@@ -319,17 +486,37 @@ public sealed class GameService : IGameService
         return new Unit();
     }
 
-    public async Task DeclineAsync(Game game, PlayerId actorPlayerId, CancellationToken ct)
+    public async Task<Result<Unit>> EnsureCanManageAsync(Team team, Actor actor, CancellationToken ct) =>
+        await _guard.RequireCaptainAsync(team, actor, ct);
+
+    public async Task<Result<Unit>> DeclineAsync(Game game, Team team, Actor actor, CancellationToken ct)
     {
+        var allowed = await _guard.RequireCaptainAsync(team, actor, ct);
+        if (!allowed.IsSuccess)
+        {
+            return allowed.Error;
+        }
+
         game.DeclinedAt = _clock.GetUtcNow();
 
-        AuditRecorder.Record(_db, game.TeamId, game.Id, actorPlayerId, AuditActions.GameDeclined, new { }, _clock);
+        AuditRecorder.Record(_db, game.TeamId, game.Id, actor.PlayerId, AuditActions.GameDeclined, new { }, _clock);
 
         await _db.SaveChangesAsync(ct);
+
+        return new Unit();
     }
 
-    public async Task FinishAsync(Game game, PlayerId? actorPlayerId, CancellationToken ct)
+    public async Task<Result<Unit>> FinishAsync(Game game, Team team, Actor? actor, CancellationToken ct)
     {
+        if (actor is { } captain)
+        {
+            var allowed = await _guard.RequireCaptainAsync(team, captain, ct);
+            if (!allowed.IsSuccess)
+            {
+                return allowed.Error;
+            }
+        }
+
         var now = _clock.GetUtcNow();
 
         var liveSignups = await _db
@@ -358,9 +545,11 @@ public sealed class GameService : IGameService
 
         game.FinishedAt = now;
 
-        AuditRecorder.Record(_db, game.TeamId, game.Id, actorPlayerId, AuditActions.GameFinished, new { }, _clock);
+        AuditRecorder.Record(_db, game.TeamId, game.Id, actor?.PlayerId, AuditActions.GameFinished, new { }, _clock);
 
         await _db.SaveChangesAsync(ct);
+
+        return new Unit();
     }
 
     private static ParticipationKind ParticipationKindOf(Signup signup)

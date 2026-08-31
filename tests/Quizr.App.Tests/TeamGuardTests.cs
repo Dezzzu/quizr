@@ -55,13 +55,7 @@ public class TeamGuardTests
 
         var guard = new TeamGuard(db, TelegramBotClientTestHelper.Create());
 
-        var isCaptain = await guard.IsCaptainAsync(
-            team.Id,
-            player.Id,
-            new TelegramChatId(2001),
-            new TelegramUserId(1),
-            ct
-        );
+        var isCaptain = await guard.IsCaptainAsync(team, new Actor(player.Id, new TelegramUserId(1)), ct);
 
         isCaptain.Should().BeTrue();
     }
@@ -92,13 +86,7 @@ public class TeamGuardTests
             );
         var guard = new TeamGuard(db, bot);
 
-        var isCaptain = await guard.IsCaptainAsync(
-            team.Id,
-            player.Id,
-            new TelegramChatId(2002),
-            new TelegramUserId(2),
-            ct
-        );
+        var isCaptain = await guard.IsCaptainAsync(team, new Actor(player.Id, new TelegramUserId(2)), ct);
 
         isCaptain.Should().BeTrue();
     }
@@ -122,13 +110,7 @@ public class TeamGuardTests
         // TelegramBotClientTestHelper's default GetChatMember response is a plain member.
         var guard = new TeamGuard(db, TelegramBotClientTestHelper.Create());
 
-        var isCaptain = await guard.IsCaptainAsync(
-            team.Id,
-            player.Id,
-            new TelegramChatId(2003),
-            new TelegramUserId(3),
-            ct
-        );
+        var isCaptain = await guard.IsCaptainAsync(team, new Actor(player.Id, new TelegramUserId(3)), ct);
 
         isCaptain.Should().BeFalse();
     }

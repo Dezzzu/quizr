@@ -701,10 +701,12 @@ public class UpdateRouterSignupLoopTests
         var teamBootstrap = new TeamBootstrapService(db, sender, strings, clock);
         var playerBootstrap = new PlayerBootstrapService(db, clock);
         var teamGuard = new TeamGuard(db, bot);
-        var signups = new SignupService(db, clock);
-        var franchises = new FranchiseService(db, clock);
-        var games = new GameService(db, clock);
-        var participations = new ParticipationService(db, clock);
+        var teams = new TeamService(db, teamGuard, clock);
+        var dialogs = new DialogService(db, teamGuard, clock);
+        var signups = new SignupService(db, teamGuard, clock);
+        var franchises = new FranchiseService(db, teamGuard, clock);
+        var games = new GameService(db, teamGuard, clock);
+        var participations = new ParticipationService(db, teamGuard, clock);
         var announcements = new AnnouncementService(db, sender, strings);
         var board = new BoardService(db, sender, bot, strings, NullLogger<BoardService>.Instance);
 
@@ -715,7 +717,8 @@ public class UpdateRouterSignupLoopTests
             strings,
             teamBootstrap,
             playerBootstrap,
-            teamGuard,
+            teams,
+            dialogs,
             signups,
             franchises,
             games,

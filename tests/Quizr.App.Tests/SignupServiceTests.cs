@@ -22,7 +22,11 @@ public class SignupServiceTests
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 5001, capacity: 5, ct);
         var player = await SeedPlayerAsync(db, telegramUserId: 5001, ct);
-        var service = new SignupService(db, new FakeTimeProvider());
+        var service = new SignupService(
+            db,
+            new TeamGuard(db, TelegramBotClientTestHelper.Create()),
+            new FakeTimeProvider()
+        );
 
         var result = await service.JoinAsync(game, player.Id, ct);
 
@@ -38,7 +42,11 @@ public class SignupServiceTests
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 5002, capacity: 5, ct);
         var player = await SeedPlayerAsync(db, telegramUserId: 5002, ct);
-        var service = new SignupService(db, new FakeTimeProvider());
+        var service = new SignupService(
+            db,
+            new TeamGuard(db, TelegramBotClientTestHelper.Create()),
+            new FakeTimeProvider()
+        );
         await service.JoinAsync(game, player.Id, ct);
 
         var result = await service.JoinAsync(game, player.Id, ct);
@@ -56,7 +64,11 @@ public class SignupServiceTests
         game.FinishedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct);
         var player = await SeedPlayerAsync(db, telegramUserId: 5003, ct);
-        var service = new SignupService(db, new FakeTimeProvider());
+        var service = new SignupService(
+            db,
+            new TeamGuard(db, TelegramBotClientTestHelper.Create()),
+            new FakeTimeProvider()
+        );
 
         var result = await service.JoinAsync(game, player.Id, ct);
 
@@ -71,7 +83,11 @@ public class SignupServiceTests
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 5004, capacity: 5, ct);
         var inviter = await SeedPlayerAsync(db, telegramUserId: 5004, ct);
-        var service = new SignupService(db, new FakeTimeProvider());
+        var service = new SignupService(
+            db,
+            new TeamGuard(db, TelegramBotClientTestHelper.Create()),
+            new FakeTimeProvider()
+        );
         await service.JoinAsync(game, inviter.Id, ct);
 
         var result = await service.BringGuestAsync(game, inviter.Id, ct);
@@ -89,7 +105,11 @@ public class SignupServiceTests
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 5005, capacity: 5, ct);
         var inviter = await SeedPlayerAsync(db, telegramUserId: 5005, ct);
-        var service = new SignupService(db, new FakeTimeProvider());
+        var service = new SignupService(
+            db,
+            new TeamGuard(db, TelegramBotClientTestHelper.Create()),
+            new FakeTimeProvider()
+        );
         await service.JoinAsync(game, inviter.Id, ct);
         var guest = (await service.BringGuestAsync(game, inviter.Id, ct)).Value;
 
@@ -107,7 +127,11 @@ public class SignupServiceTests
         var game = await SeedGameAsync(db, chatId: 5006, capacity: 5, ct);
         var inviter = await SeedPlayerAsync(db, telegramUserId: 5006, ct);
         var stranger = await SeedPlayerAsync(db, telegramUserId: 50060, ct);
-        var service = new SignupService(db, new FakeTimeProvider());
+        var service = new SignupService(
+            db,
+            new TeamGuard(db, TelegramBotClientTestHelper.Create()),
+            new FakeTimeProvider()
+        );
         await service.JoinAsync(game, inviter.Id, ct);
         var guest = (await service.BringGuestAsync(game, inviter.Id, ct)).Value;
 
@@ -124,7 +148,11 @@ public class SignupServiceTests
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 5007, capacity: 5, ct);
         var player = await SeedPlayerAsync(db, telegramUserId: 5007, ct);
-        var service = new SignupService(db, new FakeTimeProvider());
+        var service = new SignupService(
+            db,
+            new TeamGuard(db, TelegramBotClientTestHelper.Create()),
+            new FakeTimeProvider()
+        );
         await service.JoinAsync(game, player.Id, ct);
 
         var result = await service.DropAsync(game, player.Id, ct);
@@ -144,7 +172,11 @@ public class SignupServiceTests
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 5008, capacity: 5, ct);
         var player = await SeedPlayerAsync(db, telegramUserId: 5008, ct);
-        var service = new SignupService(db, new FakeTimeProvider());
+        var service = new SignupService(
+            db,
+            new TeamGuard(db, TelegramBotClientTestHelper.Create()),
+            new FakeTimeProvider()
+        );
 
         var result = await service.DropAsync(game, player.Id, ct);
 
@@ -160,7 +192,11 @@ public class SignupServiceTests
         var game = await SeedGameAsync(db, chatId: 5009, capacity: 1, ct);
         var playing = await SeedPlayerAsync(db, telegramUserId: 5009, ct);
         var reserve = await SeedPlayerAsync(db, telegramUserId: 50090, ct);
-        var service = new SignupService(db, new FakeTimeProvider());
+        var service = new SignupService(
+            db,
+            new TeamGuard(db, TelegramBotClientTestHelper.Create()),
+            new FakeTimeProvider()
+        );
         await service.JoinAsync(game, playing.Id, ct);
         await service.JoinAsync(game, reserve.Id, ct);
 
@@ -186,7 +222,11 @@ public class SignupServiceTests
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 5010, capacity: 5, ct);
         var inviter = await SeedPlayerAsync(db, telegramUserId: 5010, ct);
-        var service = new SignupService(db, new FakeTimeProvider());
+        var service = new SignupService(
+            db,
+            new TeamGuard(db, TelegramBotClientTestHelper.Create()),
+            new FakeTimeProvider()
+        );
         await service.JoinAsync(game, inviter.Id, ct);
         var guest = (await service.BringGuestAsync(game, inviter.Id, ct)).Value;
 
@@ -205,7 +245,11 @@ public class SignupServiceTests
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 5011, capacity: 5, ct);
         var inviter = await SeedPlayerAsync(db, telegramUserId: 5011, ct);
-        var service = new SignupService(db, new FakeTimeProvider());
+        var service = new SignupService(
+            db,
+            new TeamGuard(db, TelegramBotClientTestHelper.Create()),
+            new FakeTimeProvider()
+        );
         await service.JoinAsync(game, inviter.Id, ct);
         var guest = (await service.BringGuestAsync(game, inviter.Id, ct)).Value;
         await service.NameGuestAsync(guest.Id, inviter.Id, "Sasha", ct);
@@ -225,7 +269,11 @@ public class SignupServiceTests
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 5012, capacity: 5, ct);
         var inviter = await SeedPlayerAsync(db, telegramUserId: 5012, ct);
-        var service = new SignupService(db, new FakeTimeProvider());
+        var service = new SignupService(
+            db,
+            new TeamGuard(db, TelegramBotClientTestHelper.Create()),
+            new FakeTimeProvider()
+        );
         await service.JoinAsync(game, inviter.Id, ct);
         var guest = (await service.BringGuestAsync(game, inviter.Id, ct)).Value;
         await service.NameGuestAsync(guest.Id, inviter.Id, "Sasha", ct);
@@ -250,7 +298,11 @@ public class SignupServiceTests
         var game = await SeedGameAsync(db, chatId: 5013, capacity: 2, ct);
         var inviter = await SeedPlayerAsync(db, telegramUserId: 5013, ct);
         var reserve = await SeedPlayerAsync(db, telegramUserId: 50130, ct);
-        var service = new SignupService(db, new FakeTimeProvider());
+        var service = new SignupService(
+            db,
+            new TeamGuard(db, TelegramBotClientTestHelper.Create()),
+            new FakeTimeProvider()
+        );
         await service.JoinAsync(game, inviter.Id, ct);
         var guest = (await service.BringGuestAsync(game, inviter.Id, ct)).Value; // takes the second seat
         await service.NameGuestAsync(guest.Id, inviter.Id, "Sasha", ct);
@@ -272,7 +324,11 @@ public class SignupServiceTests
         var game = await SeedGameAsync(db, chatId: 5014, capacity: 5, ct);
         var inviter = await SeedPlayerAsync(db, telegramUserId: 5014, ct);
         var stranger = await SeedPlayerAsync(db, telegramUserId: 50140, ct);
-        var service = new SignupService(db, new FakeTimeProvider());
+        var service = new SignupService(
+            db,
+            new TeamGuard(db, TelegramBotClientTestHelper.Create()),
+            new FakeTimeProvider()
+        );
         await service.JoinAsync(game, inviter.Id, ct);
         var guest = (await service.BringGuestAsync(game, inviter.Id, ct)).Value;
         await service.NameGuestAsync(guest.Id, inviter.Id, "Sasha", ct);
@@ -290,7 +346,11 @@ public class SignupServiceTests
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 5015, capacity: 5, ct);
         var inviter = await SeedPlayerAsync(db, telegramUserId: 5015, ct);
-        var service = new SignupService(db, new FakeTimeProvider());
+        var service = new SignupService(
+            db,
+            new TeamGuard(db, TelegramBotClientTestHelper.Create()),
+            new FakeTimeProvider()
+        );
         await service.JoinAsync(game, inviter.Id, ct);
         var guest = (await service.BringGuestAsync(game, inviter.Id, ct)).Value;
 
@@ -309,7 +369,11 @@ public class SignupServiceTests
         var game = await SeedGameAsync(db, chatId: 5016, capacity: 2, ct);
         var inviter = await SeedPlayerAsync(db, telegramUserId: 5016, ct);
         var reserve = await SeedPlayerAsync(db, telegramUserId: 50160, ct);
-        var service = new SignupService(db, new FakeTimeProvider());
+        var service = new SignupService(
+            db,
+            new TeamGuard(db, TelegramBotClientTestHelper.Create()),
+            new FakeTimeProvider()
+        );
         await service.JoinAsync(game, inviter.Id, ct);
         var guest = (await service.BringGuestAsync(game, inviter.Id, ct)).Value; // takes the second seat
         await service.JoinAsync(game, reserve.Id, ct); // lands in reserve
@@ -328,7 +392,11 @@ public class SignupServiceTests
         var game = await SeedGameAsync(db, chatId: 5017, capacity: 5, ct);
         var inviter = await SeedPlayerAsync(db, telegramUserId: 5017, ct);
         var stranger = await SeedPlayerAsync(db, telegramUserId: 50170, ct);
-        var service = new SignupService(db, new FakeTimeProvider());
+        var service = new SignupService(
+            db,
+            new TeamGuard(db, TelegramBotClientTestHelper.Create()),
+            new FakeTimeProvider()
+        );
         await service.JoinAsync(game, inviter.Id, ct);
         var guest = (await service.BringGuestAsync(game, inviter.Id, ct)).Value;
 
@@ -345,7 +413,11 @@ public class SignupServiceTests
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 5018, capacity: 5, ct);
         var inviter = await SeedPlayerAsync(db, telegramUserId: 5018, ct);
-        var service = new SignupService(db, new FakeTimeProvider());
+        var service = new SignupService(
+            db,
+            new TeamGuard(db, TelegramBotClientTestHelper.Create()),
+            new FakeTimeProvider()
+        );
         await service.JoinAsync(game, inviter.Id, ct);
         var guest = (await service.BringGuestAsync(game, inviter.Id, ct)).Value;
         await service.RemoveGuestAsync(guest.Id, inviter.Id, ct);
@@ -364,7 +436,11 @@ public class SignupServiceTests
         var game = await SeedGameAsync(db, chatId: 5019, capacity: 5, ct);
         var inviter = await SeedPlayerAsync(db, telegramUserId: 5019, ct);
         var someoneElse = await SeedPlayerAsync(db, telegramUserId: 50190, ct);
-        var service = new SignupService(db, new FakeTimeProvider());
+        var service = new SignupService(
+            db,
+            new TeamGuard(db, TelegramBotClientTestHelper.Create()),
+            new FakeTimeProvider()
+        );
         await service.JoinAsync(game, inviter.Id, ct);
         var first = (await service.BringGuestAsync(game, inviter.Id, ct)).Value;
         var second = (await service.BringGuestAsync(game, inviter.Id, ct)).Value;

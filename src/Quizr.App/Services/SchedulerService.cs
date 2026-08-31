@@ -147,12 +147,12 @@ public sealed class SchedulerService
         await _board.RefreshAsync(team, ct);
     }
 
-    // actorPlayerId is always null here — the scheduler is the system, not a captain
-    // (invariant 13). The manual Finish button shares this same materialization through
-    // GameService.FinishAsync; only who called it differs.
+    // The actor is always null here — the scheduler is the system, not a captain (invariant
+    // 13), which is also why it passes no captain check. The manual Finish button shares this
+    // same materialization through GameService.FinishAsync; only who called it differs.
     private async Task FinishGameAsync(Team team, Game game, CancellationToken ct)
     {
-        await _games.FinishAsync(game, actorPlayerId: null, ct);
+        _ = await _games.FinishAsync(game, team, actor: null, ct);
         await _announcements.RefreshAsync(game, team, ct);
     }
 

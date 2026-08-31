@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Quizr.App.Data;
 using Quizr.Domain;
 using Quizr.Domain.Entities;
@@ -18,12 +19,21 @@ namespace Quizr.App.Services;
 // invariant 13 — lives inside the service itself rather than at each call site.
 public interface IParticipationService
 {
-    Task<Participation> TogglePlayedAsync(Participation participation, PlayerId actorPlayerId, CancellationToken ct);
+    // Captain-only: the manage-roster view for a finished game (invariant 11).
+    Task<Result<IReadOnlyList<Participation>>> LoadRosterAsync(Game game, Team team, Actor actor, CancellationToken ct);
+
+    Task<Result<Participation>> TogglePlayedAsync(
+        Participation participation,
+        Team team,
+        Actor actor,
+        CancellationToken ct
+    );
 
     Task<Result<Participation>> AddVenueAssignedAsync(
         Game game,
+        Team team,
+        Actor actor,
         string name,
-        PlayerId actorPlayerId,
         CancellationToken ct
     );
 }
@@ -31,27 +41,60 @@ public interface IParticipationService
 public sealed class ParticipationService : IParticipationService
 {
     private readonly QuizrDb _db;
+    private readonly TeamGuard _guard;
     private readonly TimeProvider _clock;
 
-    public ParticipationService(QuizrDb db, TimeProvider clock)
+    public ParticipationService(QuizrDb db, TeamGuard guard, TimeProvider clock)
     {
         _db = db;
+        _guard = guard;
         _clock = clock;
     }
 
-    public async Task<Participation> TogglePlayedAsync(
-        Participation participation,
-        PlayerId actorPlayerId,
+    public async Task<Result<IReadOnlyList<Participation>>> LoadRosterAsync(
+        Game game,
+        Team team,
+        Actor actor,
         CancellationToken ct
     )
     {
+        var allowed = await _guard.RequireCaptainAsync(team, actor, ct);
+        if (!allowed.IsSuccess)
+        {
+            return allowed.Error;
+        }
+
+        return await _db
+            .Participations.AsNoTracking()
+            .Include(p => p.Player)
+            .Where(p => p.GameId == game.Id)
+            // Id breaks ties on identical CreatedAt (FinishAsync stamps a whole batch with the
+            // same instant) — same reasoning as Roster.Split.
+            .OrderBy(p => p.CreatedAt)
+            .ThenBy(p => p.Id)
+            .ToListAsync(ct);
+    }
+
+    public async Task<Result<Participation>> TogglePlayedAsync(
+        Participation participation,
+        Team team,
+        Actor actor,
+        CancellationToken ct
+    )
+    {
+        var allowed = await _guard.RequireCaptainAsync(team, actor, ct);
+        if (!allowed.IsSuccess)
+        {
+            return allowed.Error;
+        }
+
         participation.Played = !participation.Played;
 
         AuditRecorder.Record(
             _db,
             participation.Game.TeamId,
             participation.GameId,
-            actorPlayerId,
+            actor.PlayerId,
             AuditActions.ParticipationPlayedToggled,
             new { ParticipationId = participation.Id.Value, participation.Played },
             _clock
@@ -64,11 +107,18 @@ public sealed class ParticipationService : IParticipationService
 
     public async Task<Result<Participation>> AddVenueAssignedAsync(
         Game game,
+        Team team,
+        Actor actor,
         string name,
-        PlayerId actorPlayerId,
         CancellationToken ct
     )
     {
+        var allowed = await _guard.RequireCaptainAsync(team, actor, ct);
+        if (!allowed.IsSuccess)
+        {
+            return allowed.Error;
+        }
+
         if (!game.IsFinished)
         {
             return new BusinessError.GameNotFinished();
@@ -88,7 +138,7 @@ public sealed class ParticipationService : IParticipationService
             _db,
             game.TeamId,
             game.Id,
-            actorPlayerId,
+            actor.PlayerId,
             AuditActions.VenuePlayerAdded,
             new { Name = name },
             _clock

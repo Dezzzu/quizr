@@ -465,7 +465,7 @@ public class SchedulerServiceTests
             )
         );
         var strings = new Strings();
-        var games = new GameService(db, clock);
+        var games = new GameService(db, new TeamGuard(db, bot), clock);
         var announcements = new AnnouncementService(db, sender, strings);
         var board = new BoardService(db, sender, bot, strings, NullLogger<BoardService>.Instance);
 
