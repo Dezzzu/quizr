@@ -5,7 +5,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
-using Quizr.App.Data;
 using Quizr.App.Localization;
 using Quizr.App.Services;
 using Quizr.App.Telegram;
