@@ -124,4 +124,26 @@ public class RosterTests
 
         Roster.Locate(roster, new SignupId(999)).Should().BeNull();
     }
+
+    // The count form of the Take(capacity) half of the split — it can never report more seats
+    // taken than exist, however long the queue behind them gets.
+    [Test]
+    public void PlayingCountNeverExceedsCapacity()
+    {
+        Roster.PlayingCount(0, 8).Should().Be(0);
+        Roster.PlayingCount(3, 8).Should().Be(3);
+        Roster.PlayingCount(8, 8).Should().Be(8);
+        Roster.PlayingCount(21, 8).Should().Be(8);
+    }
+
+    // The matching count form of Skip(capacity) — zero, never negative, for a game with seats
+    // still going spare.
+    [Test]
+    public void ReserveCountIsWhatSpillsPastCapacity()
+    {
+        Roster.ReserveCount(0, 8).Should().Be(0);
+        Roster.ReserveCount(3, 8).Should().Be(0);
+        Roster.ReserveCount(8, 8).Should().Be(0);
+        Roster.ReserveCount(21, 8).Should().Be(13);
+    }
 }

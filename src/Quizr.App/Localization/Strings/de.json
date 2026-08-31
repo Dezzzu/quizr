@@ -34,7 +34,7 @@
   "Commands.ManageCaptains": "Captain-Rechte vergeben oder entziehen",
 
   "Announcement.Venue": "📍 {Venue}",
-  "Announcement.When": "🕓 {When:ddd, d MMM, HH\\:mm}",
+  "Announcement.When": "🕓 {When:ddd, dd MMM, HH\\:mm}",
   "Announcement.Price": "💵 {Price}",
   "Announcement.PlayingHeader": "Dabei ({Count}/{Capacity}):",
   "Announcement.ReserveHeader": "Reserve ({Count}):",
@@ -90,7 +90,8 @@
 
   "Board.Header": "📋 <b>Anstehende Spiele</b>",
   "Board.NoGames": "Noch keine anstehenden Spiele.",
-  "Board.Entry": "{When:ddd, d MMM, HH\\:mm} — {Title}",
+  "Board.Entry": "{When:ddd, dd MMM, HH\\:mm} — {Title} ({Playing}/{Capacity})",
+  "Board.EntryWithReserve": "{When:ddd, dd MMM, HH\\:mm} — {Title} ({Playing}/{Capacity} +{Reserve})",
 
   "Promotion.Message": "🎉 {Who} ist in die Startaufstellung nachgerückt!",
   "Promotion.UnnamedGuest": "Gast",

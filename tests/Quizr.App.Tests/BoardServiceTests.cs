@@ -341,6 +341,101 @@ public class BoardServiceTests
             NullLogger<MessageEditDebouncer>.Instance
         );
 
+    // Guests occupy seats (invariant 4), so a game whose last seats went to someone's guests
+    // is full and the Board has to say so — counting members only would advertise room that
+    // doesn't exist.
+    [Test]
+    public async Task RefreshAsyncCountsGuestsAgainstTheSeatsToo()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 8012, ct);
+        var bot = TelegramBotClientTestHelper.Create();
+        var service = new BoardService(
+            db,
+            new MessageSender(bot, NoDebounce(bot)),
+            bot,
+            new Strings(),
+            NullLogger<BoardService>.Instance
+        );
+        var game = await SeedGameAsync(db, team, "Quiz Night", DateTimeOffset.UtcNow.AddDays(1), ct);
+        var member = await SeedSignupAsync(db, game, ct);
+        await SeedGuestAsync(db, game, member, ct);
+        await SeedGuestAsync(db, game, member, ct);
+
+        // Cancelled signups don't hold a seat (invariant 3), so this one must not be counted.
+        var dropped = await SeedSignupAsync(db, game, ct);
+        dropped.CancelledAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(ct);
+
+        await service.RefreshAsync(team, ct);
+
+        bot.SentTexts().Single().Should().Contain("(3/10)");
+    }
+
+    // Seats taken can never exceed the seats that exist; whoever is queued behind them shows
+    // separately, so a full game reads differently from one that is full with a waiting list.
+    [Test]
+    public async Task RefreshAsyncCapsTheCountAtCapacityAndReportsTheReserveSeparately()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 8013, ct);
+        var bot = TelegramBotClientTestHelper.Create();
+        var service = new BoardService(
+            db,
+            new MessageSender(bot, NoDebounce(bot)),
+            bot,
+            new Strings(),
+            NullLogger<BoardService>.Instance
+        );
+        var game = await SeedGameAsync(db, team, "Quiz Night", DateTimeOffset.UtcNow.AddDays(1), ct);
+        game.Capacity = 2;
+        await db.SaveChangesAsync(ct);
+        await SeedSignupAsync(db, game, ct);
+        await SeedSignupAsync(db, game, ct);
+        await SeedSignupAsync(db, game, ct);
+
+        await service.RefreshAsync(team, ct);
+
+        bot.SentTexts().Single().Should().Contain("(2/2 +1)");
+    }
+
+    private static async Task<Signup> SeedSignupAsync(QuizrDb db, Game game, CancellationToken ct)
+    {
+        var player = new Player
+        {
+            TelegramUserId = new TelegramUserId(Interlocked.Increment(ref _creatorIdSequence)),
+            DisplayName = "Player",
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+        db.Players.Add(player);
+        await db.SaveChangesAsync(ct);
+
+        var signup = new Signup
+        {
+            GameId = game.Id,
+            PlayerId = player.Id,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+        db.Signups.Add(signup);
+        await db.SaveChangesAsync(ct);
+        return signup;
+    }
+
+    private static async Task<Signup> SeedGuestAsync(QuizrDb db, Game game, Signup inviter, CancellationToken ct)
+    {
+        var guest = new Signup
+        {
+            GameId = game.Id,
+            InvitedByPlayerId = inviter.PlayerId,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+        db.Signups.Add(guest);
+        await db.SaveChangesAsync(ct);
+        return guest;
+    }
+
     private static async Task<Team> SeedTeamAsync(QuizrDb db, long chatId, CancellationToken ct)
     {
         var team = new Team

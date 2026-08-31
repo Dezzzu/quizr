@@ -34,7 +34,7 @@
   "Commands.ManageCaptains": "Grant or revoke captaincy",
 
   "Announcement.Venue": "📍 {Venue}",
-  "Announcement.When": "🕓 {When:ddd, d MMM, HH\\:mm}",
+  "Announcement.When": "🕓 {When:ddd, dd MMM, HH\\:mm}",
   "Announcement.Price": "💵 {Price}",
   "Announcement.PlayingHeader": "Playing ({Count}/{Capacity}):",
   "Announcement.ReserveHeader": "Reserve ({Count}):",
@@ -90,7 +90,8 @@
 
   "Board.Header": "📋 <b>Upcoming games</b>",
   "Board.NoGames": "No upcoming games yet.",
-  "Board.Entry": "{When:ddd, d MMM, HH\\:mm} — {Title}",
+  "Board.Entry": "{When:ddd, dd MMM, HH\\:mm} — {Title} ({Playing}/{Capacity})",
+  "Board.EntryWithReserve": "{When:ddd, dd MMM, HH\\:mm} — {Title} ({Playing}/{Capacity} +{Reserve})",
 
   "Promotion.Message": "🎉 {Who} moved up to Playing!",
   "Promotion.UnnamedGuest": "Guest",

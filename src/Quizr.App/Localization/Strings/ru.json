@@ -34,7 +34,7 @@
   "Commands.ManageCaptains": "Назначить или снять капитанство",
 
   "Announcement.Venue": "📍 {Venue}",
-  "Announcement.When": "🕓 {When:ddd, d MMM, HH\\:mm}",
+  "Announcement.When": "🕓 {When:ddd, dd MMM, HH\\:mm}",
   "Announcement.Price": "💵 {Price}",
   "Announcement.PlayingHeader": "Играют ({Count}/{Capacity}):",
   "Announcement.ReserveHeader": "Резерв ({Count}):",
@@ -90,7 +90,8 @@
 
   "Board.Header": "📋 <b>Ближайшие игры</b>",
   "Board.NoGames": "Пока нет ближайших игр.",
-  "Board.Entry": "{When:ddd, d MMM, HH\\:mm} — {Title}",
+  "Board.Entry": "{When:ddd, dd MMM, HH\\:mm} — {Title} ({Playing}/{Capacity})",
+  "Board.EntryWithReserve": "{When:ddd, dd MMM, HH\\:mm} — {Title} ({Playing}/{Capacity} +{Reserve})",
 
   "Promotion.Message": "🎉 {Who} перешёл(-ла) в основной состав!",
   "Promotion.UnnamedGuest": "Гость",

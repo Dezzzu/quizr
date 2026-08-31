@@ -2,18 +2,19 @@ using System.Globalization;
 using System.Net;
 using System.Text;
 using Quizr.App.Localization;
+using Quizr.App.Services;
 using Quizr.App.Time;
 using Quizr.Domain;
-using Quizr.Domain.Entities;
 
 namespace Quizr.App.Rendering;
 
 // The one pinned message per chat (CLAUDE.md invariant 12) — upcoming games, date-ordered,
-// each linking to its announcement. One function, interpolated strings (STACK.md).
+// each linking to its announcement and showing how full it is. One function, interpolated
+// strings (STACK.md).
 internal static class BoardRenderer
 {
     public static string RenderText(
-        IReadOnlyList<Game> upcomingGamesByStartDate,
+        IReadOnlyList<BoardEntry> upcomingByStartDate,
         TelegramChatId chatId,
         string teamTimeZoneId,
         IStringsFor strings
@@ -22,20 +23,36 @@ internal static class BoardRenderer
         var text = new StringBuilder();
         text.Append(strings.Text("Board.Header")).Append("\n\n");
 
-        if (upcomingGamesByStartDate.Count == 0)
+        if (upcomingByStartDate.Count == 0)
         {
             text.Append(strings.Text("Board.NoGames"));
             return text.ToString();
         }
 
-        foreach (var game in upcomingGamesByStartDate)
+        foreach (var (game, playing, reserve) in upcomingByStartDate)
         {
             var local = TeamTime.ConvertToLocal(game.StartsAt, teamTimeZoneId);
             var titleHtml = MessageLink(chatId, game.AnnouncementMessageId) is { } link
                 ? $"""<a href="{link}">{WebUtility.HtmlEncode(game.Title)}</a>"""
                 : WebUtility.HtmlEncode(game.Title);
 
-            text.Append(strings.Text("Board.Entry", new { When = local, Title = titleHtml })).Append('\n');
+            // Two whole templates rather than one plus a "+n" fragment appended to it: user-
+            // visible text is never concatenated (CLAUDE.md), so a locale that wants the queue
+            // written differently — or somewhere else in the line — can say so.
+            text.Append(
+                    strings.Text(
+                        reserve > 0 ? "Board.EntryWithReserve" : "Board.Entry",
+                        new
+                        {
+                            When = local,
+                            Title = titleHtml,
+                            Playing = playing,
+                            Capacity = game.Capacity,
+                            Reserve = reserve,
+                        }
+                    )
+                )
+                .Append('\n');
         }
 
         return text.ToString().TrimEnd();

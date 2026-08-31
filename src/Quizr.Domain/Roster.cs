@@ -25,6 +25,16 @@ public static class Roster
         return new RosterSplit(queue.Take(capacity).ToList(), queue.Skip(capacity).ToList());
     }
 
+    // The count form of Take(capacity), for callers that only need "how many seats are taken"
+    // and would otherwise load a whole roster to count it — the Board, listing every upcoming
+    // game at once. Lives here rather than at the call site so the capacity rule stays in one
+    // place with Split itself.
+    public static int PlayingCount(int liveSignupCount, int capacity) => Math.Min(liveSignupCount, capacity);
+
+    // The matching count form of Skip(capacity). Zero rather than negative for a game with
+    // seats to spare, so a caller can treat "is anyone waiting" as ReserveCount > 0.
+    public static int ReserveCount(int liveSignupCount, int capacity) => Math.Max(0, liveSignupCount - capacity);
+
     public static SignupPlacement? Locate(RosterSplit split, SignupId signupId)
     {
         var playingIndex = IndexOf(split.Playing, signupId);

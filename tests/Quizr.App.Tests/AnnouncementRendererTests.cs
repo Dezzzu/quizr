@@ -36,7 +36,7 @@ public class AnnouncementRendererTests
 
         var text = AnnouncementRenderer.RenderText(game, roster, "Europe/Berlin", Strings);
 
-        text.Should().Contain("Fri, 6 Mar, 19:05");
+        text.Should().Contain("Fri, 06 Mar, 19:05");
     }
 
     [Test]

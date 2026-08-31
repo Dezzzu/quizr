@@ -19,6 +19,12 @@ namespace Quizr.App.Services;
 // to act. This is the mechanism; the periodic call that makes restoration happen without
 // anyone acting is the scheduler's job (STACK.md, M6) — RefreshAsync just needs to be safe to
 // call repeatedly.
+// One upcoming game as the Board shows it: the game, how many of its seats are taken, and how
+// many people are queued behind them. Playing is capped at Capacity, so an over-subscribed
+// game reads "8/8 +2" rather than "10/8" — the seats and the queue are separate facts, and
+// running them together would misreport how full the game is.
+public sealed record BoardEntry(Game Game, int Playing, int Reserve);
+
 public sealed class BoardService
 {
     private readonly QuizrDb _db;
@@ -50,8 +56,10 @@ public sealed class BoardService
             .OrderBy(g => g.StartsAt)
             .ToListAsync(ct);
 
+        var entries = await LoadEntriesAsync(upcomingGames, ct);
+
         var strings = _strings.For(team.Locale);
-        var text = BoardRenderer.RenderText(upcomingGames, team.ChatId, team.TimeZoneId!, strings);
+        var text = BoardRenderer.RenderText(entries, team.ChatId, team.TimeZoneId!, strings);
 
         if (
             team.BoardMessageId is { } messageId
@@ -63,6 +71,42 @@ public sealed class BoardService
         }
 
         await PostAndPinAsync(team, text, ct);
+    }
+
+    // Guests occupy seats (invariant 4), so this counts every live signup, not just members —
+    // a game whose last two seats went to someone's guests is full, and the Board has to say so.
+    //
+    // The one aggregate query is deliberate and doesn't break invariant 2: SQL only answers
+    // "how many live signups does this game have", which is a stored fact, and the playing
+    // /reserve derivation still happens in C# via Roster.PlayingCount. The alternative —
+    // loading every roster in full to count it — would be N rosters' worth of rows for a
+    // number that fits in an int.
+    private async Task<IReadOnlyList<BoardEntry>> LoadEntriesAsync(List<Game> upcomingGames, CancellationToken ct)
+    {
+        if (upcomingGames.Count == 0)
+        {
+            return [];
+        }
+
+        var gameIds = upcomingGames.Select(g => g.Id).ToList();
+        var liveByGame = await _db
+            .Signups.AsNoTracking()
+            .Where(s => gameIds.Contains(s.GameId) && s.CancelledAt == null)
+            .GroupBy(s => s.GameId)
+            .Select(g => new { GameId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.GameId, x => x.Count, ct);
+
+        return upcomingGames
+            .Select(game =>
+            {
+                var live = liveByGame.GetValueOrDefault(game.Id);
+                return new BoardEntry(
+                    game,
+                    Roster.PlayingCount(live, game.Capacity),
+                    Roster.ReserveCount(live, game.Capacity)
+                );
+            })
+            .ToList();
     }
 
     private async Task PostAndPinAsync(Team team, string text, CancellationToken ct)
