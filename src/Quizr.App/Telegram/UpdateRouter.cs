@@ -2838,7 +2838,7 @@ public sealed class UpdateRouter
 
         var selectedIds = data.SelectedPlayerIds.Select(id => new PlayerId(id)).ToList();
         var players = await _db.Players.AsNoTracking().Where(p => selectedIds.Contains(p.Id)).ToListAsync(ct);
-        var mentions = string.Join(", ", players.Select(Mention));
+        var mentions = string.Join(", ", players.Select(Mention.Of));
 
         await _dialogs.ClearAsync(dialog, ct);
 
@@ -2857,9 +2857,6 @@ public sealed class UpdateRouter
         );
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
-
-    private static string Mention(Player player) =>
-        $"""<a href="tg://user?id={player.TelegramUserId.Value}">{WebUtility.HtmlEncode(player.DisplayName)}</a>""";
 
     // One message for every promotion a single change caused (a capacity bump or a drop can
     // promote several people at once), not one per person — same reasoning as

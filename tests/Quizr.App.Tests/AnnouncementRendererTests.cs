@@ -81,7 +81,7 @@ public class AnnouncementRendererTests
 
         var text = AnnouncementRenderer.RenderText(game, roster, "Europe/Berlin", Strings);
 
-        text.Should().Contain("Alice's guest");
+        text.Should().Contain("<a href=\"tg://user?id=1\">Alice</a>'s guest");
     }
 
     [Test]
@@ -102,7 +102,7 @@ public class AnnouncementRendererTests
 
         var text = AnnouncementRenderer.RenderText(game, roster, "Europe/Berlin", Strings);
 
-        text.Should().Contain("Sasha").And.Contain("guest of Alice");
+        text.Should().Contain("Sasha").And.Contain("guest of <a href=\"tg://user?id=1\">Alice</a>");
     }
 
     [Test]
@@ -121,6 +121,44 @@ public class AnnouncementRendererTests
         var text = AnnouncementRenderer.RenderText(game, roster, "Europe/Berlin", Strings);
 
         text.Should().Contain("Sasha").And.Contain("team guest");
+    }
+
+    // Members are rendered as tg://user?id= mentions so that two people sharing a display name
+    // are still tellable apart by tapping through — the id is the stable identity, the name is
+    // only the label.
+    [Test]
+    public void MembersAreRenderedAsProfileLinksKeyedOnTheirTelegramId()
+    {
+        var roster = new RosterSplit([Signup(1, Player(7, "Alice"))], []);
+
+        var text = AnnouncementRenderer.RenderText(GameWithCapacity(2), roster, "Europe/Berlin", Strings);
+
+        text.Should().Contain("<a href=\"tg://user?id=7\">Alice</a>");
+    }
+
+    // Two members with the same display name stay individually addressable: each link points
+    // at its own profile, which is the whole reason the id is what's rendered.
+    [Test]
+    public void TwoMembersSharingADisplayNameGetSeparateProfileLinks()
+    {
+        var roster = new RosterSplit([Signup(1, Player(11, "Anna")), Signup(2, Player(22, "Anna"))], []);
+
+        var text = AnnouncementRenderer.RenderText(GameWithCapacity(2), roster, "Europe/Berlin", Strings);
+
+        text.Should().Contain("<a href=\"tg://user?id=11\">Anna</a>");
+        text.Should().Contain("<a href=\"tg://user?id=22\">Anna</a>");
+    }
+
+    // The display name is a label inside markup now, so it still has to be encoded — an
+    // unescaped '<' would break the whole message's HTML parse, not just the one name.
+    [Test]
+    public void ADisplayNameContainingMarkupIsStillEncodedInsideTheLink()
+    {
+        var roster = new RosterSplit([Signup(1, Player(9, "<b>Mallory</b>"))], []);
+
+        var text = AnnouncementRenderer.RenderText(GameWithCapacity(2), roster, "Europe/Berlin", Strings);
+
+        text.Should().Contain("<a href=\"tg://user?id=9\">&lt;b&gt;Mallory&lt;/b&gt;</a>");
     }
 
     private static Player Player(long id, string displayName) =>

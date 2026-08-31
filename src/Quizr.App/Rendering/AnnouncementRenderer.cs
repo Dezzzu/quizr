@@ -169,11 +169,15 @@ internal static class AnnouncementRenderer
     // IsMember/IsGuest read from PlayerId — the stored fact — never from whether the
     // Player/InvitedByPlayer navigation happens to be populated. A signup whose Player wasn't
     // Included would otherwise silently read as an anonymous guest instead of a missing load.
+    //
+    // Every real person here is a mention rather than plain text, so two members who share a
+    // display name are still tellable apart by tapping through to the profile. Guests are not:
+    // a guest has no Telegram account to point at, only whoever brought them.
     private static string NameOf(Signup signup, IStringsFor strings)
     {
         if (signup.IsMember)
         {
-            return WebUtility.HtmlEncode(signup.Player!.DisplayName);
+            return Mention.Of(signup.Player!);
         }
 
         if (signup.GuestName is { } guestName)
@@ -183,16 +187,13 @@ internal static class AnnouncementRenderer
             return signup.HasInviter
                 ? strings.Text(
                     "Announcement.NamedGuest",
-                    new { Name = encodedName, Inviter = WebUtility.HtmlEncode(signup.InvitedByPlayer!.DisplayName) }
+                    new { Name = encodedName, Inviter = Mention.Of(signup.InvitedByPlayer!) }
                 )
                 : strings.Text("Announcement.TeamGuest", new { Name = encodedName });
         }
 
         // Invariant 5: an unnamed guest never survives without an inviter, so this always
         // has one.
-        return strings.Text(
-            "Announcement.AnonymousGuest",
-            new { Inviter = WebUtility.HtmlEncode(signup.InvitedByPlayer!.DisplayName) }
-        );
+        return strings.Text("Announcement.AnonymousGuest", new { Inviter = Mention.Of(signup.InvitedByPlayer!) });
     }
 }
