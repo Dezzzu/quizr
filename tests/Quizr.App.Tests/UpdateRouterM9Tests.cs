@@ -755,6 +755,29 @@ public class UpdateRouterM9Tests
         bot.SentTexts(8025).Should().BeEmpty();
     }
 
+    // Done is tapped on the private view it closes, so the callback arrives with Id 0 and the
+    // real handle on EphemeralMessageId. Closing used to edit the message id straight off the
+    // callback, which meant asking Telegram to change message 0 — every ephemeral view's Done
+    // button threw "message to edit not found", while tests that simulated the tap as though
+    // it came from an ordinary message stayed green.
+    [Test]
+    public async Task DoneClosesAViewThatWasOpenedPrivately()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 8026, capacity: 5, ct);
+        await SeedCaptainAsync(db, game.TeamId, telegramUserId: 80261, ct);
+        var (router, bot) = CreateRouter(db);
+        await router.RouteAsync(CallbackUpdate(8026, 80261, CallbackData.Format(CallbackData.Manage, game.Id)), ct);
+
+        await router.RouteAsync(
+            EphemeralCallbackUpdate(8026, 80261, CallbackData.Format(CallbackData.CloseView, 0L), 55),
+            ct
+        );
+
+        bot.ClearedKeyboardCount().Should().Be(1);
+    }
+
     private static async Task<Team> SeedTeamAsync(QuizrDb db, long chatId, CancellationToken ct)
     {
         var team = new Team
@@ -886,6 +909,33 @@ public class UpdateRouterM9Tests
 
         return (game, participation);
     }
+
+    // A tap on a private message. Telegram reports Id as 0 and puts the real handle on
+    // EphemeralMessageId — the shape every button in an ephemeral view actually arrives with,
+    // and the one the ordinary builder below cannot represent.
+    private static Update EphemeralCallbackUpdate(
+        long chatId,
+        long telegramUserId,
+        string data,
+        int ephemeralMessageId
+    ) =>
+        new()
+        {
+            Id = 1,
+            CallbackQuery = new CallbackQuery
+            {
+                Id = "cq1",
+                From = new User { Id = telegramUserId, FirstName = "Test" },
+                Data = data,
+                Message = new Message
+                {
+                    Id = 0,
+                    EphemeralMessageId = ephemeralMessageId,
+                    Chat = new Chat { Id = chatId },
+                    Date = DateTime.UtcNow,
+                },
+            },
+        };
 
     private static Update CallbackUpdate(long chatId, long telegramUserId, string data) =>
         new()

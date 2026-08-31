@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using Telegram.Bot;
+using Telegram.Bot.Exceptions;
 using Telegram.Bot.Requests;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.ReplyMarkups;
@@ -35,8 +36,23 @@ internal static class TelegramBotClientTestHelper
                     : new Message { Id = 0, EphemeralMessageId = nextMessageId++ }
             );
 
+        // Telegram has no message 0, so editing one is a 400 — and 0 is exactly what
+        // Message.Id reads as for an ephemeral message. Faithfully rejecting it is what turns
+        // "addressed the wrong id" from a silent pass into a failing test: the Done button was
+        // broken for every ephemeral view for exactly this reason while the tests stayed green.
         bot.SendRequest(Arg.Any<EditMessageTextRequest>(), Arg.Any<CancellationToken>())
-            .Returns(_ => new Message { Id = nextMessageId++ });
+            .Returns(call =>
+                call.Arg<EditMessageTextRequest>().MessageId == 0
+                    ? throw new ApiRequestException("Bad Request: message to edit not found", 400)
+                    : new Message { Id = nextMessageId++ }
+            );
+
+        bot.SendRequest(Arg.Any<EditMessageReplyMarkupRequest>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+                call.Arg<EditMessageReplyMarkupRequest>().MessageId == 0
+                    ? throw new ApiRequestException("Bad Request: message to edit not found", 400)
+                    : new Message { Id = nextMessageId++ }
+            );
 
         bot.SendRequest(Arg.Any<GetChatMemberRequest>(), Arg.Any<CancellationToken>())
             .Returns(_ => new ChatMemberMember

@@ -3763,23 +3763,23 @@ public sealed class UpdateRouter
     // no text-reply step to ever end it.
     private async Task HandleCloseViewAsync(CallbackQuery callbackQuery, CancellationToken ct)
     {
-        var chatId = await ResolveChatIdAsync(new TelegramChatId(callbackQuery.Message!.Chat.Id), ct);
-        var player = await _playerBootstrap.GetOrCreateAsync(callbackQuery.From, ct);
+        if (await ResolveScopeAsync(callbackQuery, ct) is not { } scope)
+        {
+            await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
+            return;
+        }
 
-        if (await _dialogs.LoadAsync(chatId, player.Id, ct) is { } dialog)
+        if (await _dialogs.LoadAsync(scope.ChatId, scope.Player.Id, ct) is { } dialog)
         {
             await _dialogs.ClearAsync(dialog, ct);
         }
 
-        await _bot.SendRequest(
-            new EditMessageReplyMarkupRequest
-            {
-                ChatId = chatId.Value,
-                MessageId = callbackQuery.Message.MessageId,
-                ReplyMarkup = null,
-            },
-            ct
-        );
+        // Through the sender rather than the API directly: every view this closes is ephemeral
+        // now, and an ephemeral message reports MessageId as 0 with its real handle elsewhere,
+        // so the raw edit this used to make asked Telegram to change message 0 and was told the
+        // message did not exist. The sender addresses whichever kind it actually is, and
+        // swallows a keyboard that has already gone.
+        await _sender.RemoveKeyboardAsync(scope.Message, ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
