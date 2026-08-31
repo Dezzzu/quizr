@@ -14,7 +14,6 @@ using Quizr.Domain;
 using Quizr.Domain.Entities;
 using Quizr.Domain.Extensions;
 using Telegram.Bot;
-using Telegram.Bot.Requests;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
@@ -1019,7 +1018,6 @@ public sealed class UpdateRouter
     private async Task<bool> HandleEditFranchiseReplyAsync(DialogState dialog, Message message, CancellationToken ct)
     {
         var data = JsonSerializer.Deserialize<EditFranchiseDialogData>(dialog.Data)!;
-        var chatId = dialog.ChatId;
         var team = await _db.Teams.SingleAsync(t => t.Id == dialog.TeamId, ct);
         var strings = _strings.For(team.Locale);
 
@@ -1561,7 +1559,6 @@ public sealed class UpdateRouter
     private async Task<bool> HandleGuestNameReplyAsync(DialogState dialog, Message message, CancellationToken ct)
     {
         var data = JsonSerializer.Deserialize<GuestNameDialogData>(dialog.Data)!;
-        var chatId = dialog.ChatId;
         var team = await _db.Teams.SingleAsync(t => t.Id == dialog.TeamId, ct);
         var strings = _strings.For(team.Locale);
 
