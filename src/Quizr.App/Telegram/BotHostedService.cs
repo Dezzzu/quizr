@@ -43,6 +43,10 @@ public sealed class BotHostedService : BackgroundService
         // command list takes effect on the next deploy with nothing else to remember.
         await CommandMenu.RegisterAsync(_bot, _strings, stoppingToken);
 
+        // Same reasoning, same cadence: the description and short description are re-registered
+        // every startup so editing the strings file is all a copy change takes.
+        await BotProfile.RegisterAsync(_bot, _strings, stoppingToken);
+
         await _bot.ReceiveAsync(_dispatcher, ReceiverOptions, stoppingToken);
     }
 }

@@ -2,6 +2,8 @@
   "Common.DoneButton": "✅ Fertig",
   "Common.SkipButton": "Überspringen",
   "Common.CancelButton": "❌ Abbrechen",
+  "Bot.ShortDescription": "Anmeldung für Quizabende: eine Aufstellung fürs ganze Team, mit Reserve, die sich selbst pflegt.",
+  "Bot.Description": "Quizr organisiert die Anmeldung für eure Quizabende — Buttons statt Reaktionen.\n\nFügt den Bot eurem Gruppenchat hinzu und macht ihn zum Admin. Ein Captain erstellt ein Spiel, alle anderen tippen auf „Ich bin dabei“. Die Ersten füllen die Plätze, der Rest kommt in die Reserve und rückt automatisch nach, wenn jemand absagt. Gäste belegen ebenfalls Plätze.\n\nEine angepinnte Nachricht zeigt alle anstehenden Spiele und wie voll sie sind.\n\nAuf Englisch, Russisch und Deutsch.",
   "Start.Greeting": "Hallo! Ich bin Quizr — ich organisiere die Anmeldung für eure Quizabende.",
   "Help.Intro": "<b>Quizr</b> organisiert die Anmeldung für eure Quizabende — Schaltflächen statt Reaktionen auf Nachrichten, mit einer echten Teilnehmerliste, einer Warteliste, Gästen und Erinnerungen.\n\nDas meiste läuft über die Schaltflächen in der Spielankündigung: anmelden, einen Gast mitbringen, aussteigen, absagen, beenden. Diese Befehle sind für die Einrichtung und Konfiguration.",
   "Help.EveryoneHeader": "Für alle",

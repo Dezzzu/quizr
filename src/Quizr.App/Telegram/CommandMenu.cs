@@ -18,8 +18,6 @@ namespace Quizr.App.Telegram;
 // on.
 internal static class CommandMenu
 {
-    private static readonly string[] Locales = ["en", "ru", "de"];
-
     public static readonly (string Command, string DescriptionKey)[] EveryoneCommands =
     [
         ("help", "Commands.Help"),
@@ -42,7 +40,7 @@ internal static class CommandMenu
 
     public static async Task RegisterAsync(ITelegramBotClient bot, IStrings strings, CancellationToken ct)
     {
-        foreach (var locale in Locales)
+        foreach (var locale in LocaleResolver.All)
         {
             var everyone = ToBotCommands(EveryoneCommands, strings, locale);
             var everyoneAndCaptains = ToBotCommands([.. EveryoneCommands, .. CaptainOnlyCommands], strings, locale);

@@ -69,4 +69,22 @@ public class StringsTests
             localeKeys.Should().BeEquivalentTo(englishKeys, $"'{locale}.json' should have exactly en.json's keys");
         }
     }
+
+    // Telegram caps setMyDescription at 512 characters and setMyShortDescription at 120, and
+    // BotProfile sends one of each per language at startup — so a translation that runs long
+    // takes the bot down on boot against the live API, which is the worst place to learn it.
+    // Checked per locale because the same sentence is a different length in each.
+    [Test]
+    public void TheBotProfileTextFitsTelegramsLimitsInEveryLocale()
+    {
+        foreach (var (locale, templates) in Strings.LoadAll())
+        {
+            templates["Bot.Description"]
+                .Length.Should()
+                .BeLessThanOrEqualTo(512, $"'{locale}.json' Bot.Description is sent to setMyDescription");
+            templates["Bot.ShortDescription"]
+                .Length.Should()
+                .BeLessThanOrEqualTo(120, $"'{locale}.json' Bot.ShortDescription is sent to setMyShortDescription");
+        }
+    }
 }

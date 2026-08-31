@@ -10,7 +10,12 @@ namespace Quizr.App.Localization;
 // a single order that happens to look right in a DM and wrong for everyone else in a group.
 internal static class LocaleResolver
 {
-    private static readonly HashSet<string> Supported = ["en", "ru", "de"];
+    // CLAUDE.md's three first-class locales, in the order they're offered. Anything that has to
+    // do something once per language — the command menu, the bot's own profile text — reads
+    // this rather than keeping a copy that can drift out of step with what's supported.
+    public static readonly string[] All = ["en", "ru", "de"];
+
+    private static readonly HashSet<string> Supported = [.. All];
 
     public static string Resolve(
         ChatType chatType,
