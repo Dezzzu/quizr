@@ -183,6 +183,65 @@ public class UpdateRouterTests
         bot.ClearedKeyboards().Should().ContainSingle();
     }
 
+    // Reported as "lingering buttons under picking the franchise and the date, even after the
+    // game is created": the wizard's two callback-driven pickers were sent with plain SendAsync
+    // and nothing ever retired them, so both keyboards outlived the game. Worse for the branch
+    // list than mere clutter — once the NewGame dialog is gone, a stale franchise button falls
+    // through to the /editfranchise branch and opens an unrelated dialog.
+    [Test]
+    public async Task TheFranchiseAndDatePickersAreRetiredAsTheNewGameWizardMovesPastThem()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedCaptainedTeamAsync(db, chatId: 4040, telegramUserId: 4040, ct);
+        team.TimeZoneId = "Europe/Berlin";
+        var franchise = new Franchise
+        {
+            TeamId = team.Id,
+            Name = "Квиз, плиз!",
+            DefaultVenue = "The Pub",
+            DefaultCapacity = 20,
+            Schedule = new Dictionary<DayOfWeek, TimeOnly> { [DayOfWeek.Monday] = new TimeOnly(19, 0) },
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+        db.Franchises.Add(franchise);
+        await db.SaveChangesAsync(ct);
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(MessageUpdate(4040, 4040, "/newgame"), ct);
+        bot.ClearedKeyboards().Should().BeEmpty();
+
+        await router.RouteAsync(
+            CallbackUpdate(4040, 4040, CallbackData.Format(CallbackData.PickFranchise, franchise.Id)),
+            ct
+        );
+        bot.ClearedKeyboards().Should().HaveCount(1, "the branch list is spent once a franchise is chosen");
+
+        await router.RouteAsync(CallbackUpdate(4040, 4040, CallbackData.Format(CallbackData.PickDate, 0)), ct);
+        bot.ClearedKeyboards().Should().HaveCount(2, "the date list is spent once a date is chosen");
+
+        await router.RouteAsync(CallbackUpdate(4040, 4040, CallbackData.Format(CallbackData.Confirm, 0L)), ct);
+        (await db.Games.CountAsync(g => g.TeamId == team.Id, ct)).Should().Be(1);
+    }
+
+    // The one-off branch leaves the same picker behind — it just reaches its next step through
+    // a text prompt rather than another keyboard.
+    [Test]
+    public async Task TheBranchPickerIsRetiredWhenAOneOffIsChosen()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedCaptainedTeamAsync(db, chatId: 4039, telegramUserId: 4039, ct);
+        team.TimeZoneId = "Europe/Berlin";
+        await db.SaveChangesAsync(ct);
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(MessageUpdate(4039, 4039, "/newgame"), ct);
+        await router.RouteAsync(CallbackUpdate(4039, 4039, CallbackData.Format(CallbackData.OneOff, 0L)), ct);
+
+        bot.ClearedKeyboards().Should().ContainSingle();
+    }
+
     // A validation failure re-shows the very same prompt for a retry — its keyboard is still
     // exactly what's needed, so it must not be stripped the way a real advance would strip it.
     [Test]

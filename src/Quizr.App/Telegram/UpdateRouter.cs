@@ -574,6 +574,15 @@ public sealed class UpdateRouter
         CancellationToken ct
     ) => await _dialogs.SetPromptMessageAsync(dialog, await _sender.SendAsync(chatId, text, keyboard, ct), ct);
 
+    // The picker a captain just tapped is spent the moment the wizard moves past it: the branch
+    // list once a franchise is chosen, the date list once a date is. Left alone its buttons sit
+    // in the chat looking live long after the game exists — and a stale franchise button is
+    // worse than merely dead, since with the NewGame dialog gone it falls through to the
+    // /editfranchise branch and opens an unrelated dialog. Called after the next screen is
+    // sent, so a step that didn't actually advance keeps the keyboard the captain still needs.
+    private async Task RetirePickerAsync(CallbackScope scope, CancellationToken ct) =>
+        await _sender.RemoveKeyboardAsync(scope.ChatId, scope.MessageId, ct);
+
     // A chat id pulled straight off an incoming message or callback query can still carry a
     // migrated chat's pre-migration shape (CLAUDE.md's Telegram-migration note) — TeamLookup
     // already covers Team's own lookups by matching OldChatId, but the chat id constructed at
@@ -2057,6 +2066,7 @@ public sealed class UpdateRouter
         rows.Add(CancelButton.Row(strings));
 
         await _sender.SendAsync(scope.ChatId, strings.Text("NewGame.PickDate"), new InlineKeyboardMarkup(rows), ct);
+        await RetirePickerAsync(scope, ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
@@ -2088,6 +2098,7 @@ public sealed class UpdateRouter
             CancelButton.Keyboard(scope.Strings),
             ct
         );
+        await RetirePickerAsync(scope, ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
@@ -2150,6 +2161,7 @@ public sealed class UpdateRouter
             CancelButton.Keyboard(scope.Strings),
             ct
         );
+        await RetirePickerAsync(scope, ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
@@ -2185,6 +2197,7 @@ public sealed class UpdateRouter
         var updated = data with { Step = NewGameDialogData.Confirm, Date = dates[index], Time = time };
         await _dialogs.SaveDataAsync(dialog, updated, ct);
         await SendConfirmScreenAsync(dialog, scope.ChatId, updated, scope.Strings, ct);
+        await RetirePickerAsync(scope, ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
