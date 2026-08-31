@@ -49,6 +49,8 @@
   "Announcement.MyGuestsButton": "👥 Мои гости",
   "Announcement.DropButton": "❌ Не смогу прийти",
   "Announcement.NudgeButton": "📣 Напомнить",
+  "Announcement.ManageButton": "🛠 Управление",
+  "Manage.Header": "Действия капитана для <b>{Title}</b>:",
   "Announcement.ManageRosterButton": "📋 Управление составом",
   "Announcement.ManagePlayersButton": "👤 Управление игроками",
   "Announcement.ManageGuestsButton": "👥 Управление гостями",

@@ -233,7 +233,7 @@ public class GameServiceTests
         await signups.JoinAsync(game, playing.Id, ct);
         await signups.JoinAsync(game, reserve.Id, ct);
 
-        var playingMembers = (await gameService.LoadPlayingMembersAsync(game, team, captain.Actor, ct)).Value;
+        var playingMembers = await gameService.LoadPlayingMembersAsync(game, ct);
 
         playingMembers.Select(m => m.PlayerId).Should().Equal(playing.Id);
         playingMembers.Select(m => m.PlayerId).Should().NotContain(reserve.Id);
@@ -263,16 +263,16 @@ public class GameServiceTests
             )
         ).Value;
 
-        var first = await gameService.TryNudgeAsync(game, team, captain.Actor, ct);
+        var first = await gameService.TryNudgeAsync(game, ct);
         first.IsSuccess.Should().BeTrue();
         game.LastNudgedAt.Should().Be(clock.GetUtcNow());
 
-        var second = await gameService.TryNudgeAsync(game, team, captain.Actor, ct);
+        var second = await gameService.TryNudgeAsync(game, ct);
         second.IsSuccess.Should().BeFalse();
         second.Error.Should().BeOfType<BusinessError.NudgeOnCooldown>();
 
         clock.Advance(TimeSpan.FromMinutes(5));
-        var third = await gameService.TryNudgeAsync(game, team, captain.Actor, ct);
+        var third = await gameService.TryNudgeAsync(game, ct);
         third.IsSuccess.Should().BeTrue();
     }
 

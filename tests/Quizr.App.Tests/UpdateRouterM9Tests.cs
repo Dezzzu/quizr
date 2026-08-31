@@ -543,17 +543,20 @@ public class UpdateRouterM9Tests
     }
 
     [Test]
-    public async Task NonCaptainsCannotOpenNudge()
+    public async Task AnyoneCanOpenNudgeNotJustCaptains()
     {
         var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var game = await SeedGameAsync(db, chatId: 8017, capacity: 5, ct);
+        await SeedMemberAsync(db, game.TeamId, telegramUserId: 80171, ct);
         var (router, bot) = CreateRouter(db);
+        await router.RouteAsync(CallbackUpdate(8017, 80171, CallbackData.Format(CallbackData.Join, game.Id)), ct);
 
-        await router.RouteAsync(CallbackUpdate(8017, 80171, CallbackData.Format(CallbackData.Nudge, game.Id)), ct);
+        // 80172 is an ordinary member with no captaincy of any kind.
+        await router.RouteAsync(CallbackUpdate(8017, 80172, CallbackData.Format(CallbackData.Nudge, game.Id)), ct);
 
-        bot.AnsweredCallbackAlerts().Should().ContainSingle();
-        (await db.DialogStates.CountAsync(d => d.ChatId == new TelegramChatId(8017), ct)).Should().Be(0);
+        (await db.DialogStates.CountAsync(d => d.ChatId == new TelegramChatId(8017), ct)).Should().Be(1);
+        bot.EphemeralTexts().Should().Contain(e => e.ReceiverUserId == 80172);
     }
 
     // The field-picker keyboard shown right after /newfranchise finishes is the same one
@@ -729,6 +732,27 @@ public class UpdateRouterM9Tests
             .ContainSingle(e => e.Text.Contains("Sasha", StringComparison.Ordinal))
             .Subject;
         choice.ReceiverUserId.Should().Be(80242, "the guest belongs to the dropped player, not the captain");
+    }
+
+    // The one captain-only button on the announcement opens privately, so the rest of the team
+    // never sees what is behind it.
+    [Test]
+    public async Task TheManageDoorOpensPrivatelyForACaptainAndRefusesEveryoneElse()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 8025, capacity: 5, ct);
+        await SeedCaptainAsync(db, game.TeamId, telegramUserId: 80251, ct);
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(CallbackUpdate(8025, 80252, CallbackData.Format(CallbackData.Manage, game.Id)), ct);
+        bot.AnsweredCallbackAlerts().Should().ContainSingle();
+        bot.EphemeralTexts().Should().BeEmpty();
+
+        await router.RouteAsync(CallbackUpdate(8025, 80251, CallbackData.Format(CallbackData.Manage, game.Id)), ct);
+
+        bot.EphemeralTexts().Should().ContainSingle(e => e.ReceiverUserId == 80251);
+        bot.SentTexts(8025).Should().BeEmpty();
     }
 
     private static async Task<Team> SeedTeamAsync(QuizrDb db, long chatId, CancellationToken ct)

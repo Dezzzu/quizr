@@ -18,6 +18,12 @@ internal static class CallbackData
     public const char Nudge = 'v';
     public const char ManageRoster = 'w';
 
+    // The one captain-only button the announcement carries. Telegram has no per-viewer
+    // keyboard — a message shows the same buttons to everybody — so the captain actions live
+    // behind this single door and open in a message only the captain can see, rather than
+    // five buttons that refuse most of the team.
+    public const char Manage = 'M';
+
     // Guest-scoped follow-ups — carry a SignupId.
     public const char SkipGuestName = 'N';
     public const char KeepGuest = 'K';

@@ -49,6 +49,8 @@
   "Announcement.MyGuestsButton": "👥 My guests",
   "Announcement.DropButton": "❌ Can't make it",
   "Announcement.NudgeButton": "📣 Nudge",
+  "Announcement.ManageButton": "🛠 Manage",
+  "Manage.Header": "Captain actions for <b>{Title}</b>:",
   "Announcement.ManageRosterButton": "📋 Manage roster",
   "Announcement.ManagePlayersButton": "👤 Manage players",
   "Announcement.ManageGuestsButton": "👥 Manage guests",

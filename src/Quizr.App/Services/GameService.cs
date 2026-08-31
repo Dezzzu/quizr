@@ -82,12 +82,10 @@ public interface IGameService
     // Nudge's target list — CLAUDE.md/VISION.md: "ping the players who haven't arrived yet,"
     // meaning people who signed up and are late, not people who never signed up at all.
     // Guests are excluded: a guest signup has no PlayerId, so there's nobody to @mention.
-    Task<Result<IReadOnlyList<Membership>>> LoadPlayingMembersAsync(
-        Game game,
-        Team team,
-        Actor actor,
-        CancellationToken ct
-    );
+    //
+    // Not captain-only: anyone waiting on a late player can chase them, and TryNudgeAsync's
+    // cooldown is what keeps that from becoming a bludgeon.
+    Task<IReadOnlyList<Membership>> LoadPlayingMembersAsync(Game game, CancellationToken ct);
 
     Task<Result<IReadOnlyList<MemberSignupStatus>>> LoadMemberStatusesAsync(
         Game game,
@@ -96,7 +94,7 @@ public interface IGameService
         CancellationToken ct
     );
 
-    Task<Result<Unit>> TryNudgeAsync(Game game, Team team, Actor actor, CancellationToken ct);
+    Task<Result<Unit>> TryNudgeAsync(Game game, CancellationToken ct);
 
     // The gate for a confirm step that has nothing to load or write yet — declining asks
     // "are you sure?" first, and offering that keyboard to someone who could never go through
@@ -404,19 +402,8 @@ public sealed class GameService : IGameService
         return allowed.IsSuccess ? TeamGuard.EnsureTimeZoneConfigured(team) : allowed.Error;
     }
 
-    public async Task<Result<IReadOnlyList<Membership>>> LoadPlayingMembersAsync(
-        Game game,
-        Team team,
-        Actor actor,
-        CancellationToken ct
-    )
+    public async Task<IReadOnlyList<Membership>> LoadPlayingMembersAsync(Game game, CancellationToken ct)
     {
-        var allowed = await _guard.RequireCaptainAsync(team, actor, ct);
-        if (!allowed.IsSuccess)
-        {
-            return allowed.Error;
-        }
-
         var liveSignups = await _db
             .Signups.AsNoTracking()
             .Where(s => s.GameId == game.Id && s.CancelledAt == null)
@@ -466,14 +453,8 @@ public sealed class GameService : IGameService
         return members.Select(m => new MemberSignupStatus(m, signedUpSet.Contains(m.PlayerId))).ToList();
     }
 
-    public async Task<Result<Unit>> TryNudgeAsync(Game game, Team team, Actor actor, CancellationToken ct)
+    public async Task<Result<Unit>> TryNudgeAsync(Game game, CancellationToken ct)
     {
-        var allowed = await _guard.RequireCaptainAsync(team, actor, ct);
-        if (!allowed.IsSuccess)
-        {
-            return allowed.Error;
-        }
-
         var now = _clock.GetUtcNow();
         if (game.LastNudgedAt is { } lastNudgedAt && now < lastNudgedAt + NudgeCooldown)
         {

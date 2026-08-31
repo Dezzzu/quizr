@@ -71,10 +71,15 @@ internal static class AnnouncementRenderer
         return text.ToString().TrimEnd();
     }
 
-    // Self-serve buttons before a game finishes or is declined (invariant 8); after, just the
-    // captain-only door into the Manage roster view (design decision #4) replaces them, or
-    // nothing at all for a declined game — there's no roster to manage, but it stays visible
-    // for the record (invariant 7).
+    // What everybody can do, plus one door to what only a captain can. Telegram shows a
+    // message's keyboard identically to every member — there is no per-viewer variant — so the
+    // captain actions sit behind Manage and open privately, rather than five buttons that
+    // refuse most of the team. Nudge stays out here with the self-serve ones: anyone waiting
+    // on a late player can chase them, and GameService's own cooldown is what stops it being
+    // used as a bludgeon.
+    //
+    // A declined game keeps no buttons at all — there's no roster left to act on, but it stays
+    // visible for the record (invariant 7).
     public static InlineKeyboardMarkup RenderKeyboard(Game game, IStringsFor strings)
     {
         var gameId = game.Id;
@@ -87,12 +92,7 @@ internal static class AnnouncementRenderer
         if (game.IsFinished)
         {
             return new([
-                [
-                    InlineKeyboardButton.WithCallbackData(
-                        strings.Text("Announcement.ManageRosterButton"),
-                        CallbackData.Format(CallbackData.ManageRoster, gameId)
-                    ),
-                ],
+                [ManageButton(gameId, strings)],
             ]);
         }
 
@@ -101,6 +101,10 @@ internal static class AnnouncementRenderer
                 InlineKeyboardButton.WithCallbackData(
                     strings.Text("Announcement.JoinButton"),
                     CallbackData.Format(CallbackData.Join, gameId)
+                ),
+                InlineKeyboardButton.WithCallbackData(
+                    strings.Text("Announcement.DropButton"),
+                    CallbackData.Format(CallbackData.Drop, gameId)
                 ),
             ],
             [
@@ -115,15 +119,39 @@ internal static class AnnouncementRenderer
             ],
             [
                 InlineKeyboardButton.WithCallbackData(
-                    strings.Text("Announcement.DropButton"),
-                    CallbackData.Format(CallbackData.Drop, gameId)
-                ),
-                InlineKeyboardButton.WithCallbackData(
                     strings.Text("Announcement.NudgeButton"),
                     CallbackData.Format(CallbackData.Nudge, gameId)
                 ),
+                ManageButton(gameId, strings),
             ],
-            [
+        ]);
+    }
+
+    private static InlineKeyboardButton ManageButton(GameId gameId, IStringsFor strings) =>
+        InlineKeyboardButton.WithCallbackData(
+            strings.Text("Announcement.ManageButton"),
+            CallbackData.Format(CallbackData.Manage, gameId)
+        );
+
+    // What opens behind that door, private to the captain who tapped it. A finished game has
+    // only its roster left to edit (invariant 11); a live one has everything else.
+    public static InlineKeyboardMarkup RenderManagePanel(Game game, IStringsFor strings)
+    {
+        var gameId = game.Id;
+        var rows = new List<IEnumerable<InlineKeyboardButton>>();
+
+        if (game.IsFinished)
+        {
+            rows.Add([
+                InlineKeyboardButton.WithCallbackData(
+                    strings.Text("Announcement.ManageRosterButton"),
+                    CallbackData.Format(CallbackData.ManageRoster, gameId)
+                ),
+            ]);
+        }
+        else
+        {
+            rows.Add([
                 InlineKeyboardButton.WithCallbackData(
                     strings.Text("Announcement.ManagePlayersButton"),
                     CallbackData.Format(CallbackData.ManagePlayers, gameId)
@@ -132,8 +160,8 @@ internal static class AnnouncementRenderer
                     strings.Text("Announcement.ManageGuestsButton"),
                     CallbackData.Format(CallbackData.ManageGuests, gameId)
                 ),
-            ],
-            [
+            ]);
+            rows.Add([
                 InlineKeyboardButton.WithCallbackData(
                     strings.Text("Announcement.FinishButton"),
                     CallbackData.Format(CallbackData.FinishGame, gameId)
@@ -142,8 +170,11 @@ internal static class AnnouncementRenderer
                     strings.Text("Announcement.DeclineButton"),
                     CallbackData.Format(CallbackData.DeclineGame, gameId)
                 ),
-            ],
-        ]);
+            ]);
+        }
+
+        rows.Add(DoneButton.Row(strings));
+        return new InlineKeyboardMarkup(rows);
     }
 
     // A real, clickable Telegram hashtag — internal whitespace becomes '_' so it stays one

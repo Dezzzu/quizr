@@ -1,6 +1,7 @@
 using AwesomeAssertions;
 using Quizr.App.Localization;
 using Quizr.App.Rendering;
+using Quizr.App.Telegram;
 using Quizr.Domain;
 using Quizr.Domain.Entities;
 
@@ -159,6 +160,87 @@ public class AnnouncementRendererTests
         var text = AnnouncementRenderer.RenderText(GameWithCapacity(2), roster, "Europe/Berlin", Strings);
 
         text.Should().Contain("<a href=\"tg://user?id=9\">&lt;b&gt;Mallory&lt;/b&gt;</a>");
+    }
+
+    // Telegram shows one keyboard to everyone, so the captain-only actions sit behind a single
+    // door rather than as five buttons most of the team can only be refused by.
+    [Test]
+    public void TheAnnouncementCarriesOnlySelfServeButtonsAndOneManageDoor()
+    {
+        var keyboard = AnnouncementRenderer.RenderKeyboard(GameWithCapacity(5), Strings);
+
+        var verbs = keyboard.InlineKeyboard.SelectMany(row => row).Select(b => b.CallbackData![0]).ToList();
+
+        verbs
+            .Should()
+            .Equal(
+                CallbackData.Join,
+                CallbackData.Drop,
+                CallbackData.Guest,
+                CallbackData.MyGuests,
+                CallbackData.Nudge,
+                CallbackData.Manage
+            );
+    }
+
+    // Nudge is everyone's: whoever is waiting on a late player can chase them, and the
+    // cooldown in GameService is what keeps that from becoming a bludgeon.
+    [Test]
+    public void NoCaptainOnlyActionAppearsOnTheAnnouncementItself()
+    {
+        var keyboard = AnnouncementRenderer.RenderKeyboard(GameWithCapacity(5), Strings);
+
+        var verbs = keyboard.InlineKeyboard.SelectMany(row => row).Select(b => b.CallbackData![0]).ToList();
+
+        verbs
+            .Should()
+            .NotContain([
+                CallbackData.ManagePlayers,
+                CallbackData.ManageGuests,
+                CallbackData.FinishGame,
+                CallbackData.DeclineGame,
+                CallbackData.ManageRoster,
+            ]);
+    }
+
+    [Test]
+    public void TheManagePanelHoldsTheCaptainActionsForALiveGame()
+    {
+        var keyboard = AnnouncementRenderer.RenderManagePanel(GameWithCapacity(5), Strings);
+
+        var verbs = keyboard.InlineKeyboard.SelectMany(row => row).Select(b => b.CallbackData![0]).ToList();
+
+        verbs
+            .Should()
+            .Contain([
+                CallbackData.ManagePlayers,
+                CallbackData.ManageGuests,
+                CallbackData.FinishGame,
+                CallbackData.DeclineGame,
+            ]);
+    }
+
+    // A finished game has only its roster left to edit (invariant 11), so that's all the door
+    // opens onto — and the announcement still shows the same neutral Manage button.
+    [Test]
+    public void AFinishedGameOffersOnlyTheRosterBehindTheSameDoor()
+    {
+        var game = GameWithCapacity(5);
+        game.FinishedAt = DateTimeOffset.UtcNow;
+
+        var announcement = AnnouncementRenderer.RenderKeyboard(game, Strings);
+        var panel = AnnouncementRenderer.RenderManagePanel(game, Strings);
+
+        announcement
+            .InlineKeyboard.SelectMany(row => row)
+            .Select(b => b.CallbackData![0])
+            .Should()
+            .Equal(CallbackData.Manage);
+        panel
+            .InlineKeyboard.SelectMany(row => row)
+            .Select(b => b.CallbackData![0])
+            .Should()
+            .Contain(CallbackData.ManageRoster);
     }
 
     private static Player Player(long id, string displayName) =>

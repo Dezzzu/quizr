@@ -163,7 +163,17 @@ public class MessageEditDebouncerTests
 
         await debouncer.ScheduleAsync(team.ChatId, new TelegramMessageId(100), "Quiz Night", null, ct);
         timeProvider.Advance(WindowPastDebounce);
-        await WaitUntilAsync(() => bot.SentTexts(team.ChatId.Value).Count > 0, ct);
+
+        // Waits for the repost to have been *recorded*, not merely sent. RepostAnnouncementAsync
+        // saves the new message id after posting it, so waiting on the send alone leaves a
+        // window where the message has gone out and the game still points at the old id —
+        // which is exactly the assertion below, and made this test flaky.
+        await WaitUntilAsync(
+            async () =>
+                (await seedDb.Games.AsNoTracking().SingleAsync(g => g.Id == game.Id, ct)).AnnouncementMessageId
+                != new TelegramMessageId(100),
+            ct
+        );
 
         var refreshed = await seedDb.Games.AsNoTracking().SingleAsync(g => g.Id == game.Id, ct);
         refreshed.AnnouncementMessageId.Should().NotBe(new TelegramMessageId(100));
@@ -181,6 +191,15 @@ public class MessageEditDebouncerTests
         services.AddScoped<AnnouncementService>();
 
         return services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+    }
+
+    private static async Task WaitUntilAsync(Func<Task<bool>> condition, CancellationToken ct)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(2);
+        while (!await condition() && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(10, ct);
+        }
     }
 
     private static async Task WaitUntilAsync(Func<bool> condition, CancellationToken ct)

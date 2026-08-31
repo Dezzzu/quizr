@@ -49,6 +49,8 @@
   "Announcement.MyGuestsButton": "👥 Meine Gäste",
   "Announcement.DropButton": "❌ Kann nicht kommen",
   "Announcement.NudgeButton": "📣 Erinnern",
+  "Announcement.ManageButton": "🛠 Verwalten",
+  "Manage.Header": "Captain-Aktionen für <b>{Title}</b>:",
   "Announcement.ManageRosterButton": "📋 Teilnehmerliste verwalten",
   "Announcement.ManagePlayersButton": "👤 Spieler verwalten",
   "Announcement.ManageGuestsButton": "👥 Gäste verwalten",

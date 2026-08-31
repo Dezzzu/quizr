@@ -1592,6 +1592,7 @@ public sealed class UpdateRouter
             case CallbackData.Stay:
             case CallbackData.MyGuests:
             case CallbackData.Nudge:
+            case CallbackData.Manage:
             case CallbackData.ManageRoster:
             case CallbackData.ManagePlayers:
             case CallbackData.ManageGuests:
@@ -1706,6 +1707,10 @@ public sealed class UpdateRouter
 
             case CallbackData.Nudge:
                 await HandleNudgeButtonAsync(game, scope, callbackQuery, ct);
+                break;
+
+            case CallbackData.Manage:
+                await HandleManageButtonAsync(game, scope, callbackQuery, ct);
                 break;
 
             case CallbackData.ManageRoster:
@@ -2747,6 +2752,35 @@ public sealed class UpdateRouter
     // --- Manage roster (design decision #4): a Played toggle plus Add player, on a
     // finished game's captain-only button. ---
 
+    // The single captain-only button the announcement carries, opening privately so the rest
+    // of the team never sees the actions behind it. The check is here rather than on each
+    // action because this is the only way in — every button in the panel still checks for
+    // itself, since a stale panel outlives the captaincy that opened it.
+    private async Task HandleManageButtonAsync(
+        Game game,
+        CallbackScope scope,
+        CallbackQuery callbackQuery,
+        CancellationToken ct
+    )
+    {
+        var allowed = await _games.EnsureCanManageAsync(scope.Team, scope.Actor, ct);
+        if (!allowed.IsSuccess)
+        {
+            await AnswerAlertAsync(callbackQuery, scope.Strings.Text(ErrorKey(allowed.Error)), ct);
+            return;
+        }
+
+        await _sender.SendEphemeralAsync(
+            scope.ChatId,
+            scope.Actor.TelegramUserId,
+            scope.Strings.Text("Manage.Header", new { Title = WebUtility.HtmlEncode(game.Title) }),
+            AnnouncementRenderer.RenderManagePanel(game, scope.Strings),
+            callbackQuery.Id,
+            ct
+        );
+        await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
+    }
+
     private async Task HandleManageRosterButtonAsync(
         Game game,
         CallbackScope scope,
@@ -2884,17 +2918,12 @@ public sealed class UpdateRouter
         CancellationToken ct
     )
     {
-        var loaded = await _games.LoadPlayingMembersAsync(game, scope.Team, scope.Actor, ct);
-        if (!loaded.IsSuccess)
-        {
-            await AnswerAlertAsync(callbackQuery, scope.Strings.Text(ErrorKey(loaded.Error)), ct);
-            return;
-        }
-
-        // The captain doing the nudging is presumably at the venue themselves — that's why
+        // Whoever is doing the nudging is presumably at the venue themselves — that's why
         // they're the one noticing who's late — so they're never a nudge target even if
         // they're also signed up to play.
-        var playing = loaded.Value.Where(m => m.PlayerId != scope.Player.Id).ToList();
+        var playing = (await _games.LoadPlayingMembersAsync(game, ct))
+            .Where(m => m.PlayerId != scope.Player.Id)
+            .ToList();
         if (playing.Count == 0)
         {
             await AnswerAlertAsync(callbackQuery, scope.Strings.Text("Nudge.NobodyToNudge"), ct);
@@ -2970,14 +2999,7 @@ public sealed class UpdateRouter
             return;
         }
 
-        var loaded = await _dialogs.LoadForCaptainAsync(scope.Team, scope.Actor, DialogKinds.Nudge, ct);
-        if (!loaded.IsSuccess)
-        {
-            await AnswerAlertAsync(callbackQuery, scope.Strings.Text(ErrorKey(loaded.Error)), ct);
-            return;
-        }
-
-        if (loaded.Value is not { } dialog)
+        if (await _dialogs.LoadOfKindAsync(scope.ChatId, scope.Player.Id, DialogKinds.Nudge, ct) is not { } dialog)
         {
             await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
             return;
@@ -3014,14 +3036,9 @@ public sealed class UpdateRouter
 
         await _dialogs.SaveDataAsync(dialog, data with { SelectedPlayerIds = selected }, ct);
 
-        var loaded = await _games.LoadPlayingMembersAsync(game, scope.Team, scope.Actor, ct);
-        if (!loaded.IsSuccess)
-        {
-            await AnswerAlertAsync(callbackQuery, scope.Strings.Text(ErrorKey(loaded.Error)), ct);
-            return;
-        }
-
-        var playing = loaded.Value.Where(m => m.PlayerId != scope.Player.Id).ToList();
+        var playing = (await _games.LoadPlayingMembersAsync(game, ct))
+            .Where(m => m.PlayerId != scope.Player.Id)
+            .ToList();
         var (text, keyboard) = BuildNudgeView(game, playing, selected, scope.Strings);
         await _sender.TryEditImmediatelyAsync(scope.Message, text, keyboard, ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
@@ -3044,7 +3061,7 @@ public sealed class UpdateRouter
             return;
         }
 
-        var result = await _games.TryNudgeAsync(game, scope.Team, scope.Actor, ct);
+        var result = await _games.TryNudgeAsync(game, ct);
         if (!result.IsSuccess)
         {
             await AnswerAlertAsync(callbackQuery, strings.Text(ErrorKey(result.Error)), ct);
