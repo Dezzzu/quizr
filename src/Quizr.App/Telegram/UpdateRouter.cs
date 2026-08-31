@@ -566,7 +566,7 @@ public sealed class UpdateRouter
         IStringsFor Strings,
         Player Player,
         Actor Actor,
-        TelegramMessageId MessageId
+        MessageRef Message
     );
 
     private async Task<CallbackScope?> ResolveScopeAsync(CallbackQuery callbackQuery, CancellationToken ct)
@@ -584,13 +584,22 @@ public sealed class UpdateRouter
         var player = await _playerBootstrap.GetOrCreateAsync(callbackQuery.From, ct);
         await _playerBootstrap.EnsureMembershipAsync(team.Id, player.Id, ct);
 
+        var receiver = new TelegramUserId(callbackQuery.From.Id);
+
+        // A tap on an ephemeral message reports Message.Id as 0 and carries the real handle on
+        // EphemeralMessageId, so which of the two this is decides how anything downstream can
+        // edit it back.
+        var message = callbackQuery.Message!.EphemeralMessageId is { } ephemeralId
+            ? MessageRef.Ephemeral(team.ChatId, new TelegramMessageId(ephemeralId), receiver)
+            : MessageRef.Ordinary(team.ChatId, new TelegramMessageId(callbackQuery.Message.MessageId));
+
         return new CallbackScope(
             team.ChatId,
             team,
             _strings.For(team.Locale),
             player,
-            new Actor(player.Id, new TelegramUserId(callbackQuery.From.Id)),
-            new TelegramMessageId(callbackQuery.Message!.MessageId)
+            new Actor(player.Id, receiver),
+            message
         );
     }
 
@@ -612,7 +621,7 @@ public sealed class UpdateRouter
     // /editfranchise branch and opens an unrelated dialog. Called after the next screen is
     // sent, so a step that didn't actually advance keeps the keyboard the captain still needs.
     private async Task RetirePickerAsync(CallbackScope scope, CancellationToken ct) =>
-        await _sender.RemoveKeyboardAsync(scope.ChatId, scope.MessageId, ct);
+        await _sender.RemoveKeyboardAsync(scope.Message, ct);
 
     // A chat id pulled straight off an incoming message or callback query can still carry a
     // migrated chat's pre-migration shape (CLAUDE.md's Telegram-migration note) — TeamLookup
@@ -1703,10 +1712,16 @@ public sealed class UpdateRouter
                 ),
             ],
         ]);
-        await _sender.SendAsync(
+
+        // Ephemeral: nobody else needs to watch someone weigh up leaving, and the answer to
+        // either button lands back on this same private message rather than the group. The
+        // roster change itself still shows up publicly, on the announcement.
+        await _sender.SendEphemeralAsync(
             scope.ChatId,
+            scope.Actor.TelegramUserId,
             scope.Strings.Text("Drop.ConfirmPrompt", new { Title = WebUtility.HtmlEncode(game.Title) }),
             keyboard,
+            callbackQuery.Id,
             ct
         );
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
@@ -1728,13 +1743,7 @@ public sealed class UpdateRouter
 
         await _announcements.RefreshAsync(game, scope.Team, ct);
 
-        await _sender.TryEditImmediatelyAsync(
-            scope.ChatId,
-            scope.MessageId,
-            scope.Strings.Text("Drop.Cancelled"),
-            null,
-            ct
-        );
+        await _sender.TryEditImmediatelyAsync(scope.Message, scope.Strings.Text("Drop.Cancelled"), null, ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
 
         var outcome = result.Value;
@@ -1748,13 +1757,7 @@ public sealed class UpdateRouter
 
     private async Task HandleStayAsync(CallbackScope scope, CallbackQuery callbackQuery, CancellationToken ct)
     {
-        await _sender.TryEditImmediatelyAsync(
-            scope.ChatId,
-            scope.MessageId,
-            scope.Strings.Text("Drop.StillIn"),
-            null,
-            ct
-        );
+        await _sender.TryEditImmediatelyAsync(scope.Message, scope.Strings.Text("Drop.StillIn"), null, ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
@@ -1828,7 +1831,7 @@ public sealed class UpdateRouter
 
         var remaining = await _signups.LoadLiveGuestsAsync(game, scope.Player.Id, ct);
         var (text, keyboard) = BuildMyGuestsView(game, remaining, scope.Strings);
-        await _sender.TryEditImmediatelyAsync(scope.ChatId, scope.MessageId, text, keyboard, ct);
+        await _sender.TryEditImmediatelyAsync(scope.Message, text, keyboard, ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, scope.Strings.Text("MyGuests.Removed"), cancellationToken: ct);
 
         await SendPromotionMessagesAsync(scope.ChatId, outcome.NewlyPromoted, scope.Strings, ct);
@@ -1869,13 +1872,7 @@ public sealed class UpdateRouter
             await _dialogs.ClearAsync(dialog, ct);
         }
 
-        await _sender.TryEditImmediatelyAsync(
-            scope.ChatId,
-            scope.MessageId,
-            scope.Strings.Text("Guest.SkippedName"),
-            null,
-            ct
-        );
+        await _sender.TryEditImmediatelyAsync(scope.Message, scope.Strings.Text("Guest.SkippedName"), null, ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
@@ -1897,8 +1894,7 @@ public sealed class UpdateRouter
         var outcome = result.Value;
         var encodedName = WebUtility.HtmlEncode(outcome.Guest.GuestName);
         await _sender.TryEditImmediatelyAsync(
-            scope.ChatId,
-            scope.MessageId,
+            scope.Message,
             scope.Strings.Text(keep ? "Guest.Kept" : "Guest.Removed", new { Name = encodedName }),
             null,
             ct
@@ -2155,8 +2151,7 @@ public sealed class UpdateRouter
         }
 
         await _sender.TryEditImmediatelyAsync(
-            scope.ChatId,
-            scope.MessageId,
+            scope.Message,
             scope.Strings.Text("Franchise.ArchivedConfirm", new { Name = WebUtility.HtmlEncode(franchise.Name) }),
             null,
             ct
@@ -2467,7 +2462,7 @@ public sealed class UpdateRouter
         await _db.SaveChangesAsync(ct);
         await _board.RefreshAsync(team, ct);
 
-        await _sender.TryEditImmediatelyAsync(scope.ChatId, scope.MessageId, strings.Text("NewGame.Created"), null, ct);
+        await _sender.TryEditImmediatelyAsync(scope.Message, strings.Text("NewGame.Created"), null, ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
@@ -2485,7 +2480,7 @@ public sealed class UpdateRouter
             await _dialogs.ClearAsync(dialog, ct);
         }
 
-        await _sender.TryEditImmediatelyAsync(scope.ChatId, scope.MessageId, scope.Strings.Text(key), null, ct);
+        await _sender.TryEditImmediatelyAsync(scope.Message, scope.Strings.Text(key), null, ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
@@ -2678,8 +2673,7 @@ public sealed class UpdateRouter
         }
 
         await _sender.TryEditImmediatelyAsync(
-            scope.ChatId,
-            scope.MessageId,
+            scope.Message,
             RosterManagementRenderer.RenderText(game, roster.Value, scope.Strings),
             RosterManagementRenderer.RenderKeyboard(game, roster.Value, scope.Strings),
             ct
@@ -2852,7 +2846,7 @@ public sealed class UpdateRouter
 
         var playing = loaded.Value.Where(m => m.PlayerId != scope.Player.Id).ToList();
         var (text, keyboard) = BuildNudgeView(game, playing, selected, scope.Strings);
-        await _sender.TryEditImmediatelyAsync(scope.ChatId, scope.MessageId, text, keyboard, ct);
+        await _sender.TryEditImmediatelyAsync(scope.Message, text, keyboard, ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
@@ -2892,13 +2886,7 @@ public sealed class UpdateRouter
             null,
             ct
         );
-        await _sender.TryEditImmediatelyAsync(
-            scope.ChatId,
-            scope.MessageId,
-            strings.Text("Nudge.PickerClosed"),
-            null,
-            ct
-        );
+        await _sender.TryEditImmediatelyAsync(scope.Message, strings.Text("Nudge.PickerClosed"), null, ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
@@ -2991,25 +2979,13 @@ public sealed class UpdateRouter
         await _announcements.RefreshAsync(game, scope.Team, ct);
         await _board.RefreshAsync(scope.Team, ct);
 
-        await _sender.TryEditImmediatelyAsync(
-            scope.ChatId,
-            scope.MessageId,
-            scope.Strings.Text("Decline.Declined"),
-            null,
-            ct
-        );
+        await _sender.TryEditImmediatelyAsync(scope.Message, scope.Strings.Text("Decline.Declined"), null, ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
     private async Task HandleCancelDeclineAsync(CallbackScope scope, CallbackQuery callbackQuery, CancellationToken ct)
     {
-        await _sender.TryEditImmediatelyAsync(
-            scope.ChatId,
-            scope.MessageId,
-            scope.Strings.Text("Decline.Cancelled"),
-            null,
-            ct
-        );
+        await _sender.TryEditImmediatelyAsync(scope.Message, scope.Strings.Text("Decline.Cancelled"), null, ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
@@ -3161,8 +3137,7 @@ public sealed class UpdateRouter
         }
 
         await _sender.TryEditImmediatelyAsync(
-            scope.ChatId,
-            scope.MessageId,
+            scope.Message,
             ManagePlayersRenderer.RenderText(game, statuses.Value, strings),
             ManagePlayersRenderer.RenderKeyboard(statuses.Value, strings),
             ct
@@ -3311,7 +3286,7 @@ public sealed class UpdateRouter
         }
 
         var (text, keyboard) = BuildManageGuestsView(game, remaining.Value, strings);
-        await _sender.TryEditImmediatelyAsync(scope.ChatId, scope.MessageId, text, keyboard, ct);
+        await _sender.TryEditImmediatelyAsync(scope.Message, text, keyboard, ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
 
         await SendPromotionMessagesAsync(scope.ChatId, outcome.NewlyPromoted, strings, ct);
@@ -3357,7 +3332,7 @@ public sealed class UpdateRouter
         await _db.SaveChangesAsync(ct);
 
         var (text, keyboard) = BuildReminderSettingsView(membership, strings);
-        await _sender.TryEditImmediatelyAsync(scope.ChatId, scope.MessageId, text, keyboard, ct);
+        await _sender.TryEditImmediatelyAsync(scope.Message, text, keyboard, ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
@@ -3482,7 +3457,7 @@ public sealed class UpdateRouter
         }
 
         var (text, keyboard) = BuildManageCaptainsView(result.Value, scope.Strings);
-        await _sender.TryEditImmediatelyAsync(scope.ChatId, scope.MessageId, text, keyboard, ct);
+        await _sender.TryEditImmediatelyAsync(scope.Message, text, keyboard, ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 

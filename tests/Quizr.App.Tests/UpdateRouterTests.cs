@@ -748,8 +748,12 @@ public class UpdateRouterTests
             ct
         );
 
-        bot.SentTexts(newChatId.Value).Should().ContainSingle(t => t.Contains("Quiz Night", StringComparison.Ordinal));
-        bot.SentTexts(oldChatId.Value).Should().BeEmpty();
+        // The drop prompt is ephemeral now, so it's the private send that has to land on the
+        // migrated chat id — the point of the test is which chat, not which kind of message.
+        bot.EphemeralTexts(newChatId.Value)
+            .Should()
+            .ContainSingle(t => t.Contains("Quiz Night", StringComparison.Ordinal));
+        bot.EphemeralTexts(oldChatId.Value).Should().BeEmpty();
     }
 
     // The common conflict case: TeamBootstrapService's own my_chat_member "added" handler

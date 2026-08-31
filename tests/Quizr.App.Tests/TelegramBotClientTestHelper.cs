@@ -25,8 +25,15 @@ internal static class TelegramBotClientTestHelper
         var bot = Substitute.For<ITelegramBotClient>();
         var nextMessageId = 1;
 
+        // Telegram answers an ephemeral send with Id 0 and the real handle on
+        // EphemeralMessageId — mimicked exactly, so anything that reads the wrong one is
+        // caught here rather than by silently addressing message 0 in production.
         bot.SendRequest(Arg.Any<SendMessageRequest>(), Arg.Any<CancellationToken>())
-            .Returns(_ => new Message { Id = nextMessageId++ });
+            .Returns(call =>
+                call.Arg<SendMessageRequest>().EphemeralMessageParameters is null
+                    ? new Message { Id = nextMessageId++ }
+                    : new Message { Id = 0, EphemeralMessageId = nextMessageId++ }
+            );
 
         bot.SendRequest(Arg.Any<EditMessageTextRequest>(), Arg.Any<CancellationToken>())
             .Returns(_ => new Message { Id = nextMessageId++ });
@@ -40,12 +47,28 @@ internal static class TelegramBotClientTestHelper
         return bot;
     }
 
+    // Deliberately excludes ephemeral sends: a test asserting "the chat saw this" should fail
+    // the moment a message becomes visible to one person only. EphemeralTexts is the opposite
+    // question, asked separately.
     public static IReadOnlyList<string> SentTexts(this ITelegramBotClient bot) =>
         bot.ReceivedCalls()
             .Select(call => call.GetArguments()[0])
             .OfType<SendMessageRequest>()
+            .Where(request => request.EphemeralMessageParameters is null)
             .Select(request => request.Text)
             .ToList();
+
+    // What was sent privately, and to whom.
+    public static IReadOnlyList<(long ReceiverUserId, string Text)> EphemeralTexts(this ITelegramBotClient bot) =>
+        bot.ReceivedCalls()
+            .Select(call => call.GetArguments()[0])
+            .OfType<SendMessageRequest>()
+            .Where(request => request.EphemeralMessageParameters is not null)
+            .Select(request => (request.EphemeralMessageParameters!.ReceiverUserId, request.Text))
+            .ToList();
+
+    public static IReadOnlyList<EditEphemeralMessageTextRequest> EphemeralEdits(this ITelegramBotClient bot) =>
+        bot.ReceivedCalls().Select(call => call.GetArguments()[0]).OfType<EditEphemeralMessageTextRequest>().ToList();
 
     // Scoped to one chat — the scheduler processes every team in the database each tick, and
     // PostgresFixture shares one database across every test in the class, so a scheduler
@@ -55,7 +78,15 @@ internal static class TelegramBotClientTestHelper
         bot.ReceivedCalls()
             .Select(call => call.GetArguments()[0])
             .OfType<SendMessageRequest>()
-            .Where(request => request.ChatId.Identifier == chatId)
+            .Where(request => request.EphemeralMessageParameters is null && request.ChatId.Identifier == chatId)
+            .Select(request => request.Text)
+            .ToList();
+
+    public static IReadOnlyList<string> EphemeralTexts(this ITelegramBotClient bot, long chatId) =>
+        bot.ReceivedCalls()
+            .Select(call => call.GetArguments()[0])
+            .OfType<SendMessageRequest>()
+            .Where(request => request.EphemeralMessageParameters is not null && request.ChatId.Identifier == chatId)
             .Select(request => request.Text)
             .ToList();
 

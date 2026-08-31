@@ -211,6 +211,62 @@ public class UpdateRouterSignupLoopTests
             .Be(0);
     }
 
+    // Phase 0 of moving private flows off the group's timeline: nobody else needs to watch
+    // someone weigh up leaving. The roster change itself still shows publicly, on the
+    // announcement.
+    [Test]
+    public async Task TheDropConfirmationIsVisibleOnlyToWhoeverTappedIt()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 7060, capacity: 5, ct);
+        var (router, bot, _) = CreateRouter(db);
+        await router.RouteAsync(
+            CallbackUpdate(7060, 7060, "Alice", CallbackData.Format(CallbackData.Join, game.Id), 1),
+            ct
+        );
+
+        await router.RouteAsync(
+            CallbackUpdate(7060, 7060, "Alice", CallbackData.Format(CallbackData.Drop, game.Id), 1),
+            ct
+        );
+
+        bot.EphemeralTexts().Should().ContainSingle(e => e.ReceiverUserId == 7060);
+        bot.SentTexts(7060).Should().BeEmpty("the confirmation must not reach the group");
+    }
+
+    // The answer has to land back on that same private message. Telegram addresses an
+    // ephemeral message by (chat, receiver, ephemeral id) through a separate API method, so
+    // an ordinary edit here would silently target message 0.
+    [Test]
+    public async Task AnsweringTheDropConfirmationEditsThatSamePrivateMessage()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 7061, capacity: 5, ct);
+        var (router, bot, _) = CreateRouter(db);
+        await router.RouteAsync(
+            CallbackUpdate(7061, 7061, "Alice", CallbackData.Format(CallbackData.Join, game.Id), 1),
+            ct
+        );
+        await router.RouteAsync(
+            CallbackUpdate(7061, 7061, "Alice", CallbackData.Format(CallbackData.Drop, game.Id), 1),
+            ct
+        );
+
+        await router.RouteAsync(
+            EphemeralCallbackUpdate(7061, 7061, "Alice", CallbackData.Format(CallbackData.ConfirmDrop, game.Id), 9),
+            ct
+        );
+
+        var edit = bot.EphemeralEdits().Should().ContainSingle().Subject;
+        edit.ReceiverUserId.Should().Be(7061);
+        edit.EphemeralMessageId.Should().Be(9);
+        (await db.Signups.AsNoTracking().CountAsync(s => s.GameId == game.Id && s.CancelledAt == null, ct))
+            .Should()
+            .Be(0);
+    }
+
     [Test]
     public async Task StayingKeepsTheSignupLive()
     {
@@ -786,6 +842,33 @@ public class UpdateRouterSignupLoopTests
 
         return game;
     }
+
+    // A tap on an ephemeral message: Telegram reports Id as 0 and puts the real handle on
+    // EphemeralMessageId, which is what the router has to read back to edit it.
+    private static Update EphemeralCallbackUpdate(
+        long chatId,
+        long telegramUserId,
+        string firstName,
+        string data,
+        int ephemeralMessageId
+    ) =>
+        new()
+        {
+            Id = 1,
+            CallbackQuery = new CallbackQuery
+            {
+                Id = "cq1",
+                From = new User { Id = telegramUserId, FirstName = firstName },
+                Data = data,
+                Message = new Message
+                {
+                    Id = 0,
+                    EphemeralMessageId = ephemeralMessageId,
+                    Chat = new Chat { Id = chatId },
+                    Date = DateTime.UtcNow,
+                },
+            },
+        };
 
     private static Update CallbackUpdate(
         long chatId,
