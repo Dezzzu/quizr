@@ -21,6 +21,7 @@ internal sealed class DialogStateConfiguration : IEntityTypeConfiguration<Dialog
         builder.HasIndex(d => new { d.ChatId, d.PlayerId }).IsUnique();
 
         builder.Property(d => d.MessageId).HasConversion(IdConverters.TelegramMessage);
+        builder.Property(d => d.OwnerTelegramUserId).HasConversion(IdConverters.TelegramUser);
 
         builder.Property(d => d.Data).HasColumnType("jsonb");
     }

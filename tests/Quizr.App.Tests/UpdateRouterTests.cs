@@ -60,7 +60,9 @@ public class UpdateRouterTests
 
         await router.RouteAsync(MessageUpdate(4003, 4003, "/newgame"), ct);
 
-        bot.SentTexts().Should().ContainSingle(text => text.Contains("timezone", StringComparison.OrdinalIgnoreCase));
+        bot.EphemeralTexts()
+            .Should()
+            .ContainSingle(e => e.Text.Contains("timezone", StringComparison.OrdinalIgnoreCase));
     }
 
     [Test]
@@ -75,7 +77,9 @@ public class UpdateRouterTests
 
         await router.RouteAsync(MessageUpdate(4004, 4004, "/newgame"), ct);
 
-        bot.SentTexts().Should().ContainSingle(text => text.Contains("franchise", StringComparison.OrdinalIgnoreCase));
+        bot.EphemeralTexts()
+            .Should()
+            .ContainSingle(e => e.Text.Contains("franchise", StringComparison.OrdinalIgnoreCase));
         (await db.DialogStates.SingleOrDefaultAsync(d => d.ChatId == new TelegramChatId(4004), ct))
             .Should()
             .NotBeNull();
@@ -176,11 +180,11 @@ public class UpdateRouterTests
         var (router, bot) = CreateRouter(db);
 
         await router.RouteAsync(MessageUpdate(4034, 4034, "/newfranchise"), ct);
-        bot.ClearedKeyboards().Should().BeEmpty();
+        bot.ClearedKeyboardCount().Should().Be(0);
 
         await router.RouteAsync(MessageUpdate(4034, 4034, "Travelling Quiz"), ct);
 
-        bot.ClearedKeyboards().Should().ContainSingle();
+        bot.ClearedKeyboardCount().Should().Be(1);
     }
 
     // Reported as "lingering buttons under picking the franchise and the date, even after the
@@ -222,6 +226,11 @@ public class UpdateRouterTests
 
         await router.RouteAsync(CallbackUpdate(4040, 4040, CallbackData.Format(CallbackData.Confirm, 0L)), ct);
         (await db.Games.CountAsync(g => g.TeamId == team.Id, ct)).Should().Be(1);
+
+        // The whole wizard was the captain's own business: the only things the group saw are
+        // the finished game's announcement and the Board that lists it.
+        bot.SentTexts(4040).Should().HaveCount(2);
+        bot.EphemeralTexts(4040).Should().NotBeEmpty();
     }
 
     // The one-off branch leaves the same picker behind — it just reaches its next step through
@@ -420,7 +429,9 @@ public class UpdateRouterTests
 
         (await db.DialogStates.CountAsync(d => d.ChatId == new TelegramChatId(4027), ct)).Should().Be(0);
         (await db.Franchises.CountAsync(f => f.TeamId == team.Id, ct)).Should().Be(0);
-        bot.SentTexts(4027).Should().Contain(text => text.Contains("Cancelled", StringComparison.OrdinalIgnoreCase));
+        bot.EphemeralTexts(4027)
+            .Should()
+            .Contain(text => text.Contains("Cancelled", StringComparison.OrdinalIgnoreCase));
     }
 
     [Test]
@@ -433,7 +444,7 @@ public class UpdateRouterTests
 
         await router.RouteAsync(MessageUpdate(4028, 4028, "/cancel"), ct);
 
-        bot.SentTexts(4028)
+        bot.EphemeralTexts(4028)
             .Should()
             .ContainSingle(text => text.Contains("Nothing", StringComparison.OrdinalIgnoreCase));
     }

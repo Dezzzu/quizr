@@ -127,6 +127,18 @@ internal static class TelegramBotClientTestHelper
             .Select(request => request.ReplyMarkup as InlineKeyboardMarkup)
             .LastOrDefault();
 
+    // Counts both kinds: a private prompt is stripped through editEphemeralMessageReplyMarkup
+    // rather than the ordinary method, and every caller here is asking "was the keyboard taken
+    // away", not which API family did it.
+    public static int ClearedKeyboardCount(this ITelegramBotClient bot) =>
+        bot.ReceivedCalls()
+            .Select(call => call.GetArguments()[0])
+            .Count(request =>
+                request
+                    is EditMessageReplyMarkupRequest { ReplyMarkup: null }
+                        or EditEphemeralMessageReplyMarkupRequest { ReplyMarkup: null }
+            );
+
     public static IReadOnlyList<EditMessageReplyMarkupRequest> ClearedKeyboards(this ITelegramBotClient bot) =>
         bot.ReceivedCalls()
             .Select(call => call.GetArguments()[0])

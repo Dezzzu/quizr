@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Quizr.App.Data;
+using Quizr.App.Telegram;
 using Quizr.Domain;
 using Quizr.Domain.Entities;
 
@@ -28,7 +29,7 @@ public interface IDialogService
 
     Task<DialogState> StartAsync<TData>(
         TeamId teamId,
-        PlayerId playerId,
+        Actor actor,
         TelegramChatId chatId,
         string kind,
         TData data,
@@ -45,7 +46,7 @@ public interface IDialogService
 
     Task SaveDataAsync<TData>(DialogState dialog, TData data, CancellationToken ct);
 
-    Task SetPromptMessageAsync(DialogState dialog, TelegramMessageId messageId, CancellationToken ct);
+    Task SetPromptMessageAsync(DialogState dialog, MessageRef message, CancellationToken ct);
 
     Task ClearAsync(DialogState dialog, CancellationToken ct);
 }
@@ -108,14 +109,14 @@ public sealed class DialogService : IDialogService
     // collide on the unique index.
     public async Task<DialogState> StartAsync<TData>(
         TeamId teamId,
-        PlayerId playerId,
+        Actor actor,
         TelegramChatId chatId,
         string kind,
         TData data,
         CancellationToken ct
     )
     {
-        var existing = await LoadAsync(chatId, playerId, ct);
+        var existing = await LoadAsync(chatId, actor.PlayerId, ct);
         if (existing is not null)
         {
             _db.DialogStates.Remove(existing);
@@ -125,7 +126,8 @@ public sealed class DialogService : IDialogService
         var dialog = new DialogState
         {
             TeamId = teamId,
-            PlayerId = playerId,
+            PlayerId = actor.PlayerId,
+            OwnerTelegramUserId = actor.TelegramUserId,
             ChatId = chatId,
             Kind = kind,
             Step = "",
@@ -153,7 +155,7 @@ public sealed class DialogService : IDialogService
             return allowed.Error;
         }
 
-        return await StartAsync(team.Id, actor.PlayerId, team.ChatId, kind, data, ct);
+        return await StartAsync(team.Id, actor, team.ChatId, kind, data, ct);
     }
 
     // Overwrites an already-active dialog's Data in place (same row, new UpdatedAt) — used at
@@ -165,9 +167,9 @@ public sealed class DialogService : IDialogService
         await _db.SaveChangesAsync(ct);
     }
 
-    public async Task SetPromptMessageAsync(DialogState dialog, TelegramMessageId messageId, CancellationToken ct)
+    public async Task SetPromptMessageAsync(DialogState dialog, MessageRef message, CancellationToken ct)
     {
-        dialog.MessageId = messageId;
+        dialog.MessageId = message.Id;
         dialog.UpdatedAt = _clock.GetUtcNow();
         await _db.SaveChangesAsync(ct);
     }

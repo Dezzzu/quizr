@@ -14,6 +14,14 @@ public sealed class DialogState
     // jsonb.
     public required string Data { get; set; }
 
+    // Who this dialog belongs to, in the form Telegram needs. PlayerId is the domain identity;
+    // this is the one an ephemeral message is addressed by, and every prompt a dialog sends
+    // goes to its owner, so it is a fact about the dialog rather than about any one message.
+    // Null on rows written before private wizards existed — those fall back to ordinary sends.
+    public TelegramUserId? OwnerTelegramUserId { get; set; }
+
+    // The prompt this dialog is currently waiting on, so its keyboard can be stripped once the
+    // step it belongs to has actually been answered.
     public TelegramMessageId? MessageId { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
