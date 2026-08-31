@@ -13,6 +13,8 @@ worth re-deriving.
 - **`STYLE.md`** — how code here is written: error handling, interfaces, async, comments,
   tests, and the conventions agents most often diverge on.
 - **`VISION.md`** — the product description, roadmap and decision log.
+- **`DEPLOY.md`** — how the bot ships: the GitHub Actions pipeline, and the Coolify
+  configuration it hands off to.
 
 ## Start here
 
