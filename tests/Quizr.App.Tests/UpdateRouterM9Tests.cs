@@ -269,9 +269,14 @@ public class UpdateRouterM9Tests
         var team = await SeedTeamAsync(db, chatId: 8008, ct);
         var captain = await SeedCaptainAsync(db, team.Id, telegramUserId: 80081, ct);
         var target = await SeedMemberAsync(db, team.Id, telegramUserId: 80082, ct);
-        var (router, _) = CreateRouter(db);
+        var (router, bot) = CreateRouter(db);
 
         await router.RouteAsync(MessageUpdate(8008, 80081, "/managecaptains"), ct);
+
+        // The member list itself is the captain's own business, like the manage-players one.
+        bot.EphemeralTexts().Should().ContainSingle(e => e.ReceiverUserId == 80081);
+        bot.SentTexts(8008).Should().BeEmpty();
+
         await router.RouteAsync(
             CallbackUpdate(8008, 80081, CallbackData.Format(CallbackData.ToggleCaptain, target.Id)),
             ct

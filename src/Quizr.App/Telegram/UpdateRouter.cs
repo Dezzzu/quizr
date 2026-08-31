@@ -3503,7 +3503,10 @@ public sealed class UpdateRouter
         }
 
         var (text, keyboard) = BuildManageCaptainsView(result.Value, strings);
-        await _sender.SendAsync(chatId, text, keyboard, ct);
+
+        // Same family as the manage-players list: scrolling the team to find someone is the
+        // captain's own business, even though who ends up a captain is the team's.
+        await _sender.SendEphemeralAsync(chatId, actor.TelegramUserId, text, keyboard, null, ct);
     }
 
     private async Task HandleManageCaptainsCallbackAsync(CallbackQuery callbackQuery, CancellationToken ct)
