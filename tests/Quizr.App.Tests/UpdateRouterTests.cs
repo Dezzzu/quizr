@@ -205,7 +205,7 @@ public class UpdateRouterTests
             Name = "Квиз, плиз!",
             DefaultVenue = "The Pub",
             DefaultCapacity = 20,
-            Schedule = new Dictionary<DayOfWeek, TimeOnly> { [DayOfWeek.Monday] = new TimeOnly(19, 0) },
+            Schedule = new() { [DayOfWeek.Monday] = new TimeOnly(19, 0) },
             CreatedAt = DateTimeOffset.UtcNow,
         };
         db.Franchises.Add(franchise);
