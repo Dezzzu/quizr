@@ -225,6 +225,13 @@ Native BCL types throughout.
   game's participation), not a general-purpose event log. Unlike the notifications table,
   there's no uniqueness constraint to enforce, so the write just rides along in the caller's
   own `SaveChangesAsync`.
+- **`main` is protected: nothing is pushed to it directly, by anyone.** Work goes on a branch
+  and reaches `main` through a pull request whose `build` check has passed. The rule applies to
+  the repository owner too, so a red CI genuinely blocks everything — which is the point, and
+  also the thing to remember when CI itself is what's broken.
+- **Open the pull request and stop there.** Merging is the owner's call, not an agent's: a merge
+  to `main` deploys to the live bot (`DEPLOY.md`), so it's the last point at which a human sees
+  the change before players do.
 - Bot handle: **@quizr_team_bot**. Display name: **Quizr**.
 
 ## Out of scope — do not build
