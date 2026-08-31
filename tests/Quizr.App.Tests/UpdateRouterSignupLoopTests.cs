@@ -844,6 +844,35 @@ public class UpdateRouterSignupLoopTests
         return game;
     }
 
+    // Bringing a guest is between you and the bot until the guest appears on the announcement:
+    // the team sees the roster change, not the conversation about what to call them.
+    [Test]
+    public async Task NamingAGuestIsPrivateFromEndToEnd()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 7064, capacity: 5, ct);
+        var (router, bot, _) = CreateRouter(db);
+        await router.RouteAsync(
+            CallbackUpdate(7064, 7064, "Alice", CallbackData.Format(CallbackData.Join, game.Id), 1),
+            ct
+        );
+
+        await router.RouteAsync(
+            CallbackUpdate(7064, 7064, "Alice", CallbackData.Format(CallbackData.Guest, game.Id), 1),
+            ct
+        );
+        await router.RouteAsync(MessageUpdate(7064, 7064, "Alice", "Sasha"), ct);
+
+        // The prompt and the confirmation both went to Alice alone.
+        bot.EphemeralTexts().Should().HaveCountGreaterThanOrEqualTo(2);
+        bot.EphemeralTexts().Should().OnlyContain(e => e.ReceiverUserId == 7064);
+        bot.SentTexts(7064).Should().BeEmpty();
+
+        var guest = await db.Signups.AsNoTracking().SingleAsync(s => s.GameId == game.Id && s.PlayerId == null, ct);
+        guest.GuestName.Should().Be("Sasha");
+    }
+
     // A tap on an ephemeral message: Telegram reports Id as 0 and puts the real handle on
     // EphemeralMessageId, which is what the router has to read back to edit it.
     private static Update EphemeralCallbackUpdate(

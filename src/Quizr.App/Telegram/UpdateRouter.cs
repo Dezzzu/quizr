@@ -551,7 +551,14 @@ public sealed class UpdateRouter
         var result = await _franchises.LoadEditableAsync(team, actor, ct);
         if (!result.IsSuccess)
         {
-            await _sender.SendAsync(chatId, strings.Text(ErrorKey(result.Error)), null, ct);
+            await _sender.SendEphemeralAsync(
+                chatId,
+                actor.TelegramUserId,
+                strings.Text(ErrorKey(result.Error)),
+                null,
+                null,
+                ct
+            );
             return;
         }
 
@@ -586,7 +593,14 @@ public sealed class UpdateRouter
         var result = await _games.LoadEditableGamesAsync(team, actor, ct);
         if (!result.IsSuccess)
         {
-            await _sender.SendAsync(chatId, strings.Text(ErrorKey(result.Error)), null, ct);
+            await _sender.SendEphemeralAsync(
+                chatId,
+                actor.TelegramUserId,
+                strings.Text(ErrorKey(result.Error)),
+                null,
+                null,
+                ct
+            );
             return;
         }
 
@@ -1074,8 +1088,8 @@ public sealed class UpdateRouter
         await _dialogs.SaveDataAsync(dialog, data with { FieldIndex = null }, ct);
 
         await ReplyPrivatelyAsync(dialog, strings.Text("Franchise.Updated"), null, ct);
-        await _sender.SendAsync(
-            chatId,
+        await ReplyPrivatelyAsync(
+            dialog,
             FranchiseRenderer.RenderSummary(franchise, strings),
             FranchiseRenderer.RenderFieldPicker(franchise, strings),
             ct
@@ -1564,8 +1578,8 @@ public sealed class UpdateRouter
         var game = await _db.Games.SingleAsync(g => g.Id == result.Value.GameId, ct);
         await _announcements.RefreshAsync(game, team, ct);
 
-        await _sender.SendAsync(
-            chatId,
+        await ReplyPrivatelyAsync(
+            dialog,
             strings.Text("Guest.Named", new { Name = WebUtility.HtmlEncode(result.Value.GuestName) }),
             null,
             ct
@@ -1786,10 +1800,15 @@ public sealed class UpdateRouter
             cancellationToken: ct
         );
 
-        await StartGuestNamingDialogAsync(scope, result.Value, ct);
+        await StartGuestNamingDialogAsync(scope, result.Value, callbackQuery.Id, ct);
     }
 
-    private async Task StartGuestNamingDialogAsync(CallbackScope scope, Signup guestSignup, CancellationToken ct)
+    private async Task StartGuestNamingDialogAsync(
+        CallbackScope scope,
+        Signup guestSignup,
+        string callbackQueryId,
+        CancellationToken ct
+    )
     {
         await _dialogs.StartAsync(
             scope.Team.Id,
@@ -1808,7 +1827,16 @@ public sealed class UpdateRouter
                 ),
             ],
         ]);
-        await _sender.SendAsync(scope.ChatId, scope.Strings.Text("Guest.NamePrompt"), keyboard, ct);
+        // Naming your own guest is between you and the bot: the team sees the guest appear on
+        // the announcement, which is the part that concerns them.
+        await _sender.SendEphemeralAsync(
+            scope.ChatId,
+            scope.Actor.TelegramUserId,
+            scope.Strings.Text("Guest.NamePrompt"),
+            keyboard,
+            callbackQueryId,
+            ct
+        );
     }
 
     private async Task HandleDropPromptAsync(
