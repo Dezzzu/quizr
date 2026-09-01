@@ -967,7 +967,7 @@ public class UpdateRouterTests
         };
         db.Franchises.Add(franchise);
         await db.SaveChangesAsync(ct);
-        var (router, _) = CreateRouter(db);
+        var (router, bot) = CreateRouter(db);
 
         await router.RouteAsync(MessageUpdate(4049, 4049, "/newgame"), ct);
         await router.RouteAsync(
@@ -982,12 +982,18 @@ public class UpdateRouterTests
             CallbackUpdate(4049, 4049, CallbackData.Format(CallbackData.EditField, NewGameDialogData.OverrideTitle)),
             ct
         );
-        await router.RouteAsync(MessageUpdate(4049, 4049, "Kviz, pliz! — Halloween special"), ct);
+        await router.RouteAsync(MessageUpdate(4049, 4049, "Halloween special"), ct);
         await router.RouteAsync(CallbackUpdate(4049, 4049, CallbackData.Format(CallbackData.Confirm, 0L)), ct);
 
         var game = await db.Games.AsNoTracking().SingleAsync(g => g.TeamId == team.Id, ct);
-        game.Title.Should().Be("Kviz, pliz! — Halloween special");
+        game.Title.Should().Be("Halloween special");
         game.FranchiseId.Should().Be(franchise.Id, "renaming the game doesn't detach it from its franchise");
+
+        // End to end through AnnouncementService, which looks the franchise name up rather than
+        // reading it off the Game it was handed.
+        bot.SentTexts(4049)
+            .Should()
+            .Contain(text => text.Contains("Kviz, pliz! · Halloween special", StringComparison.Ordinal));
     }
 
     // A title is what the announcement leads with, so an override that cleared it would leave

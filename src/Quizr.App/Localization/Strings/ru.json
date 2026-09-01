@@ -36,6 +36,7 @@
   "Commands.EditGame": "Редактировать игру",
   "Commands.ManageCaptains": "Назначить или снять капитанство",
 
+  "Game.TitleWithFranchise": "{Franchise} · {Title}",
   "Announcement.Venue": "📍 {Venue}",
   "Announcement.When": "🕓 {When:ddd, dd MMM, HH\\:mm}",
   "Announcement.Price": "💵 {Price}",
@@ -96,7 +97,6 @@
 
   "Board.Header": "📋 <b>Ближайшие игры</b>",
   "Board.NoGames": "Пока нет ближайших игр.",
-  "Board.TitleWithFranchise": "{Franchise} · {Title}",
   "Board.Entry": "{When:ddd, dd MMM, HH\\:mm} — {Title} ({Playing}/{Capacity})",
   "Board.EntryWithReserve": "{When:ddd, dd MMM, HH\\:mm} — {Title} ({Playing}/{Capacity} +{Reserve})",
 

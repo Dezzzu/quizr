@@ -59,8 +59,26 @@ public sealed class AnnouncementService
         var strings = _strings.For(team.Locale);
 
         return (
-            AnnouncementRenderer.RenderText(game, roster, team.TimeZoneId!, strings),
+            AnnouncementRenderer.RenderText(
+                game,
+                roster,
+                team.TimeZoneId!,
+                strings,
+                await FranchiseNameAsync(game, ct)
+            ),
             AnnouncementRenderer.RenderKeyboard(game, strings)
         );
     }
+
+    // Looked up rather than read off game.Franchise, which is the one place this differs from
+    // the Board. The Board owns the query its games come from and can .Include the navigation;
+    // here the Game is a parameter handed over by a dozen call sites — the router, the
+    // scheduler, every signup mutation — and on Game a null navigation also means "not
+    // Included". Trusting it would make the franchise prefix appear or vanish depending on
+    // which call site rewrote the announcement, which is worse than one indexed lookup by
+    // primary key. A one-off game does no query at all.
+    private async Task<string?> FranchiseNameAsync(Game game, CancellationToken ct) =>
+        game.FranchiseId is { } franchiseId
+            ? await _db.Franchises.AsNoTracking().Where(f => f.Id == franchiseId).Select(f => f.Name).SingleAsync(ct)
+            : null;
 }
