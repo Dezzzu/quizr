@@ -220,6 +220,54 @@ public class AnnouncementRendererTests
             ]);
     }
 
+    // The headline and the Board entry name a game the same way, or the pinned list and the
+    // post it links to disagree about what the game is called.
+    [Test]
+    public void PrefixesARenamedFranchiseGameWithItsFranchiseNameInTheHeadline()
+    {
+        var game = GameWithCapacity(10);
+        game.Title = "Halloween special";
+
+        var text = AnnouncementRenderer.RenderText(
+            game,
+            Roster.Split([], game.Capacity),
+            "Europe/Berlin",
+            Strings,
+            franchiseName: "Квиз, плиз!"
+        );
+
+        text.Should().StartWith("<b>Квиз, плиз! · Halloween special</b>");
+    }
+
+    [Test]
+    public void DoesNotRepeatAFranchiseNameTheHeadlineAlreadyCarries()
+    {
+        var game = GameWithCapacity(10);
+        game.Title = "Квиз, плиз! #12";
+
+        var text = AnnouncementRenderer.RenderText(
+            game,
+            Roster.Split([], game.Capacity),
+            "Europe/Berlin",
+            Strings,
+            franchiseName: "Квиз, плиз!"
+        );
+
+        text.Should().StartWith("<b>Квиз, плиз! #12</b>");
+    }
+
+    // A one-off has no franchise at all, which is why the parameter defaults.
+    [Test]
+    public void LeavesAOneOffHeadlineAlone()
+    {
+        var game = GameWithCapacity(10);
+        game.Title = "Pub trivia";
+
+        var text = AnnouncementRenderer.RenderText(game, Roster.Split([], game.Capacity), "Europe/Berlin", Strings);
+
+        text.Should().StartWith("<b>Pub trivia</b>");
+    }
+
     // Reaching /editgame used to mean leaving the game you were already looking at, running the
     // command, and picking that same game back out of a list.
     [Test]

@@ -14,12 +14,21 @@ namespace Quizr.App.Rendering;
 // HTML parse mode throughout (CLAUDE.md) — every piece of user-supplied text is encoded.
 internal static class AnnouncementRenderer
 {
-    public static string RenderText(Game game, RosterSplit roster, string teamTimeZoneId, IStringsFor strings)
+    // franchiseName defaults to null because that is what a one-off game has. For a franchise
+    // game it comes from AnnouncementService, which looks it up rather than reading it off the
+    // Game — see its own comment on why the navigation can't be trusted here.
+    public static string RenderText(
+        Game game,
+        RosterSplit roster,
+        string teamTimeZoneId,
+        IStringsFor strings,
+        string? franchiseName = null
+    )
     {
         var local = TeamTime.ConvertToLocal(game.StartsAt, teamTimeZoneId);
         var text = new StringBuilder();
 
-        text.Append("<b>").Append(WebUtility.HtmlEncode(game.Title)).Append("</b>\n");
+        text.Append("<b>").Append(GameLabel.Render(game.Title, franchiseName, strings)).Append("</b>\n");
 
         if (game.IsFinished)
         {
