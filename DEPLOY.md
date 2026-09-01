@@ -171,41 +171,40 @@ self-run.
 
 ### Logs
 
-`observability/alloy.alloy` is the Alloy config: it discovers every container on the host,
-reads their stdout, lifts `LogLevel` into a label and writes to Grafana Cloud Loki. It covers
-Postgres as well as the bot on purpose — half the evidence during the announcement incident
-was Postgres' own `duplicate key value` lines, and reading them beside the bot's is the point.
+`observability/alloy.alloy` is the Alloy config — it discovers every container on the host,
+reads their stdout, lifts `LogLevel` into a label and writes to Grafana Cloud Loki — and
+`observability/docker-compose.yml` is the service that runs it. It covers Postgres as well as
+the bot on purpose: half the evidence during the announcement incident was Postgres' own
+`duplicate key value` lines, and reading them beside the bot's is the point.
 
-**Smoke-test it by hand first.** The config has never run, and iterating on a managed
-resource is a slow way to find a syntax error:
+**Deploy it as a repository-backed application, with base directory `observability`.** Not as
+Coolify's standalone *Docker Compose* resource — that one has no repository behind it, so the
+config the compose file mounts would not exist.
 
-```bash
-docker run --rm \
-  -v /path/to/alloy.alloy:/etc/alloy/config.alloy:ro \
-  -v /var/run/docker.sock:/var/run/docker.sock:ro \
-  -e LOKI_URL=... -e LOKI_USERNAME=... -e LOKI_PASSWORD=... \
-  grafana/alloy:v1.19.2 run /etc/alloy/config.alloy
+That distinction is the whole trick, and it is worth writing down because neither error names
+its cause. Coolify runs compose as:
+
+```
+docker compose --env-file <base>/.env --project-directory <base> -f <base>/docker-compose.yml up -d
 ```
 
-Parse errors show up immediately; logs should reach Grafana → Explore → Loki within a minute,
-carrying a `container` label. If it can't read the socket, add `--user root`.
+Relative paths inside the compose file resolve against **`--project-directory`**, which is the
+base directory — so `./alloy.alloy` means the file beside it, and any other spelling misses.
+When a bind-mount source is missing, Docker creates a *directory* there and then refuses to
+mount a directory over a file, which surfaces as an OCI `not a directory` error rather than
+anything about paths. Delete the stray directory before retrying or the retry fails the same
+way.
 
-**Then promote it.** `observability/docker-compose.yml` is the managed version. Two details
-that are easy to get wrong and produce errors that don't name their own cause:
+Coolify writes the resource's environment variables into that `.env`, so `LOKI_URL`,
+`LOKI_USERNAME` and `LOKI_PASSWORD` set on the resource are what the compose file
+interpolates. They come from Grafana Cloud → Connections → Loki, where the username is the
+numeric instance id, not an email, and both differ from the OTLP credentials above.
 
-- It is **not** Coolify's standalone *Docker Compose* resource — that one wants pasted YAML and
-  gives the file no repository to sit in, so the config it mounts would not exist. Use
-  **Public Repository** and set the build pack to Docker Compose, which is what makes Coolify
-  check the repo out.
-- The compose file is at `/observability/docker-compose.yml`, but the **project directory is
-  the repository root**, so the bind mount inside it reads `./observability/alloy.alloy`. Get
-  that wrong and Docker creates a *directory* at the missing source path and then refuses to
-  mount it over a file, which is what the "not a directory" OCI error means. Clean up the
-  stray directory before retrying, or the next attempt fails the same way.
+**To run it by hand**, mirror that invocation rather than `cd`-ing into the folder:
 
-Set `LOKI_URL`, `LOKI_USERNAME` and `LOKI_PASSWORD` on the resource — from Grafana
-Cloud → Connections → Loki, where the username is the numeric instance id, not an email, and
-both differ from the OTLP credentials above.
+```bash
+docker compose --project-directory observability -f observability/docker-compose.yml up
+```
 
 A health check on *this* service is fine — the rolling-update hazard is specific to the bot
 and its single Telegram token.

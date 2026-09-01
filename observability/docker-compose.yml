@@ -1,22 +1,23 @@
 # Grafana Alloy, shipping every container's stdout on this host to Grafana Cloud Loki.
 #
-# Add it in Coolify as a *Docker Compose* resource pointing at this repository with base
-# directory `observability/`, so this file and the `alloy.alloy` it mounts stay next to each
-# other and in version control. The alternative — pasting a compose file into a UI textarea —
-# leaves the only working copy on the server, which is the wrong place for a config that is
-# still being tuned.
+# The Alloy config lives beside this file, in alloy.alloy, and is bind-mounted in. That works
+# because relative paths resolve against compose's *project* directory, and Coolify runs this
+# with `--project-directory <base directory>` — the observability/ folder.
+#
+# So deploy it as a repository-backed application with base directory observability/, and not
+# as Coolify's standalone Docker Compose resource. That one has no repository behind it, so
+# there is no alloy.alloy to mount; Docker then creates a directory at the missing source path
+# and refuses to mount it over a file, which is what an OCI "not a directory" error means.
 #
 # The three LOKI_* values come from Grafana Cloud -> Connections -> Loki, and are a different
 # id and token from the OTLP ones the bot itself uses. Set them on the resource in Coolify;
 # they are read here rather than written down, so this file holds no secret.
-#
-# Smoke-test the config with `docker run` before making it a managed resource — see DEPLOY.md.
 
 services:
   alloy:
     # Pinned rather than :latest, for the reason DEPLOY.md pins the bot's own image: a
     # silently-updated agent is a silently-changed config language. v1.19.2 is >= 1.0, which
-    # is what makes `sys.env(...)` in alloy.alloy the correct spelling.
+    # is what makes `sys.env(...)` in the config below the correct spelling.
     image: grafana/alloy:v1.19.2
     restart: unless-stopped
 
@@ -34,13 +35,12 @@ services:
       - /etc/alloy/config.alloy
 
     volumes:
-      # Relative to the *project* directory, which is the repository root — not to this file's
-      # own directory. Coolify checks the repo out and runs compose from the root while
-      # pointing at this file by path, so `./alloy.alloy` resolved to `<approot>/alloy.alloy`,
-      # which doesn't exist; Docker then helpfully created a directory there and refused to
-      # mount it over a file. Run it by hand the same way: from the repository root, with
-      # `docker compose -f observability/docker-compose.yml up`.
-      - ./observability/alloy.alloy:/etc/alloy/config.alloy:ro
+      # Relative to the *project* directory, not to this file. Coolify runs compose with
+      # `--project-directory <base directory>`, which for this resource is the observability/
+      # folder this file lives in — so `./alloy.alloy` is the file sitting beside it. Run it by
+      # hand the same way and the same path holds:
+      #   docker compose --project-directory observability -f observability/docker-compose.yml up
+      - ./alloy.alloy:/etc/alloy/config.alloy:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - alloy-data:/var/lib/alloy/data
 
@@ -54,4 +54,8 @@ services:
     # business being published.
 
 volumes:
+  # Spelled out rather than left null. `alloy-data:` with no value is valid compose and means
+  # "default driver", but it parses to a null, and a consumer that iterates volumes expecting
+  # a mapping trips over it. Costs one line to not find out which ones do.
   alloy-data:
+    driver: local
