@@ -15,6 +15,8 @@ worth re-deriving.
 - **`VISION.md`** — the product description, roadmap and decision log.
 - **`DEPLOY.md`** — how the bot ships: the GitHub Actions pipeline, and the Coolify
   configuration it hands off to.
+- **`CONTRIBUTING.md`** — the outward-facing version of the branch/PR rules below, plus what a
+  useful bug report contains. Written for people, not agents.
 
 ## Start here
 

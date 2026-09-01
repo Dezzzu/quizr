@@ -7,9 +7,11 @@ using Telegram.Bot.Types.ReplyMarkups;
 
 namespace Quizr.App.Rendering;
 
-// The confirm screen every /newgame path lands on (design decision #2): Venue/Capacity/
+// The confirm screen every /newgame path lands on (design decision #2): Title/Venue/Capacity/
 // Price/Notes shown with an edit button next to each, defaulted from the franchise or the
-// one-off replies but individually overridable before Create.
+// one-off replies but individually overridable before Create. Title gets a row of its own,
+// above the rest, because it's the one field a franchise game never asked anybody about —
+// it arrives derived, so this is where it's first seen and first correctable.
 internal static class GameConfirmRenderer
 {
     public static string RenderText(NewGameDialogData data, IStringsFor strings)
@@ -56,6 +58,12 @@ internal static class GameConfirmRenderer
 
     public static InlineKeyboardMarkup RenderKeyboard(IStringsFor strings) =>
         new([
+            [
+                InlineKeyboardButton.WithCallbackData(
+                    strings.Text("NewGame.EditTitleButton"),
+                    CallbackData.Format(CallbackData.EditField, NewGameDialogData.OverrideTitle)
+                ),
+            ],
             [
                 InlineKeyboardButton.WithCallbackData(
                     strings.Text("NewGame.EditVenueButton"),

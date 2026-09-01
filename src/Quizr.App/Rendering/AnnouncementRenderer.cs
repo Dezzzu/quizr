@@ -161,6 +161,16 @@ internal static class AnnouncementRenderer
                     CallbackData.Format(CallbackData.ManageGuests, gameId)
                 ),
             ]);
+            // The same door /editgame opens, minus its pick-a-game step: the panel already
+            // knows which game it belongs to. Live games only — after a finish, invariant 11
+            // says the thing a captain edits is the participation rows, which is what the
+            // Manage roster button above leads to instead.
+            rows.Add([
+                InlineKeyboardButton.WithCallbackData(
+                    strings.Text("Announcement.EditGameButton"),
+                    CallbackData.Format(CallbackData.PickGameToEdit, gameId)
+                ),
+            ]);
             rows.Add([
                 InlineKeyboardButton.WithCallbackData(
                     strings.Text("Announcement.FinishButton"),
