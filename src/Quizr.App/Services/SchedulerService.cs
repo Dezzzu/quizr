@@ -258,12 +258,36 @@ public sealed class SchedulerService
             return;
         }
 
+        // Ask what has already been sent rather than finding out by failing to insert it. The
+        // unique index on (SignupId, Kind) is still what makes two racing ticks safe — that
+        // stays exactly as CLAUDE.md describes — but "is it due" goes true the moment the slot
+        // passes and stays true until the game auto-finishes, so without this every tick
+        // re-attempted an insert for every signup and every already-sent kind. Over the ~28
+        // hours a game is live that is tens of thousands of rejected inserts, each one a
+        // rolled-back transaction and an ERROR line in the Postgres log.
+        var signupIds = memberSignups.Select(s => s.Id).ToList();
+        var alreadySent = await _db
+            .Notifications.AsNoTracking()
+            .Where(n => signupIds.Contains(n.SignupId) && n.Kind == kind)
+            .Select(n => n.SignupId)
+            .ToListAsync(ct);
+        if (alreadySent.Count == memberSignups.Count)
+        {
+            return;
+        }
+
+        var alreadySentIds = alreadySent.ToHashSet();
         var playingIds = Roster.Split(liveSignups, game.Capacity).Playing.Select(s => s.Id).ToHashSet();
 
         var groupRecipients = new List<Player>();
 
         foreach (var signup in memberSignups)
         {
+            if (alreadySentIds.Contains(signup.Id))
+            {
+                continue;
+            }
+
             var membership = signup.Player!.Memberships.SingleOrDefault();
             if (membership is null)
             {
