@@ -176,20 +176,38 @@ reads their stdout, lifts `LogLevel` into a label and writes to Grafana Cloud Lo
 Postgres as well as the bot on purpose — half the evidence during the announcement incident
 was Postgres' own `duplicate key value` lines, and reading them beside the bot's is the point.
 
-Run it as a separate Coolify resource (a Docker image, `grafana/alloy`), with:
+**Smoke-test it by hand first.** The config has never run, and iterating on a managed
+resource is a slow way to find a syntax error:
 
-- the config file mounted, and `run /etc/alloy/config.alloy` as the command;
-- `/var/run/docker.sock` mounted **read-only** — it needs the socket to enumerate containers
-  and read their logs, and read-only is enough for both;
-- `LOKI_URL`, `LOKI_USERNAME` and `LOKI_PASSWORD` from Grafana Cloud → Connections → Loki.
-  The username is the numeric instance id, not an email.
+```bash
+docker run --rm \
+  -v /path/to/alloy.alloy:/etc/alloy/config.alloy:ro \
+  -v /var/run/docker.sock:/var/run/docker.sock:ro \
+  -e LOKI_URL=... -e LOKI_USERNAME=... -e LOKI_PASSWORD=... \
+  grafana/alloy:v1.19.2 run /etc/alloy/config.alloy
+```
+
+Parse errors show up immediately; logs should reach Grafana → Explore → Loki within a minute,
+carrying a `container` label. If it can't read the socket, add `--user root`.
+
+**Then promote it.** `observability/docker-compose.yml` is the managed version: add it in
+Coolify as a *Docker Compose* resource pointing at this repository with base directory
+`observability/`, so the compose file and the config it mounts stay together and in version
+control. Set `LOKI_URL`, `LOKI_USERNAME` and `LOKI_PASSWORD` on the resource — from Grafana
+Cloud → Connections → Loki, where the username is the numeric instance id, not an email, and
+both differ from the OTLP credentials above.
 
 A health check on *this* service is fine — the rolling-update hazard is specific to the bot
 and its single Telegram token.
 
+Two things worth knowing before you run it. It reads the Docker socket, which is how it
+enumerates containers and tails their logs; mounting it read-only limits what the container
+can *do* with Docker, not what it can see, and every container's logs on the host are in
+scope. That is the point here, but it is also why that service runs as root where the bot
+deliberately doesn't. And:
+
 > The Alloy config has never been run. It was written against the documented syntax and wants
-> one `alloy fmt` / `alloy run` on the host before it is trusted; on Alloy before 1.0,
-> `sys.env(...)` is spelled `env(...)`.
+> the smoke test above before it is trusted.
 
 Nothing here is required for the bot to work. With no `OTEL_EXPORTER_OTLP_ENDPOINT` set and no
 Alloy running, it behaves exactly as it did before — stdout and `QUIZR_ALERT_CHAT_ID`.
