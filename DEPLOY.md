@@ -100,6 +100,100 @@ The bot re-registers its command menu and profile description on every startup
 (`CommandMenu`, `BotProfile`), so a copy change in the strings files needs nothing beyond a
 deploy.
 
+## Observability
+
+Two paths out, both push-based, because the bot has no inbound anything and that is worth
+keeping (`README.md`: nothing ever connects to it — it dials out).
+
+| What | How it leaves | Needs |
+| --- | --- | --- |
+| Metrics | The process pushes OTLP itself | `OTEL_*` variables on the application |
+| Logs | Grafana Alloy reads Docker's logs on the host | `observability/alloy.alloy`, run as its own service |
+
+### Metrics
+
+Set these on the Coolify application alongside the bot's own variables. They configure the
+OpenTelemetry exporter directly — `Program.cs` parses none of them, it only checks whether the
+endpoint is set at all, so nothing is exported when they are absent and a local run stays
+silent instead of retrying an export it can never make.
+
+| Variable | Value |
+| --- | --- |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | the OTLP gateway URL from Grafana Cloud → Connections → OTLP |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | `http/protobuf` |
+| `OTEL_EXPORTER_OTLP_HEADERS` | `Authorization=Basic <base64 of instanceID:token>` |
+
+Three instruments are the bot's own, and they are what the alerts below are written against —
+`QuizrMetricsTests` pins their names for that reason:
+
+- `quizr.updates` — Telegram updates handled.
+- `quizr.exceptions` — tagged `error.type` and `quizr.source`, where the source is the boundary
+  that caught it (`update`, `scheduler.team`, `scheduler.game`, …). Every one of those is a
+  place the code deliberately swallows a failure to keep running, so this is the only signal
+  that any of them is firing.
+- `quizr.scheduler.ticks` — the heartbeat. See below.
+
+Runtime and HttpClient instrumentation come along too, which is where Telegram API failure
+rates show up.
+
+**Metrics only, no tracing.** An HttpClient *span* records the request URI in `url.full`, and
+every Telegram call carries the bot token in its path — the same leak this file's sibling
+comment in `Program.cs` already filters out of the HTTP logs. The metrics that the same
+instrumentation emits are labelled with `server.address`, method and status code only, so they
+carry no secret. Adding traces means scrubbing that attribute first.
+
+### The heartbeat, and why there is still no health check
+
+Everything in "The one thing that will bite you" above still holds: **configure no health
+check on the bot application.** It is the lever that enables rolling updates, and a rolling
+update is what puts two pollers on one token.
+
+That leaves liveness to be answered some other way, and an HTTP probe was never the right
+answer for this process anyway — the bot has no inbound traffic, so "the port answers" would
+prove nothing about whether it is still polling. The failure that matters is the loop stopping
+while the process stays up, which a probe cannot see.
+
+`quizr.scheduler.ticks` is the answer instead. The scheduler runs every 30 seconds with nobody
+asking it to, so the counter advancing is proof the process is doing work, and a **gap** in it
+is the alert:
+
+```
+sum(increase(quizr_scheduler_ticks_total[5m])) == 0
+```
+
+Worth pairing with an alert on `quizr_exceptions_total` by `quizr.source`, which is what would
+have surfaced the swallowed per-team failures during the announcement incident, and a Loki
+alert on the rate of `level="Error"` lines.
+
+Set both to notify somewhere that is not the VPS. A monitor hosted on the box it watches
+cannot tell you the box is gone, which is the main reason the stack is hosted rather than
+self-run.
+
+### Logs
+
+`observability/alloy.alloy` is the Alloy config: it discovers every container on the host,
+reads their stdout, lifts `LogLevel` into a label and writes to Grafana Cloud Loki. It covers
+Postgres as well as the bot on purpose — half the evidence during the announcement incident
+was Postgres' own `duplicate key value` lines, and reading them beside the bot's is the point.
+
+Run it as a separate Coolify resource (a Docker image, `grafana/alloy`), with:
+
+- the config file mounted, and `run /etc/alloy/config.alloy` as the command;
+- `/var/run/docker.sock` mounted **read-only** — it needs the socket to enumerate containers
+  and read their logs, and read-only is enough for both;
+- `LOKI_URL`, `LOKI_USERNAME` and `LOKI_PASSWORD` from Grafana Cloud → Connections → Loki.
+  The username is the numeric instance id, not an email.
+
+A health check on *this* service is fine — the rolling-update hazard is specific to the bot
+and its single Telegram token.
+
+> The Alloy config has never been run. It was written against the documented syntax and wants
+> one `alloy fmt` / `alloy run` on the host before it is trusted; on Alloy before 1.0,
+> `sys.env(...)` is spelled `env(...)`.
+
+Nothing here is required for the bot to work. With no `OTEL_EXPORTER_OTLP_ENDPOINT` set and no
+Alloy running, it behaves exactly as it did before — stdout and `QUIZR_ALERT_CHAT_ID`.
+
 ## Rolling back
 
 Every build is pushed twice: `:latest` and `:sha-<commit>`. To roll back, point the Coolify
