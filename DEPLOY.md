@@ -200,14 +200,41 @@ both differ from the OTLP credentials above.
 A health check on *this* service is fine — the rolling-update hazard is specific to the bot
 and its single Telegram token.
 
-Two things worth knowing before you run it. It reads the Docker socket, which is how it
-enumerates containers and tails their logs; mounting it read-only limits what the container
-can *do* with Docker, not what it can see, and every container's logs on the host are in
-scope. That is the point here, but it is also why that service runs as root where the bot
-deliberately doesn't. And:
+It reads the Docker socket, which is how it enumerates containers and tails their logs.
+Mounting it read-only limits what the container can *do* with Docker, not what it can see —
+every container's logs on the host are in scope. That is the point here, and it is also why
+that one service runs as root where the bot deliberately doesn't.
 
-> The Alloy config has never been run. It was written against the documented syntax and wants
-> the smoke test above before it is trusted.
+### Querying it
+
+**Do not query by container name.** Coolify names containers `<resource-uuid>-<deploy-timestamp>`
+— `rrnw2v5key9vfuhdwyukwmhh-125121626027` — and the timestamp changes on every deploy, so a
+query written against one stops matching after the next merge to `main`.
+
+`alloy.alloy` relabels around this: streams are labelled with Coolify's own `resourceName`, so
+the bot is `{container="quizr-bot"}` and stays that way across deploys. The relabel is a
+cascade, falling back to the uuid without its timestamp and then to the raw name, so a
+container Coolify didn't create still arrives labelled with something.
+
+The image also carries `org.opencontainers.image.revision`, which is the commit that built it —
+handy for answering "what is actually running" from `docker inspect`, though deliberately not a
+Loki label, since it would churn a stream per deploy just as badly.
+
+### If nothing appears in Loki
+
+Split the problem before touching the config — the failure looks identical from the outside
+whether the credentials are wrong, the pipeline is wrong, or you are reading the wrong
+datasource:
+
+```bash
+curl -u "$LOKI_USERNAME:$LOKI_PASSWORD" -H 'Content-Type: application/json' -X POST "$LOKI_URL" \
+  --data-raw '{"streams":[{"stream":{"job":"manual-test"},"values":[["'"$(date +%s)"'000000000","hi"]]}]}'
+```
+
+A `204` means the credentials and URL are right and the fault is downstream of them. If that
+line still doesn't appear in Grafana, you are querying a different datasource than you pushed
+to — a Grafana Cloud org with more than one stack makes this very easy, and it costs an hour
+if you assume the pipeline is broken instead.
 
 Nothing here is required for the bot to work. With no `OTEL_EXPORTER_OTLP_ENDPOINT` set and no
 Alloy running, it behaves exactly as it did before — stdout and `QUIZR_ALERT_CHAT_ID`.
