@@ -35,6 +35,7 @@
   "Commands.EditFranchise": "Eine Franchise bearbeiten",
   "Commands.EditGame": "Ein Spiel bearbeiten",
   "Commands.ManageCaptains": "Captain-Rechte vergeben oder entziehen",
+  "Commands.RestoreAnnouncements": "Verschwundene Spielankündigungen erneut posten",
 
   "Game.TitleWithFranchise": "{Franchise} · {Title}",
   "Announcement.Venue": "📍 {Venue}",
@@ -195,6 +196,7 @@
   "EditGame.AskStartTime": "Wie lautet die neue Startzeit? Format HH:mm, z. B. 19:00.",
   "EditGame.AskTags": "Was sind die neuen Tags? Kommagetrennt, z. B. \"Musik, Krimi\", oder \"skip\", um sie zu löschen.",
   "EditGame.Updated": "Aktualisiert.",
+  "Restore.Done": "{Checked} bevorstehende Spiele geprüft. Erneut gepostet: {Restored}.",
 
   "Roster.Header": "<b>Teilnehmerliste — {Title}</b>",
   "Roster.Empty": "Niemand hat bei diesem Spiel mitgespielt.",

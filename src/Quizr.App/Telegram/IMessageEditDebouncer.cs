@@ -103,6 +103,8 @@ public sealed class MessageEditDebouncer : IMessageEditDebouncer
 
         _pending.TryRemove(key, out _);
 
+        var messageGone = false;
+
         // This runs detached from whoever scheduled it — the coalescing this class exists
         // for (CLAUDE.md's ~20 messages/minute/group limit) means the actual edit can land up
         // to DebounceWindow after the caller returned. Neither of STYLE.md's two broad-catch
@@ -136,13 +138,36 @@ public sealed class MessageEditDebouncer : IMessageEditDebouncer
             // The announcement was deleted — CLAUDE.md's rule everything else follows means
             // it should come back from the database, not stay gone forever (this class is
             // only ever used for the game announcement — IMessageSender's own doc comment).
-            await RepostAnnouncementAsync(key.MessageId, ct);
+            // Flagged rather than reposted here: an exception thrown inside a catch block
+            // escapes the whole try statement, so the handler below never saw it, and this
+            // method is fire-and-forget — the failure became an unobserved task exception with
+            // no log line at all.
+            messageGone = true;
         }
         catch (Exception ex)
         {
             _logger.LogError(
                 ex,
                 "Debounced edit failed for chat {ChatId}, message {MessageId}",
+                key.ChatId,
+                key.MessageId
+            );
+        }
+
+        if (!messageGone)
+        {
+            return;
+        }
+
+        try
+        {
+            await RepostAnnouncementAsync(new TelegramChatId(key.ChatId), key.MessageId, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Failed to repost the deleted announcement in chat {ChatId} for message {MessageId}",
                 key.ChatId,
                 key.MessageId
             );
@@ -155,13 +180,23 @@ public sealed class MessageEditDebouncer : IMessageEditDebouncer
     // caller, so a second flush racing on the same deleted message (rare, but possible if two
     // near-simultaneous changes both queued an edit against it) finds the row already
     // pointing at the fresh repost and no-ops instead of posting twice.
-    private async Task RepostAnnouncementAsync(long messageId, CancellationToken ct)
+    //
+    // Scoped by chat as well as message id, because a Telegram message id is only unique
+    // within its chat: with two teams, both can have a game whose announcement is message 42,
+    // and matching on the id alone threw "sequence contains more than one element" — silently,
+    // for the reason described at the call site, so the announcement simply never came back.
+    private async Task RepostAnnouncementAsync(TelegramChatId chatId, long messageId, CancellationToken ct)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<QuizrDb>();
         var game = await db
             .Games.Include(g => g.Team)
-            .SingleOrDefaultAsync(g => g.AnnouncementMessageId == new TelegramMessageId(messageId), ct);
+            .SingleOrDefaultAsync(
+                g =>
+                    g.AnnouncementMessageId == new TelegramMessageId(messageId)
+                    && (g.Team.ChatId == chatId || g.Team.OldChatId == chatId),
+                ct
+            );
         if (game is null)
         {
             return;

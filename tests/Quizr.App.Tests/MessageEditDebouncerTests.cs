@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
+using Quizr.App.Data;
 using Quizr.App.Localization;
 using Quizr.App.Services;
 using Quizr.App.Telegram;
@@ -180,6 +181,86 @@ public class MessageEditDebouncerTests
         bot.SentTexts(team.ChatId.Value)
             .Should()
             .ContainSingle(t => t.Contains("Quiz Night", StringComparison.Ordinal));
+    }
+
+    // A Telegram message id is only unique within its chat, so two teams can each have a game
+    // whose announcement is message 100. Matching on the id alone threw "sequence contains
+    // more than one element" — and because the repost used to run inside a catch block of a
+    // fire-and-forget task, that exception was never caught or logged: the announcement simply
+    // never came back.
+    [Test]
+    public async Task ADeletedAnnouncementIsRepostedForTheRightTeamWhenTwoShareAMessageId()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var seedDb = _fixture.CreateContext();
+        var deleted = await SeedGameWithAnnouncementAsync(seedDb, chatId: 9402, messageId: 100, "Ours", ct);
+        await SeedGameWithAnnouncementAsync(seedDb, chatId: 9403, messageId: 100, "Someone else's", ct);
+
+        var timeProvider = new FakeTimeProvider();
+        var bot = TelegramBotClientTestHelper.Create();
+        bot.SendRequest(Arg.Any<EditMessageTextRequest>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new ApiRequestException("Bad Request: message to edit not found", 400));
+        var debouncer = new MessageEditDebouncer(
+            bot,
+            timeProvider,
+            RealScopeFactory(bot),
+            NullLogger<MessageEditDebouncer>.Instance
+        );
+
+        await debouncer.ScheduleAsync(new TelegramChatId(9402), new TelegramMessageId(100), "Ours", null, ct);
+        timeProvider.Advance(WindowPastDebounce);
+
+        await WaitUntilAsync(
+            async () =>
+                (await seedDb.Games.AsNoTracking().SingleAsync(g => g.Id == deleted.Id, ct)).AnnouncementMessageId
+                != new TelegramMessageId(100),
+            ct
+        );
+
+        bot.SentTexts(9402).Should().ContainSingle(t => t.Contains("Ours", StringComparison.Ordinal));
+        bot.SentTexts(9403).Should().BeEmpty("the other team's game shares the message id but not the chat");
+    }
+
+    private static async Task<Game> SeedGameWithAnnouncementAsync(
+        QuizrDb db,
+        long chatId,
+        long messageId,
+        string title,
+        CancellationToken ct
+    )
+    {
+        var team = new Team
+        {
+            ChatId = new TelegramChatId(chatId),
+            Name = "Test team",
+            Locale = "en",
+            TimeZoneId = "Europe/Berlin",
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+        db.Teams.Add(team);
+        var creator = new Player
+        {
+            TelegramUserId = new TelegramUserId(chatId),
+            DisplayName = "Creator",
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+        db.Players.Add(creator);
+        await db.SaveChangesAsync(ct);
+
+        var game = new Game
+        {
+            TeamId = team.Id,
+            Title = title,
+            Venue = "The Pub",
+            StartsAt = DateTimeOffset.UtcNow.AddDays(1),
+            Capacity = 5,
+            AnnouncementMessageId = new TelegramMessageId(messageId),
+            CreatedAt = DateTimeOffset.UtcNow,
+            CreatedByPlayerId = creator.Id,
+        };
+        db.Games.Add(game);
+        await db.SaveChangesAsync(ct);
+        return game;
     }
 
     private IServiceScopeFactory RealScopeFactory(ITelegramBotClient bot)

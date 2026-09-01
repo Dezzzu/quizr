@@ -30,12 +30,21 @@ public sealed class SchedulerHostedService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // Counts ticks for SchedulerService's round-robin announcement check, which needs to
+        // land on a different game each time. It lives here because this is the only thing in
+        // the process that outlives a single tick — the service itself is resolved fresh from a
+        // new scope below. Resetting to zero on a deploy just means the cycle restarts, which
+        // costs nothing.
+        var tickNumber = 0L;
+
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
                 using var scope = _scopeFactory.CreateScope();
-                await scope.ServiceProvider.GetRequiredService<SchedulerService>().RunTickAsync(stoppingToken);
+                await scope
+                    .ServiceProvider.GetRequiredService<SchedulerService>()
+                    .RunTickAsync(stoppingToken, tickNumber++);
             }
             catch (OperationCanceledException)
             {

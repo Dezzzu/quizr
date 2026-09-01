@@ -271,6 +271,11 @@ public sealed class UpdateRouter
                 await HandleManageCaptainsCommandAsync(team, a, chatId, ct);
                 handledPrivately = true;
                 break;
+
+            case "/restoreannouncements" when team is not null && actor is { } a:
+                await HandleRestoreAnnouncementsCommandAsync(team, a, chatId, ct);
+                handledPrivately = true;
+                break;
         }
 
         if (handledPrivately)
@@ -580,6 +585,64 @@ public sealed class UpdateRouter
             actor.TelegramUserId,
             strings.Text("Franchise.PickToEdit"),
             FranchiseRenderer.RenderPicker(franchises, CallbackData.PickFranchise),
+            null,
+            ct
+        );
+    }
+
+    // The manual lever for what the scheduler otherwise does one game per tick: when a chat's
+    // history is wiped, a captain shouldn't have to wait out the round-robin to get the whole
+    // team's sign-up buttons back. Reposts only what is actually missing — every game whose
+    // announcement is still there is edited in place, so running this twice doesn't duplicate
+    // anything.
+    private async Task HandleRestoreAnnouncementsCommandAsync(
+        Team team,
+        Actor actor,
+        TelegramChatId chatId,
+        CancellationToken ct
+    )
+    {
+        var strings = _strings.For(team.Locale);
+
+        var allowed = await _games.EnsureCanManageAsync(team, actor, ct);
+        if (!allowed.IsSuccess)
+        {
+            await _sender.SendEphemeralAsync(
+                chatId,
+                actor.TelegramUserId,
+                strings.Text(ErrorKey(allowed.Error)),
+                null,
+                null,
+                ct
+            );
+            return;
+        }
+
+        // Tracked, unlike GameService.LoadEditableGamesAsync's no-tracking list: RestoreAsync
+        // writes the new message id back onto the game it reposted.
+        var games = await _db
+            .Games.Where(g => g.TeamId == team.Id && g.FinishedAt == null && g.DeclinedAt == null)
+            .OrderBy(g => g.StartsAt)
+            .ToListAsync(ct);
+
+        var restored = 0;
+        foreach (var game in games)
+        {
+            if (await _announcements.RestoreAsync(game, team, ct))
+            {
+                restored++;
+            }
+        }
+
+        // Every repost has a new message id, so the Board's links point at deleted messages
+        // until it's rewritten.
+        await _board.RefreshAsync(team, ct);
+
+        await _sender.SendEphemeralAsync(
+            chatId,
+            actor.TelegramUserId,
+            strings.Text("Restore.Done", new { Restored = restored, Checked = games.Count }),
+            null,
             null,
             ct
         );

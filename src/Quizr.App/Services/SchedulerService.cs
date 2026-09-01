@@ -55,7 +55,11 @@ public sealed class SchedulerService
         _logger = logger;
     }
 
-    public async Task RunTickAsync(CancellationToken ct)
+    // tickNumber only picks which announcement this tick verifies (see
+    // VerifyOneAnnouncementAsync). SchedulerHostedService owns the counter because it owns the
+    // loop; SchedulerService is resolved fresh per tick and has nowhere to keep one. Defaulted
+    // so a test that doesn't care about the round-robin doesn't have to say so.
+    public async Task RunTickAsync(CancellationToken ct, long tickNumber = 0)
     {
         try
         {
@@ -77,7 +81,7 @@ public sealed class SchedulerService
         {
             try
             {
-                await ProcessTeamAsync(team, ct);
+                await ProcessTeamAsync(team, tickNumber, ct);
             }
             catch (ApiRequestException ex) when (ex.Parameters?.MigrateToChatId is { } newChatId)
             {
@@ -114,11 +118,15 @@ public sealed class SchedulerService
         await _db.DialogStates.Where(d => d.UpdatedAt < cutoff).ExecuteDeleteAsync(ct);
     }
 
-    private async Task ProcessTeamAsync(Team team, CancellationToken ct)
+    private async Task ProcessTeamAsync(Team team, long tickNumber, CancellationToken ct)
     {
         var now = _clock.GetUtcNow();
+        // Ordered so VerifyOneAnnouncementAsync's round-robin actually goes round: without it
+        // Postgres is free to hand back a different order each tick, and indexing into an
+        // unstable list would revisit some games and never reach others.
         var games = await _db
             .Games.Where(g => g.TeamId == team.Id && g.FinishedAt == null && g.DeclinedAt == null)
+            .OrderBy(g => g.Id)
             .ToListAsync(ct);
 
         foreach (var game in games)
@@ -145,6 +153,38 @@ public sealed class SchedulerService
         // 12) as a side effect — called every tick regardless of whether a game changed, since
         // that's what makes an unpin-by-hand heal without anyone acting.
         await _board.RefreshAsync(team, ct);
+
+        await VerifyOneAnnouncementAsync(team, games, tickNumber, ct);
+    }
+
+    // The Board is verified every tick because there is exactly one of it. Announcements get
+    // one per tick, round-robin, because there are many: probing all of them would be an edit
+    // per game every 30 seconds, against CLAUDE.md's ~20 messages/minute per group. So a chat
+    // whose history was wiped comes back over as many ticks as it has games — about half a
+    // minute each — and /restoreannouncements is the lever for wanting it now.
+    //
+    // Reads the same list the loop above already loaded, minus anything that tick just
+    // finished: a finished game's announcement is still edited by FinishGameAsync, and
+    // reposting it here would fight that.
+    private async Task VerifyOneAnnouncementAsync(Team team, List<Game> games, long tickNumber, CancellationToken ct)
+    {
+        var live = games.Where(g => !g.IsFinished && !g.IsDeclined).ToList();
+        if (live.Count == 0)
+        {
+            return;
+        }
+
+        var game = live[(int)(tickNumber % live.Count)];
+        try
+        {
+            await _announcements.RestoreAsync(game, team, ct);
+        }
+        catch (Exception ex)
+        {
+            // Same reasoning as the per-game catch above — one unrestorable announcement must
+            // not cost this team its Board refresh or the next team's whole tick.
+            _logger.LogError(ex, "Scheduler failed to verify the announcement for game {GameId}", game.Id);
+        }
     }
 
     // The actor is always null here — the scheduler is the system, not a captain (invariant
@@ -218,12 +258,36 @@ public sealed class SchedulerService
             return;
         }
 
+        // Ask what has already been sent rather than finding out by failing to insert it. The
+        // unique index on (SignupId, Kind) is still what makes two racing ticks safe — that
+        // stays exactly as CLAUDE.md describes — but "is it due" goes true the moment the slot
+        // passes and stays true until the game auto-finishes, so without this every tick
+        // re-attempted an insert for every signup and every already-sent kind. Over the ~28
+        // hours a game is live that is tens of thousands of rejected inserts, each one a
+        // rolled-back transaction and an ERROR line in the Postgres log.
+        var signupIds = memberSignups.Select(s => s.Id).ToList();
+        var alreadySent = await _db
+            .Notifications.AsNoTracking()
+            .Where(n => signupIds.Contains(n.SignupId) && n.Kind == kind)
+            .Select(n => n.SignupId)
+            .ToListAsync(ct);
+        if (alreadySent.Count == memberSignups.Count)
+        {
+            return;
+        }
+
+        var alreadySentIds = alreadySent.ToHashSet();
         var playingIds = Roster.Split(liveSignups, game.Capacity).Playing.Select(s => s.Id).ToHashSet();
 
         var groupRecipients = new List<Player>();
 
         foreach (var signup in memberSignups)
         {
+            if (alreadySentIds.Contains(signup.Id))
+            {
+                continue;
+            }
+
             var membership = signup.Player!.Memberships.SingleOrDefault();
             if (membership is null)
             {

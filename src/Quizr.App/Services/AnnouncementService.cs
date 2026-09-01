@@ -42,6 +42,35 @@ public sealed class AnnouncementService
         await _sender.EditAsync(team.ChatId, messageId, text, keyboard, ct);
     }
 
+    // The announcement's half of invariant 12's "restore it silently", and the same shape as
+    // BoardService.RefreshAsync on purpose: edit it if it's still there, repost it from the
+    // database if it isn't. CLAUDE.md already promises a deleted post costs nothing; until
+    // this existed that promise only held for the Board, because the one thing that could
+    // repost an announcement was an edit failing, and every edit is triggered by a button on
+    // the message that is gone.
+    //
+    // Immediate rather than debounced: this runs from a scheduler tick or a command, never in
+    // the burst of signups the debouncer exists to coalesce. Returns whether it had to repost,
+    // so /restoreannouncements can say how many were actually missing.
+    public async Task<bool> RestoreAsync(Game game, Team team, CancellationToken ct)
+    {
+        var (text, keyboard) = await RenderAsync(game, team, ct);
+
+        if (
+            game.AnnouncementMessageId is { } messageId
+            && await _sender.TryEditImmediatelyAsync(team.ChatId, messageId, text, keyboard, ct)
+        )
+        {
+            return false;
+        }
+
+        // Also covers a game that never got an announcement at all — PostAsync only runs at
+        // creation, so before this a game whose first post failed stayed silent forever.
+        game.AnnouncementMessageId = await _sender.SendAsync(team.ChatId, text, keyboard, ct);
+        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
     private async Task<(string Text, InlineKeyboardMarkup? Keyboard)> RenderAsync(
         Game game,
         Team team,

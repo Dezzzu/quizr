@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Net;
 using System.Text;
 using Quizr.App.Localization;
 using Quizr.App.Services;

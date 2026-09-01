@@ -448,6 +448,91 @@ public class SchedulerServiceTests
         }
     }
 
+    // The Board is verified every tick because there is one of it; announcements are verified
+    // one per tick so that probing them can't cost an edit per game every 30 seconds. What
+    // matters is that the cycle actually goes round rather than revisiting the same game.
+    [Test]
+    public async Task TheAnnouncementCheckVisitsADifferentGameOnEachTick()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
+        var team = await SeedTeamAsync(db, chatId: 9030, ct);
+        var first = await SeedGameAsync(db, team, startsAt, capacity: 5, ct);
+        first.AnnouncementMessageId = new TelegramMessageId(501);
+        var second = await SeedSecondGameAsync(db, team, first, startsAt.AddDays(1), ct);
+        await db.SaveChangesAsync(ct);
+
+        // Both announcements were deleted from the chat — the incident this exists for.
+        var (scheduler, bot) = CreateScheduler(db, startsAt.AddHours(-2));
+        bot.SendRequest(
+                Arg.Is<EditMessageTextRequest>(r => r.MessageId == 501 || r.MessageId == 502),
+                Arg.Any<CancellationToken>()
+            )
+            .ThrowsAsync(new ApiRequestException("Bad Request: message to edit not found", 400));
+
+        await scheduler.RunTickAsync(ct, tickNumber: 0);
+
+        var afterFirstTick = await db.Games.AsNoTracking().Where(g => g.TeamId == team.Id).ToListAsync(ct);
+        afterFirstTick.Single(g => g.Id == first.Id).AnnouncementMessageId.Should().NotBe(new TelegramMessageId(501));
+        afterFirstTick.Single(g => g.Id == second.Id).AnnouncementMessageId.Should().Be(new TelegramMessageId(502));
+
+        await scheduler.RunTickAsync(ct, tickNumber: 1);
+
+        var afterSecondTick = await db.Games.AsNoTracking().Where(g => g.TeamId == team.Id).ToListAsync(ct);
+        afterSecondTick.Single(g => g.Id == second.Id).AnnouncementMessageId.Should().NotBe(new TelegramMessageId(502));
+    }
+
+    // An announcement that is still there is edited in place, not reposted — otherwise the
+    // check would litter the chat with a duplicate every tick.
+    [Test]
+    public async Task TheAnnouncementCheckLeavesALiveAnnouncementWhereItIs()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
+        var team = await SeedTeamAsync(db, chatId: 9031, ct);
+        var game = await SeedGameAsync(db, team, startsAt, capacity: 5, ct);
+        game.AnnouncementMessageId = new TelegramMessageId(601);
+        await db.SaveChangesAsync(ct);
+        var (scheduler, bot) = CreateScheduler(db, startsAt.AddHours(-2));
+
+        await scheduler.RunTickAsync(ct, tickNumber: 0);
+
+        (await db.Games.AsNoTracking().SingleAsync(g => g.Id == game.Id, ct))
+            .AnnouncementMessageId.Should()
+            .Be(new TelegramMessageId(601));
+        // The venue line is the announcement's own; the Board lists the same title, so matching
+        // on that would find the Board this tick posted and prove nothing.
+        bot.SentTexts(9031).Should().NotContain(t => t.Contains("📍 The Pub", StringComparison.Ordinal));
+    }
+
+    // SeedGameAsync derives its creator's Telegram id from the chat id, so a second game for
+    // the same team has to reuse that creator rather than seed a colliding one.
+    private static async Task<Game> SeedSecondGameAsync(
+        QuizrDb db,
+        Team team,
+        Game first,
+        DateTimeOffset startsAt,
+        CancellationToken ct
+    )
+    {
+        var game = new Game
+        {
+            TeamId = team.Id,
+            Title = "Second Quiz Night",
+            Venue = "The Pub",
+            StartsAt = startsAt,
+            Capacity = 5,
+            AnnouncementMessageId = new TelegramMessageId(502),
+            CreatedAt = DateTimeOffset.UtcNow,
+            CreatedByPlayerId = first.CreatedByPlayerId,
+        };
+        db.Games.Add(game);
+        await db.SaveChangesAsync(ct);
+        return game;
+    }
+
     private static (SchedulerService Scheduler, ITelegramBotClient Bot) CreateScheduler(QuizrDb db, DateTimeOffset now)
     {
         var bot = TelegramBotClientTestHelper.Create();
