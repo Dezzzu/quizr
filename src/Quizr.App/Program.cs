@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using Quizr.App.Data;
@@ -27,24 +28,18 @@ var builder = Host.CreateApplicationBuilder(args);
 // the secrets file won't exist in a real deployment, where env vars are used instead.
 builder.Configuration.AddUserSecrets<Program>(optional: true);
 
-// A human at an interactive terminal wants readable text; a log aggregator ingesting
-// captured/piped stdout (Docker, systemd, CI) wants structured JSON it can parse.
-// Console.IsOutputRedirected tells the two apart without an extra environment variable
-// to remember — DOTNET_ENVIRONMENT quietly defaults to Production even when run locally,
-// same footgun as the user-secrets loading above.
-if (Console.IsOutputRedirected)
+// Readable text everywhere, including under Docker. Structure leaves over OTLP instead
+// (below), and it leaves *better* — Seq reconstructs the message template and its named
+// properties from the exporter, where an aggregator re-parsing a JSON console line only ever
+// recovers whatever fields it was told to look for. That leaves stdout free to be what a
+// person actually reads through `docker logs`, which is the one place the exporter cannot
+// help: it batches, so a crash on the way up takes the last records with it.
+builder.Logging.AddSimpleConsole(options =>
 {
-    builder.Logging.AddJsonConsole(options => options.IncludeScopes = true);
-}
-else
-{
-    builder.Logging.AddSimpleConsole(options =>
-    {
-        options.IncludeScopes = true;
-        options.SingleLine = true;
-        options.TimestampFormat = "HH:mm:ss ";
-    });
-}
+    options.IncludeScopes = true;
+    options.SingleLine = true;
+    options.TimestampFormat = "HH:mm:ss ";
+});
 
 // EF Core's per-command SQL, the Telegram HTTP client's per-request tracing, and Polly's
 // per-attempt success logs are Information-level noise that floods every single update —
@@ -91,26 +86,34 @@ builder.Services.AddSingleton<ITelegramBotClient>(sp =>
     return new TelegramBotClient(botToken, httpClient);
 });
 
-// Metrics leave over OTLP, which the process pushes — so the bot keeps the property that
-// nothing ever connects to it (README): no port to expose, no scrape target, and nothing for
-// Coolify to mistake for a health check it could hang a rolling update on. DEPLOY.md explains
-// why a second container holding the same token is the one failure that never recovers.
+// Logs and metrics both leave over OTLP, which the process pushes — so the bot keeps the
+// property that nothing ever connects to it (README): no port to expose, no scrape target, and
+// nothing for Coolify to mistake for a health check it could hang a rolling update on.
+// DEPLOY.md explains why a second container holding the same token is the one failure that
+// never recovers.
 //
-// Metrics only, and deliberately no tracing: an HttpClient span records the request URI in
-// url.full, and every Telegram call carries the bot token in its path. The metrics the same
-// instrumentation emits are labelled with server.address, method and status code only, so
-// they carry no secret — the same leak Program.cs already filters out of the HTTP logs below.
+// Still deliberately no tracing: an HttpClient span records the request URI in url.full, and
+// every Telegram call carries the bot token in its path. The metrics and logs the same
+// instrumentation emits are labelled with server.address, method and status code only, so they
+// carry no secret — the same leak Program.cs already filters out of the HTTP logs below.
 builder.Services.AddMetrics();
 builder.Services.AddSingleton<QuizrMetrics>();
 
 // The standard OTEL_* variables configure the exporter itself — endpoint, protocol, headers —
 // so there is nothing to parse here. This only decides whether to turn it on, which keeps a
-// local run with no collector from retrying an export it can never make.
+// local run with no collector from retrying an export it can never make: developing against
+// the console alone needs no OTEL_* set at all, and no Seq running.
 if (!string.IsNullOrWhiteSpace(builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]))
 {
     builder
         .Services.AddOpenTelemetry()
         .ConfigureResource(resource => resource.AddService("quizr"))
+        // IncludeScopes is what carries the per-update scope (update id, chat id, user id —
+        // CLAUDE.md's Conventions) through as queryable properties rather than a prefix baked
+        // into the rendered text. The exporter also ships each call site's original message
+        // template, which is what makes the "never an interpolated string" rule pay off at the
+        // other end: Seq indexes {UserId} and {GameId} as fields, not as substrings.
+        .WithLogging(logging => logging.AddOtlpExporter(), options => options.IncludeScopes = true)
         .WithMetrics(metrics =>
             metrics
                 .AddMeter(QuizrMetrics.MeterName)

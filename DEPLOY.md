@@ -102,26 +102,69 @@ deploy.
 
 ## Observability
 
-Two paths out, both push-based, because the bot has no inbound anything and that is worth
-keeping (`README.md`: nothing ever connects to it — it dials out).
+Logs and metrics both leave the process over OTLP, pushed to a **Seq** instance. One
+destination, one protocol, one set of variables — nothing is scraped, and nothing connects to
+the bot, which is the property `README.md` cares about: it dials out.
 
-| What | How it leaves | Needs |
-| --- | --- | --- |
-| Metrics | The process pushes OTLP itself | `OTEL_*` variables on the application |
-| Logs | Grafana Alloy reads Docker's logs on the host | `observability/alloy.alloy`, run as its own service |
+**Seq is not part of this deployment.** It runs as its own standalone service, shared with
+other projects, reachable on the Coolify network as `http://seq`. Nothing in this repository
+creates it, and nothing here should — its retention, its upgrades and its storage budget
+belong to whoever owns that instance.
 
-### Metrics
-
-Set these on the Coolify application alongside the bot's own variables. They configure the
-OpenTelemetry exporter directly — `Program.cs` parses none of them, it only checks whether the
-endpoint is set at all, so nothing is exported when they are absent and a local run stays
-silent instead of retrying an export it can never make.
+Set these on the Coolify application alongside the bot's own variables. `Program.cs` parses
+none of them — it only checks whether the endpoint is set at all, so with none of them present
+nothing is exported and a local run stays silent instead of retrying an export it can never
+make. Developing against the console alone needs no Seq running and no `OTEL_*` set.
 
 | Variable | Value |
 | --- | --- |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | the OTLP gateway URL from Grafana Cloud → Connections → OTLP |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://seq/ingest/otlp` |
 | `OTEL_EXPORTER_OTLP_PROTOCOL` | `http/protobuf` |
-| `OTEL_EXPORTER_OTLP_HEADERS` | `Authorization=Basic <base64 of instanceID:token>` |
+| `OTEL_EXPORTER_OTLP_HEADERS` | `X-Seq-ApiKey=<key>` |
+
+The endpoint is the OTLP **base** path; the SDK appends `/v1/logs` and `/v1/metrics` itself, so
+don't write a signal path into it. `http://seq` means port 80, which is where Seq serves both
+its UI and its ingestion API. Plain HTTP is right here — the traffic never leaves the Docker
+network, and it sidesteps gRPC's hard TLS requirement.
+
+**Seq 2026.1 or newer is required.** That release added OTLP metric ingestion; an older Seq
+accepts the logs and silently drops the metrics, which is a confusing way to find out.
+
+### Logs
+
+The bot exports its own logs. There is no log-shipping agent, and removing the one that used
+to be here was the point of the change rather than a side effect — see below.
+
+What arrives in Seq is better than a re-parsed console line. The exporter ships each call
+site's original message template, so `LogInformation("Promoted {UserId} to game {GameId}", …)`
+lands as a template with `UserId` and `GameId` as indexed properties rather than as a sentence
+with two numbers buried in it. That is what `CLAUDE.md`'s "always with structured message
+templates, never an interpolated string" rule was banking, and this is where it pays out.
+`IncludeScopes` carries the per-update scope — update id, chat id, user id — through the same
+way.
+
+**stdout stays plain, readable text**, deliberately, because it is now aimed at a person
+rather than at a parser. `docker logs` and Coolify's log viewer are where you look when the
+container is restart-looping, and they are the *only* place the last few records before a hard
+crash survive: the OTLP exporter batches, so a process dying on the way up takes its buffer
+with it. That is the one gap in this arrangement, and it is covered by looking in the place
+you would already be looking.
+
+Because the Seq instance is shared, give the bot **its own API key** rather than reusing
+another project's. A Seq API key can stamp properties onto everything ingested through it
+(`Application = 'Quizr'`, say) and can be revoked on its own. The resource already sets
+`service.name = quizr`, so filtering works either way — but a key-applied property holds even
+if a future producer is configured sloppily. Worth confirming on the first ingest that the
+stamping applies to the OTLP endpoints and not only to Seq's native ingestion API; Datalust's
+API-key documentation covers the native path explicitly and is quiet about OTLP.
+
+Postgres' own logs no longer reach Seq. They were worth having during the announcement
+incident — half that evidence was `duplicate key value` lines — but `docker logs` and Coolify's
+viewer still have them, and that was a forensic need rather than a monitoring one. If it ever
+becomes continuous, the tool is Datalust's `seq-input-gelf` alongside a `gelf` logging driver
+on the Postgres service: no Docker socket, no root container. Not Alloy.
+
+### Metrics
 
 Three instruments are the bot's own, and they are what the alerts below are written against —
 `QuizrMetricsTests` pins their names for that reason:
@@ -136,11 +179,17 @@ Three instruments are the bot's own, and they are what the alerts below are writ
 Runtime and HttpClient instrumentation come along too, which is where Telegram API failure
 rates show up.
 
-**Metrics only, no tracing.** An HttpClient *span* records the request URI in `url.full`, and
-every Telegram call carries the bot token in its path — the same leak this file's sibling
-comment in `Program.cs` already filters out of the HTTP logs. The metrics that the same
-instrumentation emits are labelled with `server.address`, method and status code only, so they
-carry no secret. Adding traces means scrubbing that attribute first.
+**Logs and metrics only, no tracing.** An HttpClient *span* records the request URI in
+`url.full`, and every Telegram call carries the bot token in its path — the same leak
+`Program.cs` already filters out of the HTTP logs. The metrics that instrumentation emits are
+labelled with `server.address`, method and status code only, so they carry no secret. Adding
+traces means scrubbing that attribute first.
+
+On a shared instance the metric budget is shared too. Seq's free Individual tier allows 100
+million metric samples; runtime plus HttpClient instrumentation at the default 60-second export
+interval is on the order of 10–15 million a year for this one bot. There is room, but set a
+retention policy under Data → Storage with `series` as the deletion target before a third
+project arrives, not after.
 
 ### The heartbeat, and why there is still no health check
 
@@ -155,121 +204,22 @@ while the process stays up, which a probe cannot see.
 
 `quizr.scheduler.ticks` is the answer instead. The scheduler runs every 30 seconds with nobody
 asking it to, so the counter advancing is proof the process is doing work, and a **gap** in it
-is the alert:
+is the alert: chart the series in Seq and create the alert from the chart, firing when the
+increase over five minutes reaches zero.
 
-```
-sum(increase(quizr_scheduler_ticks_total[5m])) == 0
-```
+Worth pairing with an alert on `quizr.exceptions` grouped by `quizr.source` — which is what
+would have surfaced the swallowed per-team failures during the announcement incident — and one
+on the rate of `Error`-level events.
 
-Worth pairing with an alert on `quizr_exceptions_total` by `quizr.source`, which is what would
-have surfaced the swallowed per-team failures during the announcement incident, and a Loki
-alert on the rate of `level="Error"` lines.
+### What still isn't covered
 
-Set both to notify somewhere that is not the VPS. A monitor hosted on the box it watches
-cannot tell you the box is gone, which is the main reason the stack is hosted rather than
-self-run.
+Seq runs on the same VPS as the bot. A monitor hosted on the box it watches cannot tell you
+the box is gone, so every alert above answers "is the bot misbehaving", not "is anything
+running at all".
 
-### Logs
-
-Two files in `observability/`: `alloy.alloy` is the Alloy config — it discovers every container
-on the host, reads their stdout, lifts `LogLevel` into a label and writes to Grafana Cloud Loki
-— and `docker-compose.yml` is the service that runs it. It covers Postgres as well as the bot
-on purpose: half the evidence during the announcement incident was Postgres' own
-`duplicate key value` lines, and reading them beside the bot's is the point.
-
-**Run it on the host, not as a Coolify resource.** This is the one piece of the deployment
-Coolify does not own, and that is deliberate rather than laziness — see below.
-
-```bash
-mkdir -p /opt/alloy && cd /opt/alloy
-
-curl -fsSL -O https://raw.githubusercontent.com/Dezzzu/quizr/main/observability/alloy.alloy
-curl -fsSL -O https://raw.githubusercontent.com/Dezzzu/quizr/main/observability/docker-compose.yml
-
-cat > .env <<'ENV'
-LOKI_URL=https://logs-prod-XX.grafana.net/loki/api/v1/push
-LOKI_USERNAME=<numeric instance id>
-LOKI_PASSWORD=<token>
-ENV
-chmod 600 .env
-
-docker compose up -d
-```
-
-`restart: unless-stopped` is in the compose file, so it survives reboots and daemon restarts.
-To pick up a config change, re-run the two `curl`s and `docker compose up -d` again.
-
-The credentials come from Grafana Cloud → Connections → Loki, where the username is the
-numeric instance id, not an email, and both differ from the OTLP credentials above.
-
-#### Why not Coolify
-
-Because a Coolify compose deployment never puts the repository on the host. Its application
-directory holds exactly three things — the `.env` it generates, its own rewritten
-`docker-compose.yaml`, and a placeholder README:
-
-```
-/data/coolify/applications/<uuid>/
-├── .env
-├── README.md
-└── docker-compose.yaml
-```
-
-The checkout lives at `/artifacts/<id>/` inside an ephemeral build helper, which the Docker
-daemon never sees. So a bind mount of a repository file cannot resolve, whatever path it is
-given: Docker creates a *directory* at the missing source and then refuses to mount a
-directory over a file, which surfaces as an OCI `not a directory` error rather than anything
-about paths. Three different spellings of that path were tried before the application
-directory was listed and the actual cause became obvious; if you find yourself adjusting the
-path again, list it first.
-
-Two things would work if Coolify has to own this: embedding the config in the compose file as
-an inline `configs:` entry, or Coolify's per-resource file storage. Both move the config out of
-version control and into a compose block or a web form, which is the trade this avoids.
-
-### Querying it
-
-**Do not query by container name.** Coolify names containers `<resource-uuid>-<deploy-timestamp>`
-— `rrnw2v5key9vfuhdwyukwmhh-125121626027` — and the timestamp changes on every deploy, so a
-query written against one stops matching after the next merge to `main`.
-
-`alloy.alloy` relabels around this: streams are labelled with Coolify's own `resourceName`, so
-the bot is `{container="quizr-bot"}` and stays that way across deploys. The relabel is a
-cascade, falling back to the uuid without its timestamp and then to the raw name, so a
-container Coolify didn't create still arrives labelled with something.
-
-The image also carries `org.opencontainers.image.revision`, which is the commit that built it —
-handy for answering "what is actually running" from `docker inspect`, though deliberately not a
-Loki label, since it would churn a stream per deploy just as badly.
-
-### If nothing appears in Loki
-
-Split the problem before touching the config — the failure looks identical from the outside
-whether the credentials are wrong, the pipeline is wrong, or you are reading the wrong
-datasource:
-
-```bash
-curl -u "$LOKI_USERNAME:$LOKI_PASSWORD" -H 'Content-Type: application/json' -X POST "$LOKI_URL" \
-  --data-raw '{"streams":[{"stream":{"job":"manual-test"},"values":[["'"$(date +%s)"'000000000","hi"]]}]}'
-```
-
-A `204` means the credentials and URL are right and the fault is downstream of them. If that
-line still doesn't appear in Grafana, you are querying a different datasource than you pushed
-to — a Grafana Cloud org with more than one stack makes this very easy, and it costs an hour
-if you assume the pipeline is broken instead.
-
-Nothing here is required for the bot to work. With no `OTEL_EXPORTER_OTLP_ENDPOINT` set and no
-Alloy running, it behaves exactly as it did before — stdout and `QUIZR_ALERT_CHAT_ID`.
-
-## Rolling back
-
-Every build is pushed twice: `:latest` and `:sha-<commit>`. To roll back, point the Coolify
-application at the `:sha-…` tag of a known-good commit and redeploy. Reverting on `main` and
-letting the pipeline run works too, and is preferable when the bad commit included a migration —
-a rollback of the image does not roll back the schema.
-
-## Rebuild periodically
-
-`CLAUDE.md` asks for the image to be rebuilt periodically even without code changes: `tzdata`
-lives in the image, and a stale copy produces wrong offsets after a country changes its DST
-rules — silently, with no error. Re-running the workflow from the Actions tab is enough.
+`QUIZR_ALERT_CHAT_ID` closes part of that — the bot messages a private Telegram channel on an
+unhandled exception, from its own process, off the box. What is still open is the case where
+the process or the host stops entirely and nothing is left to send anything. The cheap fix is a
+dead-man's switch: have the scheduler tick ping a hosted cron monitor, so silence is detected
+somewhere that is not this machine. Not done yet, and deliberately not folded into the change
+that introduced Seq.
