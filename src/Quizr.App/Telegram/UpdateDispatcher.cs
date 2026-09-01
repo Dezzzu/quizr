@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Quizr.App.Data;
 using Quizr.App.Localization;
+using Quizr.App.Telemetry;
 using Quizr.Domain;
 using Telegram.Bot;
 using Telegram.Bot.Polling;
@@ -17,11 +18,13 @@ namespace Quizr.App.Telegram;
 public sealed class UpdateDispatcher : IUpdateHandler
 {
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly QuizrMetrics _metrics;
     private readonly ILogger<UpdateDispatcher> _logger;
 
-    public UpdateDispatcher(IServiceScopeFactory scopeFactory, ILogger<UpdateDispatcher> logger)
+    public UpdateDispatcher(IServiceScopeFactory scopeFactory, QuizrMetrics metrics, ILogger<UpdateDispatcher> logger)
     {
         _scopeFactory = scopeFactory;
+        _metrics = metrics;
         _logger = logger;
     }
 
@@ -41,12 +44,15 @@ public sealed class UpdateDispatcher : IUpdateHandler
             }
         );
 
+        _metrics.RecordUpdate();
+
         try
         {
             await scope.ServiceProvider.GetRequiredService<UpdateRouter>().RouteAsync(update, cancellationToken);
         }
         catch (Exception ex)
         {
+            _metrics.RecordException(ex, QuizrMetrics.UpdateSource);
             _logger.LogError(ex, "Unhandled exception handling update {UpdateId}", update.Id);
 
             // Best-effort: the alert is what matters here, so a failure sending it (or the

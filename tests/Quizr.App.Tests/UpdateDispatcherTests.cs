@@ -47,6 +47,7 @@ public class UpdateDispatcherTests
         services.AddScoped<TeamBootstrapService>();
         services.AddScoped<PlayerBootstrapService>();
         services.AddScoped<UpdateRouter>();
+        services.AddSingleton(TestMeterFactory.Metrics());
         services.AddSingleton<UpdateDispatcher>();
 
         await using var provider = services.BuildServiceProvider();

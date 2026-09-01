@@ -562,6 +562,7 @@ public class SchedulerServiceTests
             announcements,
             board,
             clock,
+            TestMeterFactory.Metrics(),
             NullLogger<SchedulerService>.Instance
         );
 

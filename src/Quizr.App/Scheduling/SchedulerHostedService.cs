@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Quizr.App.Services;
+using Quizr.App.Telemetry;
 
 namespace Quizr.App.Scheduling;
 
@@ -15,16 +16,19 @@ public sealed class SchedulerHostedService : BackgroundService
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly TimeProvider _clock;
+    private readonly QuizrMetrics _metrics;
     private readonly ILogger<SchedulerHostedService> _logger;
 
     public SchedulerHostedService(
         IServiceScopeFactory scopeFactory,
         TimeProvider clock,
+        QuizrMetrics metrics,
         ILogger<SchedulerHostedService> logger
     )
     {
         _scopeFactory = scopeFactory;
         _clock = clock;
+        _metrics = metrics;
         _logger = logger;
     }
 
@@ -45,6 +49,11 @@ public sealed class SchedulerHostedService : BackgroundService
                 await scope
                     .ServiceProvider.GetRequiredService<SchedulerService>()
                     .RunTickAsync(stoppingToken, tickNumber++);
+
+                // Only after the tick actually returned. Counted here rather than inside
+                // RunTickAsync so it means "a whole tick completed" — a tick that threw past
+                // the per-team handling leaves a gap, which is the point of a heartbeat.
+                _metrics.RecordSchedulerTick();
             }
             catch (OperationCanceledException)
             {
@@ -52,6 +61,7 @@ public sealed class SchedulerHostedService : BackgroundService
             }
             catch (Exception ex)
             {
+                _metrics.RecordException(ex, QuizrMetrics.SchedulerTickSource);
                 // One failing tick must not stop reminders forever — the next tick just
                 // asks the same idempotent question again. See STYLE.md's two broad-catch
                 // boundaries.
