@@ -54,6 +54,12 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
 
+    # COOLIFY_WEBHOOK and COOLIFY_TOKEN live on this environment, not on the
+    # repository. A job that doesn't name the environment cannot see its secrets
+    # and reads them as empty strings, which is how the first deploy handed curl
+    # an empty URL rather than saying anything was missing.
+    environment: prod
+
     permissions:
       contents: read
       # Pushing to GHCR under this repository's own namespace, which is why no

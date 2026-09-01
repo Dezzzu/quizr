@@ -65,12 +65,16 @@ A `409 Conflict` in the logs is the unambiguous symptom of two pollers sharing o
 
 ## GitHub, once
 
-Repository → Settings → Secrets and variables → Actions:
+Settings → Environments → **`prod`**:
 
 | Secret | Value |
 | --- | --- |
 | `COOLIFY_WEBHOOK` | the deploy webhook URL from step 8 |
 | `COOLIFY_TOKEN` | the API token from step 2 |
+
+These are environment secrets rather than repository ones, which is why the deploy job declares
+`environment: prod`. A job that doesn't name the environment cannot read them — it sees empty
+strings, with nothing to say they exist elsewhere. If you move them, move that line too.
 
 Nothing else. Pushing to GHCR uses the `GITHUB_TOKEN` Actions issues for each run, which is why
 the deploy job asks for `packages: write` and no registry credentials.
