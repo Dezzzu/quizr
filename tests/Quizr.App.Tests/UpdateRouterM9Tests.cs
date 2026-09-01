@@ -3,6 +3,8 @@ using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
+using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using Quizr.App.Data;
 using Quizr.App.Localization;
 using Quizr.App.Services;
@@ -10,6 +12,8 @@ using Quizr.App.Telegram;
 using Quizr.Domain;
 using Quizr.Domain.Entities;
 using Telegram.Bot;
+using Telegram.Bot.Exceptions;
+using Telegram.Bot.Requests;
 using Telegram.Bot.Types;
 using Game = Quizr.Domain.Entities.Game;
 
@@ -798,6 +802,72 @@ public class UpdateRouterM9Tests
 
         bot.AnsweredCallbackAlerts().Should().ContainSingle();
         (await db.DialogStates.CountAsync(d => d.ChatId == new TelegramChatId(8028), ct)).Should().Be(0);
+    }
+
+    // The manual half of the same recovery the scheduler does one game per tick. Reposts only
+    // what is actually missing, so a captain who runs it twice doesn't end up with two
+    // announcements per game.
+    [Test]
+    public async Task RestoreAnnouncementsRepostsOnlyTheOnesThatAreGone()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var missing = await SeedGameAsync(db, chatId: 8029, capacity: 5, ct);
+        missing.AnnouncementMessageId = new TelegramMessageId(701);
+        var team = await db.Teams.SingleAsync(t => t.Id == missing.TeamId, ct);
+        team.TimeZoneId = "Europe/Berlin";
+        var present = new Game
+        {
+            TeamId = missing.TeamId,
+            Title = "Still There",
+            Venue = "The Pub",
+            StartsAt = DateTimeOffset.UtcNow.AddDays(2),
+            Capacity = 5,
+            AnnouncementMessageId = new TelegramMessageId(702),
+            CreatedAt = DateTimeOffset.UtcNow,
+            CreatedByPlayerId = missing.CreatedByPlayerId,
+        };
+        db.Games.Add(present);
+        await SeedCaptainAsync(db, missing.TeamId, telegramUserId: 80291, ct);
+        await db.SaveChangesAsync(ct);
+
+        var (router, bot) = CreateRouter(db);
+        bot.SendRequest(Arg.Is<EditMessageTextRequest>(r => r.MessageId == 701), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new ApiRequestException("Bad Request: message to edit not found", 400));
+
+        await router.RouteAsync(MessageUpdate(8029, 80291, "/restoreannouncements"), ct);
+
+        var games = await db.Games.AsNoTracking().Where(g => g.TeamId == missing.TeamId).ToListAsync(ct);
+        games.Single(g => g.Id == missing.Id).AnnouncementMessageId.Should().NotBe(new TelegramMessageId(701));
+        games
+            .Single(g => g.Id == present.Id)
+            .AnnouncementMessageId.Should()
+            .Be(new TelegramMessageId(702), "an announcement that is still there is edited, not duplicated");
+
+        // Matched on the announcement's own venue line: the Board the command refreshes at the
+        // end lists both titles, so matching on a title would count that too.
+        bot.SentTexts(8029).Should().ContainSingle(t => t.Contains("📍 The Pub", StringComparison.Ordinal));
+        bot.EphemeralTexts().Should().ContainSingle(e => e.Text.Contains("Reposted: 1", StringComparison.Ordinal));
+    }
+
+    [Test]
+    public async Task RestoreAnnouncementsRefusesAnyoneWhoIsNotACaptain()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 8030, capacity: 5, ct);
+        game.AnnouncementMessageId = new TelegramMessageId(801);
+        await db.SaveChangesAsync(ct);
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(MessageUpdate(8030, 80302, "/restoreannouncements"), ct);
+
+        (await db.Games.AsNoTracking().SingleAsync(g => g.Id == game.Id, ct))
+            .AnnouncementMessageId.Should()
+            .Be(new TelegramMessageId(801));
+        bot.EphemeralTexts()
+            .Should()
+            .ContainSingle(e => e.Text.Contains("captain", StringComparison.OrdinalIgnoreCase));
     }
 
     // Done is tapped on the private view it closes, so the callback arrives with Id 0 and the

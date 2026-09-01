@@ -35,6 +35,7 @@
   "Commands.EditFranchise": "Редактировать франшизу",
   "Commands.EditGame": "Редактировать игру",
   "Commands.ManageCaptains": "Назначить или снять капитанство",
+  "Commands.RestoreAnnouncements": "Восстановить пропавшие объявления об играх",
 
   "Game.TitleWithFranchise": "{Franchise} · {Title}",
   "Announcement.Venue": "📍 {Venue}",
@@ -195,6 +196,7 @@
   "EditGame.AskStartTime": "Какое новое время начала? Формат HH:mm, например 19:00.",
   "EditGame.AskTags": "Какие новые теги? Через запятую, например \"музыка, детектив\", или напишите \"skip\", чтобы их убрать.",
   "EditGame.Updated": "Обновлено.",
+  "Restore.Done": "Проверено предстоящих игр: {Checked}. Опубликовано заново: {Restored}.",
 
   "Roster.Header": "<b>Управление составом — {Title}</b>",
   "Roster.Empty": "В этой игре никто не участвовал.",

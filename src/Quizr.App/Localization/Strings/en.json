@@ -35,6 +35,7 @@
   "Commands.EditFranchise": "Edit a franchise",
   "Commands.EditGame": "Edit a game",
   "Commands.ManageCaptains": "Grant or revoke captaincy",
+  "Commands.RestoreAnnouncements": "Repost any game announcements that went missing",
 
   "Game.TitleWithFranchise": "{Franchise} · {Title}",
   "Announcement.Venue": "📍 {Venue}",
@@ -195,6 +196,7 @@
   "EditGame.AskStartTime": "What's the new start time? Use HH:mm, e.g. 19:00.",
   "EditGame.AskTags": "What are the new tags? Comma-separated, e.g. \"music, detective\", or \"skip\" to clear them.",
   "EditGame.Updated": "Updated.",
+  "Restore.Done": "Checked {Checked} upcoming games. Reposted: {Restored}.",
 
   "Roster.Header": "<b>Manage roster — {Title}</b>",
   "Roster.Empty": "Nobody played this game.",

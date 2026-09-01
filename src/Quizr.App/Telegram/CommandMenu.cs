@@ -36,6 +36,7 @@ internal static class CommandMenu
         ("editfranchise", "Commands.EditFranchise"),
         ("editgame", "Commands.EditGame"),
         ("managecaptains", "Commands.ManageCaptains"),
+        ("restoreannouncements", "Commands.RestoreAnnouncements"),
     ];
 
     public static async Task RegisterAsync(ITelegramBotClient bot, IStrings strings, CancellationToken ct)
