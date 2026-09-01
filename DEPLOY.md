@@ -16,12 +16,29 @@ configured once, by hand, in Coolify — this file is that list.
 the same token both call `getUpdates`, and Telegram answers one of them with `409 Conflict`
 forever. The scheduler would also double-fire — two reminders, two auto-finishes.
 
-So in Coolify the application must be **1 replica**, and the old container must **stop before**
-the new one starts. A rolling deployment that briefly overlaps them is not merely untidy here;
-it breaks the bot until one is killed. If you see `409 Conflict` in the logs, this is why.
+There is no replica count to set: Coolify runs one container per application and has no such
+setting. What could put two of them side by side is a *rolling update*, where Coolify starts the
+replacement before stopping the original.
 
-For the same reason there is no port to expose and no HTTP health check to configure. Nothing
-listens (`STACK.md`) — Coolify should treat this as a plain worker.
+**The lever is the health check — so leave it unconfigured.** Coolify's rolling updates
+[require](https://coolify.io/docs/knowledge-base/rolling-updates) "a valid health check
+configured and passing", because that is how it decides the new container is ready to take over.
+This bot has none and cannot meaningfully have one: nothing listens on a port (`STACK.md`), it
+long-polls. With no health check a rolling update cannot proceed, which is what leaves the
+deployment stopping the old container before starting the new one.
+
+So: expose no port, configure no health check. Adding one to make the deployment look tidier is
+the change that would break the bot.
+
+Worth confirming once on your first redeploy rather than trusting it, since Coolify's docs state
+the requirement without spelling out the fallback:
+
+```bash
+docker ps --filter name=quizr                 # expect exactly one container
+docker logs <container> 2>&1 | grep -i conflict   # expect nothing
+```
+
+A `409 Conflict` in the logs is the unambiguous symptom of two pollers sharing one token.
 
 ## Coolify, once
 
@@ -42,7 +59,8 @@ listens (`STACK.md`) — Coolify should treat this as a plain worker.
    skip the login entirely. The image holds no secrets — they all arrive as environment
    variables — so public is a reasonable choice.
 6. **Set the environment variables** (below).
-7. **Set replicas to 1** and the deployment strategy to stop-then-start. See above.
+7. **Leave the health check empty and expose no port.** See above — this is what keeps two
+   containers from ever running at once.
 8. **Copy the deploy webhook URL** from the application's Webhooks tab.
 
 ## GitHub, once
