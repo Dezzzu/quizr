@@ -99,8 +99,19 @@ jobs:
       # A GET carrying a bearer token is the shape Coolify's own GitHub Actions
       # guide documents. --fail turns a rejected webhook into a red build instead
       # of a green one that quietly deployed nothing.
+      #
+      # Read through env rather than interpolated into the script: an unset secret
+      # expands to an empty string, and `curl ''` fails with a bare "malformed
+      # URL" that says nothing about which secret is missing or that the image
+      # was pushed regardless. Checking first turns that into an answer.
       - name: Trigger Coolify deploy
+        env:
+          WEBHOOK: ${{ secrets.COOLIFY_WEBHOOK }}
+          TOKEN: ${{ secrets.COOLIFY_TOKEN }}
         run: |
-          curl --fail --silent --show-error \
-            --request GET '${{ secrets.COOLIFY_WEBHOOK }}' \
-            --header 'Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}'
+          if [ -z "$WEBHOOK" ] || [ -z "$TOKEN" ]; then
+            echo "::error::COOLIFY_WEBHOOK and COOLIFY_TOKEN are not set, so nothing was deployed. The image was still built and pushed to ghcr.io, so a manual redeploy in Coolify will pick it up. See DEPLOY.md for both values."
+            exit 1
+          fi
+
+          curl --fail --silent --show-error --request GET "$WEBHOOK" --header "Authorization: Bearer $TOKEN"
