@@ -171,48 +171,61 @@ self-run.
 
 ### Logs
 
-`observability/alloy.alloy` is the Alloy config — it discovers every container on the host,
-reads their stdout, lifts `LogLevel` into a label and writes to Grafana Cloud Loki — and
-`observability/docker-compose.yml` is the service that runs it. It covers Postgres as well as
-the bot on purpose: half the evidence during the announcement incident was Postgres' own
+Two files in `observability/`: `alloy.alloy` is the Alloy config — it discovers every container
+on the host, reads their stdout, lifts `LogLevel` into a label and writes to Grafana Cloud Loki
+— and `docker-compose.yml` is the service that runs it. It covers Postgres as well as the bot
+on purpose: half the evidence during the announcement incident was Postgres' own
 `duplicate key value` lines, and reading them beside the bot's is the point.
 
-**Deploy it as a repository-backed application, with base directory `observability`.** Not as
-Coolify's standalone *Docker Compose* resource — that one has no repository behind it, so the
-config the compose file mounts would not exist.
-
-That distinction is the whole trick, and it is worth writing down because neither error names
-its cause. Coolify runs compose as:
-
-```
-docker compose --env-file <base>/.env --project-directory <base> -f <base>/docker-compose.yml up -d
-```
-
-Relative paths inside the compose file resolve against **`--project-directory`**, which is the
-base directory — so `./alloy.alloy` means the file beside it, and any other spelling misses.
-When a bind-mount source is missing, Docker creates a *directory* there and then refuses to
-mount a directory over a file, which surfaces as an OCI `not a directory` error rather than
-anything about paths. Delete the stray directory before retrying or the retry fails the same
-way.
-
-Coolify writes the resource's environment variables into that `.env`, so `LOKI_URL`,
-`LOKI_USERNAME` and `LOKI_PASSWORD` set on the resource are what the compose file
-interpolates. They come from Grafana Cloud → Connections → Loki, where the username is the
-numeric instance id, not an email, and both differ from the OTLP credentials above.
-
-**To run it by hand**, mirror that invocation rather than `cd`-ing into the folder:
+**Run it on the host, not as a Coolify resource.** This is the one piece of the deployment
+Coolify does not own, and that is deliberate rather than laziness — see below.
 
 ```bash
-docker compose --project-directory observability -f observability/docker-compose.yml up
+mkdir -p /opt/alloy && cd /opt/alloy
+
+curl -fsSL -O https://raw.githubusercontent.com/Dezzzu/quizr/main/observability/alloy.alloy
+curl -fsSL -O https://raw.githubusercontent.com/Dezzzu/quizr/main/observability/docker-compose.yml
+
+cat > .env <<'ENV'
+LOKI_URL=https://logs-prod-XX.grafana.net/loki/api/v1/push
+LOKI_USERNAME=<numeric instance id>
+LOKI_PASSWORD=<token>
+ENV
+chmod 600 .env
+
+docker compose up -d
 ```
 
-A health check on *this* service is fine — the rolling-update hazard is specific to the bot
-and its single Telegram token.
+`restart: unless-stopped` is in the compose file, so it survives reboots and daemon restarts.
+To pick up a config change, re-run the two `curl`s and `docker compose up -d` again.
 
-It reads the Docker socket, which is how it enumerates containers and tails their logs.
-Mounting it read-only limits what the container can *do* with Docker, not what it can see —
-every container's logs on the host are in scope. That is the point here, and it is also why
-that one service runs as root where the bot deliberately doesn't.
+The credentials come from Grafana Cloud → Connections → Loki, where the username is the
+numeric instance id, not an email, and both differ from the OTLP credentials above.
+
+#### Why not Coolify
+
+Because a Coolify compose deployment never puts the repository on the host. Its application
+directory holds exactly three things — the `.env` it generates, its own rewritten
+`docker-compose.yaml`, and a placeholder README:
+
+```
+/data/coolify/applications/<uuid>/
+├── .env
+├── README.md
+└── docker-compose.yaml
+```
+
+The checkout lives at `/artifacts/<id>/` inside an ephemeral build helper, which the Docker
+daemon never sees. So a bind mount of a repository file cannot resolve, whatever path it is
+given: Docker creates a *directory* at the missing source and then refuses to mount a
+directory over a file, which surfaces as an OCI `not a directory` error rather than anything
+about paths. Three different spellings of that path were tried before the application
+directory was listed and the actual cause became obvious; if you find yourself adjusting the
+path again, list it first.
+
+Two things would work if Coolify has to own this: embedding the config in the compose file as
+an inline `configs:` entry, or Coolify's per-resource file storage. Both move the config out of
+version control and into a compose block or a web form, which is the trade this avoids.
 
 ### Querying it
 
