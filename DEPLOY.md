@@ -87,8 +87,29 @@ in the repository, and never as GitHub secrets, since the pipeline neither needs
 | Variable | Required | Notes |
 | --- | --- | --- |
 | `QUIZR_BOT_TOKEN` | yes | From @BotFather. |
-| `QUIZR_DB` | yes | `Host=<postgres-service>;Port=5432;Database=quizr;Username=quizr;Password=…` |
+| `QUIZR_DB` | yes | Keyword form only — see below. |
 | `QUIZR_ALERT_CHAT_ID` | no | A chat the bot messages on an unhandled exception. Without it those are logged only. |
+
+### The connection string
+
+**Npgsql does not accept URL form.** Coolify shows the database as
+`postgres://user:pass@host:5432/db`; pasting that in fails at startup with *"Format of the
+initialization string does not conform to specification starting at index 0"*. Translate it:
+
+```
+Host=postgresql-quizr;Port=5432;Database=postgres;Username=postgres;Password=…
+```
+
+Two things that bite:
+
+- **A password containing `;` or `=` must be quoted** — `Password='p;ass=word'` — or the rest of
+  it parses as further keywords. Coolify generates these, so check rather than assume.
+- **The host only resolves if the bot shares a Docker network with the database.** They are
+  separate Coolify resources and are not necessarily connected; a "no such host" or a connection
+  timeout is this, and the application's Advanced settings has the toggle to join them.
+
+The database can be the `postgres` one Coolify creates by default — migrations build their
+tables wherever they connect. A dedicated `quizr` database is tidier and costs one changed value.
 
 ## What happens on deploy
 
