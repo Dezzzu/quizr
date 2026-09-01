@@ -216,7 +216,7 @@ Considered and rejected. If one seems necessary, raise it rather than adding it.
 | `IStringLocalizer` / `.resx` | Resolves language from ambient `CurrentUICulture`, which is the wrong model for a bot that renders for other people. No plural support. |
 | FluentAssertions | Commercially licensed since v8. Use AwesomeAssertions. |
 | Moq | Use NSubstitute. |
-| Serilog | Built-in `ILogger` with a JSON console is enough. Add OpenTelemetry if aggregation is ever wanted. |
+| Serilog | The built-in `ILogger` plus the OpenTelemetry exporter already delivers to Seq the thing Serilog is usually reached for: each call site's message template with its named properties indexed, not a rendered sentence. Serilog would sit behind `ILogger<T>` regardless, so no call site changes and the whole gain is sink features — bought with a second logging pipeline running beside the one already exporting metrics. See "When to revisit" for the one feature that would justify it. |
 | Telegram bot frameworks (Deployf.Botf and similar) | Small, often stale, and they sit structurally in the middle of the app. |
 | MarkdownV2 | Escaping hazard. Use HTML parse mode. |
 | OneOf | Per-operation unions by construction, so cross-cutting failures like "not a captain" get repeated in every signature. |
@@ -231,7 +231,7 @@ Nothing above is permanent. These are the specific triggers that should reopen a
 | --- | --- |
 | The mini app arrives | Generic host becomes `WebApplication`. Hosted services carry over unchanged. |
 | Phase 2 turns into genuinely separate services rather than one host | Reconsider .NET Aspire. Its orchestration and dashboard start earning their keep once there is more than one thing to run, and the objection above is entirely about there being one. |
-| You want log aggregation | Add OpenTelemetry at the composition root and point OTLP wherever you like. Call sites are already structured, so nothing else moves. |
+| You want to change log level without a redeploy | Reconsider Serilog. `Serilog.Sinks.Seq`'s `controlLevelSwitch` is the one capability OTLP has no answer for: Seq pushes a level change down to the running process, so Debug can be turned on from the UI, an update watched, and it turned back off. Durable disk buffering while Seq is unreachable comes along with it. Both cost a second logging pipeline, so wait until an incident has actually made you want them. |
 | Scheduling grows teeth — backoff, one-off jobs, an operational dashboard | TickerQ becomes the right library to reach for: EF Core-backed, so no separate storage or migration story. |
 | A second process appears | Two assumptions break — migrations applied at startup, and the in-process edit debouncer. Both need rethinking *before* a second instance exists, not after. |
 | A fourth language with unfamiliar plural rules | Revisit SmartFormat against ICU MessageFormat. SmartFormat's plural forms are positional, so a wrong form order can't be checked automatically; ICU's named CLDR categories can. Until then the snapshot tests in `CLAUDE.md` cover it. |
