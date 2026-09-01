@@ -34,7 +34,13 @@ services:
       - /etc/alloy/config.alloy
 
     volumes:
-      - ./alloy.alloy:/etc/alloy/config.alloy:ro
+      # Relative to the *project* directory, which is the repository root — not to this file's
+      # own directory. Coolify checks the repo out and runs compose from the root while
+      # pointing at this file by path, so `./alloy.alloy` resolved to `<approot>/alloy.alloy`,
+      # which doesn't exist; Docker then helpfully created a directory there and refused to
+      # mount it over a file. Run it by hand the same way: from the repository root, with
+      # `docker compose -f observability/docker-compose.yml up`.
+      - ./observability/alloy.alloy:/etc/alloy/config.alloy:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - alloy-data:/var/lib/alloy/data
 

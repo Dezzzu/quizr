@@ -190,10 +190,20 @@ docker run --rm \
 Parse errors show up immediately; logs should reach Grafana → Explore → Loki within a minute,
 carrying a `container` label. If it can't read the socket, add `--user root`.
 
-**Then promote it.** `observability/docker-compose.yml` is the managed version: add it in
-Coolify as a *Docker Compose* resource pointing at this repository with base directory
-`observability/`, so the compose file and the config it mounts stay together and in version
-control. Set `LOKI_URL`, `LOKI_USERNAME` and `LOKI_PASSWORD` on the resource — from Grafana
+**Then promote it.** `observability/docker-compose.yml` is the managed version. Two details
+that are easy to get wrong and produce errors that don't name their own cause:
+
+- It is **not** Coolify's standalone *Docker Compose* resource — that one wants pasted YAML and
+  gives the file no repository to sit in, so the config it mounts would not exist. Use
+  **Public Repository** and set the build pack to Docker Compose, which is what makes Coolify
+  check the repo out.
+- The compose file is at `/observability/docker-compose.yml`, but the **project directory is
+  the repository root**, so the bind mount inside it reads `./observability/alloy.alloy`. Get
+  that wrong and Docker creates a *directory* at the missing source path and then refuses to
+  mount it over a file, which is what the "not a directory" OCI error means. Clean up the
+  stray directory before retrying, or the next attempt fails the same way.
+
+Set `LOKI_URL`, `LOKI_USERNAME` and `LOKI_PASSWORD` on the resource — from Grafana
 Cloud → Connections → Loki, where the username is the numeric instance id, not an email, and
 both differ from the OTLP credentials above.
 
