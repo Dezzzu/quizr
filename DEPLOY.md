@@ -100,7 +100,14 @@ initialization string does not conform to specification starting at index 0"*. T
 Host=postgresql-quizr;Port=5432;Database=postgres;Username=postgres;Password=…
 ```
 
-Two things that bite:
+**Take the host from Coolify's own internal connection URL, not from the name it displays.**
+Coolify names database containers by resource uuid — the host is something like
+`laimfhqfui1mmnu6l4ljdllm`, not the `postgresql-quizr` shown on the page. Using the display name
+fails with *"Name or service not known"*, which reads like a network fault and isn't one.
+`docker ps --format '{{.Names}}\t{{.Networks}}'` on the server confirms the real name, and the
+network both containers need to share.
+
+Two more things that bite:
 
 - **A password containing `;` or `=` must be quoted** — `Password='p;ass=word'` — or the rest of
   it parses as further keywords. Coolify generates these, so check rather than assume.
