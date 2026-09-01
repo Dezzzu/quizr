@@ -1,4 +1,5 @@
 using AwesomeAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.Metrics.Testing;
 using Quizr.App.Telemetry;
 
@@ -10,6 +11,21 @@ namespace Quizr.App.Tests;
 // of failure nobody notices until they need it.
 public class QuizrMetricsTests
 {
+    // Program.cs registers these two lines and nothing else resolves QuizrMetrics in a test,
+    // so without this a missing AddMetrics() would compile, pass every test, and then fail at
+    // startup — which on this deployment means in production, since main autodeploys.
+    [Test]
+    public void ResolvesFromTheSameRegistrationTheCompositionRootUses()
+    {
+        var services = new ServiceCollection();
+        services.AddMetrics();
+        services.AddSingleton<QuizrMetrics>();
+
+        using var provider = services.BuildServiceProvider();
+
+        provider.GetRequiredService<QuizrMetrics>().Should().NotBeNull();
+    }
+
     [Test]
     public void RecordsHandledUpdates()
     {
