@@ -220,6 +220,21 @@ public class AnnouncementRendererTests
             ]);
     }
 
+    // Reaching /editgame used to mean leaving the game you were already looking at, running the
+    // command, and picking that same game back out of a list.
+    [Test]
+    public void TheManagePanelLeadsStraightIntoEditingItsOwnGame()
+    {
+        var game = GameWithCapacity(5);
+
+        var button = AnnouncementRenderer
+            .RenderManagePanel(game, Strings)
+            .InlineKeyboard.SelectMany(row => row)
+            .Single(b => b.CallbackData![0] == CallbackData.PickGameToEdit);
+
+        button.CallbackData.Should().Be(CallbackData.Format(CallbackData.PickGameToEdit, game.Id));
+    }
+
     // A finished game has only its roster left to edit (invariant 11), so that's all the door
     // opens onto — and the announcement still shows the same neutral Manage button.
     [Test]
@@ -240,7 +255,8 @@ public class AnnouncementRendererTests
             .InlineKeyboard.SelectMany(row => row)
             .Select(b => b.CallbackData![0])
             .Should()
-            .Contain(CallbackData.ManageRoster);
+            .Contain(CallbackData.ManageRoster)
+            .And.NotContain(CallbackData.PickGameToEdit);
     }
 
     private static Player Player(long id, string displayName) =>

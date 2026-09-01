@@ -6,6 +6,7 @@
   "Bot.Description": "Quizr runs sign-ups for your quiz nights — buttons instead of message reactions, with a roster the bot owns.\n\nAdd it to your team's group chat and make it an admin. A captain posts a game, everyone else taps to join. The first players fill the seats and the rest form a reserve that promotes automatically when someone drops out. Guests take seats too.\n\nOne pinned message lists every upcoming game and how full it is.\n\nAvailable in English, Russian and German.",
   "Start.Greeting": "Hi! I'm Quizr — I run sign-ups for your quiz nights.",
   "Help.Intro": "<b>Quizr</b> runs sign-ups for your quiz nights — buttons instead of message reactions, with a real roster, a reserve queue, guests, and reminders.\n\nMost of what the bot does happens through buttons on a game's announcement: joining, bringing a guest, dropping out, declining, finishing. These commands are for setup and configuration.",
+  "Help.Repo": "Quizr is open source. Bug reports, ideas and pull requests are welcome: <a href=\"{Url}\">{Url}</a>",
   "Help.EveryoneHeader": "Everyone",
   "Help.CaptainsHeader": "Captains",
   "Setup.Welcome": "Thanks for adding me! I've set the group language to {Locale}. Before I can schedule games, a captain needs to set the team's timezone: send /settimezone with an IANA id, e.g. /settimezone Europe/Berlin. Send /help any time for the full list of commands.",
@@ -54,6 +55,7 @@
   "Announcement.ManageRosterButton": "📋 Manage roster",
   "Announcement.ManagePlayersButton": "👤 Manage players",
   "Announcement.ManageGuestsButton": "👥 Manage guests",
+  "Announcement.EditGameButton": "✏️ Edit game",
   "Announcement.FinishButton": "🏁 Finish now",
   "Announcement.DeclineButton": "🚫 Decline",
   "Announcement.Joined": "You're in!",
@@ -94,6 +96,7 @@
 
   "Board.Header": "📋 <b>Upcoming games</b>",
   "Board.NoGames": "No upcoming games yet.",
+  "Board.TitleWithFranchise": "{Franchise} · {Title}",
   "Board.Entry": "{When:ddd, dd MMM, HH\\:mm} — {Title} ({Playing}/{Capacity})",
   "Board.EntryWithReserve": "{When:ddd, dd MMM, HH\\:mm} — {Title} ({Playing}/{Capacity} +{Reserve})",
 
@@ -161,6 +164,7 @@
   "NewGame.Price": "💵 {Price}",
   "NewGame.NoPrice": "💵 Free",
   "NewGame.MissingRequiredFields": "Please set Venue and Capacity before creating.",
+  "NewGame.EditTitleButton": "✏️ Title",
   "NewGame.EditVenueButton": "✏️ Venue",
   "NewGame.EditCapacityButton": "✏️ Capacity",
   "NewGame.EditPriceButton": "✏️ Price",
@@ -172,6 +176,7 @@
   "NewGame.UseButtons": "Please use the buttons above.",
 
   "EditGame.NoneYet": "No games to edit.",
+  "EditGame.NoLongerEditable": "That game has already finished or been declined, so there's nothing left to edit on it.",
   "EditGame.PickGame": "Which game?",
   "EditGame.PickField": "Editing {Title}. Which field?",
   "EditGame.PickFieldFirst": "Pick a field to edit first.",

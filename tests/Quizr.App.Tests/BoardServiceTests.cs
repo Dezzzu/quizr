@@ -436,6 +436,45 @@ public class BoardServiceTests
         return guest;
     }
 
+    // The renderer decides how a renamed franchise game is labelled; this is the half that has
+    // to put the franchise name in front of it in the first place.
+    [Test]
+    public async Task RefreshAsyncLabelsARenamedFranchiseGameWithItsFranchiseName()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 8014, ct);
+        var franchise = new Franchise
+        {
+            TeamId = team.Id,
+            Name = "Kviz, pliz!",
+            Schedule = [],
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+        db.Franchises.Add(franchise);
+        await db.SaveChangesAsync(ct);
+
+        var renamed = await SeedGameAsync(db, team, "Halloween special", DateTimeOffset.UtcNow.AddDays(1), ct);
+        renamed.FranchiseId = franchise.Id;
+        await SeedGameAsync(db, team, "Pub trivia", DateTimeOffset.UtcNow.AddDays(2), ct);
+        await db.SaveChangesAsync(ct);
+
+        var bot = TelegramBotClientTestHelper.Create();
+        var service = new BoardService(
+            db,
+            new MessageSender(bot, NoDebounce(bot)),
+            bot,
+            new Strings(),
+            NullLogger<BoardService>.Instance
+        );
+
+        await service.RefreshAsync(team, ct);
+
+        var board = bot.SentTexts().Should().ContainSingle().Subject;
+        board.Should().Contain("Kviz, pliz! · Halloween special");
+        board.Should().Contain("Pub trivia", "a one-off keeps its own title, unprefixed");
+    }
+
     private static async Task<Team> SeedTeamAsync(QuizrDb db, long chatId, CancellationToken ct)
     {
         var team = new Team

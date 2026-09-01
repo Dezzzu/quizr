@@ -29,12 +29,13 @@ internal static class BoardRenderer
             return text.ToString();
         }
 
-        foreach (var (game, playing, reserve) in upcomingByStartDate)
+        foreach (var (game, playing, reserve, franchiseName) in upcomingByStartDate)
         {
             var local = TeamTime.ConvertToLocal(game.StartsAt, teamTimeZoneId);
+            var label = Label(game.Title, franchiseName, strings);
             var titleHtml = MessageLink(chatId, game.AnnouncementMessageId) is { } link
-                ? $"""<a href="{link}">{WebUtility.HtmlEncode(game.Title)}</a>"""
-                : WebUtility.HtmlEncode(game.Title);
+                ? $"""<a href="{link}">{label}</a>"""
+                : label;
 
             // Two whole templates rather than one plus a "+n" fragment appended to it: user-
             // visible text is never concatenated (CLAUDE.md), so a locale that wants the queue
@@ -56,6 +57,31 @@ internal static class BoardRenderer
         }
 
         return text.ToString().TrimEnd();
+    }
+
+    // A game keeps whatever title it was given, and a captain who renames one — on the confirm
+    // screen or later through /editgame — usually drops the franchise out of it: "Halloween
+    // special", not "Квиз, плиз! #12". That reads fine on the announcement, where the franchise
+    // is obvious from context, and badly on the Board, where a dozen entries from three
+    // franchises sit in one list. So the Board puts the brand back in front of a title that
+    // doesn't already carry it.
+    //
+    // Contains rather than StartsWith: the point is not to say the name twice, and a title like
+    // "Осенний Квиз, плиз!" already says it. Both halves are encoded before the template joins
+    // them, since the result is spliced into an <a> below and user-visible text is never
+    // concatenated (CLAUDE.md).
+    private static string Label(string title, string? franchiseName, IStringsFor strings)
+    {
+        var encodedTitle = WebUtility.HtmlEncode(title);
+        if (franchiseName is null || title.Contains(franchiseName, StringComparison.OrdinalIgnoreCase))
+        {
+            return encodedTitle;
+        }
+
+        return strings.Text(
+            "Board.TitleWithFranchise",
+            new { Franchise = WebUtility.HtmlEncode(franchiseName), Title = encodedTitle }
+        );
     }
 
     // Telegram's t.me/c/<id>/<messageId> link scheme only exists for supergroups and

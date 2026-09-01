@@ -1,3 +1,4 @@
+using System.Globalization;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -753,6 +754,50 @@ public class UpdateRouterM9Tests
 
         bot.EphemeralTexts().Should().ContainSingle(e => e.ReceiverUserId == 80251);
         bot.SentTexts(8025).Should().BeEmpty();
+    }
+
+    // The panel's Edit game button is /editgame with its pick-a-game step already answered, so
+    // it has to land on the same field picker the command's own list leads to.
+    [Test]
+    public async Task TheManagePanelsEditGameButtonOpensTheFieldPickerForThatGame()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 8027, capacity: 5, ct);
+        await SeedCaptainAsync(db, game.TeamId, telegramUserId: 80271, ct);
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(
+            CallbackUpdate(8027, 80271, CallbackData.Format(CallbackData.PickGameToEdit, game.Id)),
+            ct
+        );
+
+        var dialog = await db.DialogStates.AsNoTracking().SingleAsync(d => d.ChatId == new TelegramChatId(8027), ct);
+        dialog.Kind.Should().Be(DialogKinds.EditGame);
+        dialog.Data.Should().Contain(game.Id.Value.ToString(CultureInfo.InvariantCulture));
+        bot.EphemeralTexts().Should().ContainSingle(e => e.ReceiverUserId == 80271);
+    }
+
+    // A panel outlives its game: the 4-hour auto-finish (invariant 8) lands while it sits open,
+    // and invariant 11 has turned that game's signups into history by then.
+    [Test]
+    public async Task TheEditGameButtonRefusesOnceItsGameHasFinished()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 8028, capacity: 5, ct);
+        await SeedCaptainAsync(db, game.TeamId, telegramUserId: 80281, ct);
+        game.FinishedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(ct);
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(
+            CallbackUpdate(8028, 80281, CallbackData.Format(CallbackData.PickGameToEdit, game.Id)),
+            ct
+        );
+
+        bot.AnsweredCallbackAlerts().Should().ContainSingle();
+        (await db.DialogStates.CountAsync(d => d.ChatId == new TelegramChatId(8028), ct)).Should().Be(0);
     }
 
     // Done is tapped on the private view it closes, so the callback arrives with Id 0 and the

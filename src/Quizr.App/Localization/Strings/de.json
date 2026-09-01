@@ -6,6 +6,7 @@
   "Bot.Description": "Quizr organisiert die Anmeldung für eure Quizabende — Buttons statt Reaktionen.\n\nFügt den Bot eurem Gruppenchat hinzu und macht ihn zum Admin. Ein Captain erstellt ein Spiel, alle anderen tippen auf „Ich bin dabei“. Die Ersten füllen die Plätze, der Rest kommt in die Reserve und rückt automatisch nach, wenn jemand absagt. Gäste belegen ebenfalls Plätze.\n\nEine angepinnte Nachricht zeigt alle anstehenden Spiele und wie voll sie sind.\n\nAuf Englisch, Russisch und Deutsch.",
   "Start.Greeting": "Hallo! Ich bin Quizr — ich organisiere die Anmeldung für eure Quizabende.",
   "Help.Intro": "<b>Quizr</b> organisiert die Anmeldung für eure Quizabende — Schaltflächen statt Reaktionen auf Nachrichten, mit einer echten Teilnehmerliste, einer Warteliste, Gästen und Erinnerungen.\n\nDas meiste läuft über die Schaltflächen in der Spielankündigung: anmelden, einen Gast mitbringen, aussteigen, absagen, beenden. Diese Befehle sind für die Einrichtung und Konfiguration.",
+  "Help.Repo": "Quizr ist Open Source. Fehlerberichte, Ideen und Pull Requests sind willkommen: <a href=\"{Url}\">{Url}</a>",
   "Help.EveryoneHeader": "Für alle",
   "Help.CaptainsHeader": "Für Captains",
   "Setup.Welcome": "Danke, dass du mich hinzugefügt hast! Ich habe die Gruppensprache auf {Locale} eingestellt. Bevor ich Spiele planen kann, muss ein Captain die Zeitzone des Teams festlegen: sende /settimezone mit einer IANA-ID, z. B. /settimezone Europe/Berlin. Sende jederzeit /help für die vollständige Befehlsliste.",
@@ -54,6 +55,7 @@
   "Announcement.ManageRosterButton": "📋 Teilnehmerliste verwalten",
   "Announcement.ManagePlayersButton": "👤 Spieler verwalten",
   "Announcement.ManageGuestsButton": "👥 Gäste verwalten",
+  "Announcement.EditGameButton": "✏️ Spiel bearbeiten",
   "Announcement.FinishButton": "🏁 Jetzt beenden",
   "Announcement.DeclineButton": "🚫 Absagen",
   "Announcement.Joined": "Du bist dabei!",
@@ -94,6 +96,7 @@
 
   "Board.Header": "📋 <b>Anstehende Spiele</b>",
   "Board.NoGames": "Noch keine anstehenden Spiele.",
+  "Board.TitleWithFranchise": "{Franchise} · {Title}",
   "Board.Entry": "{When:ddd, dd MMM, HH\\:mm} — {Title} ({Playing}/{Capacity})",
   "Board.EntryWithReserve": "{When:ddd, dd MMM, HH\\:mm} — {Title} ({Playing}/{Capacity} +{Reserve})",
 
@@ -161,6 +164,7 @@
   "NewGame.Price": "💵 {Price}",
   "NewGame.NoPrice": "💵 Kostenlos",
   "NewGame.MissingRequiredFields": "Bitte lege Ort und Kapazität fest, bevor du erstellst.",
+  "NewGame.EditTitleButton": "✏️ Titel",
   "NewGame.EditVenueButton": "✏️ Ort",
   "NewGame.EditCapacityButton": "✏️ Kapazität",
   "NewGame.EditPriceButton": "✏️ Preis",
@@ -172,6 +176,7 @@
   "NewGame.UseButtons": "Bitte benutze die Schaltflächen oben.",
 
   "EditGame.NoneYet": "Keine Spiele zum Bearbeiten.",
+  "EditGame.NoLongerEditable": "Dieses Spiel ist bereits beendet oder abgesagt — daran gibt es nichts mehr zu bearbeiten.",
   "EditGame.PickGame": "Welches Spiel?",
   "EditGame.PickField": "Bearbeite {Title}. Welches Feld?",
   "EditGame.PickFieldFirst": "Wähle zuerst ein Feld zum Bearbeiten.",

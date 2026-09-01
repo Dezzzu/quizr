@@ -116,6 +116,98 @@ public class BoardRendererTests
         text.Should().Contain("(3/10)").And.NotContain("+");
     }
 
+    // A captain who renames a franchise game usually drops the brand out of the title, which
+    // reads fine on the announcement and badly in a list mixing three franchises.
+    [Test]
+    public void PrefixesARenamedFranchiseGameWithItsFranchiseName()
+    {
+        var game = Game(1, "Halloween special", DateTimeOffset.UtcNow.AddDays(1));
+
+        var text = BoardRenderer.RenderText(
+            [Entry(game, franchiseName: "Квиз, плиз!")],
+            SupergroupChatId,
+            "Europe/Berlin",
+            Strings
+        );
+
+        text.Should().Contain("Квиз, плиз! · Halloween special");
+    }
+
+    // The derived title a franchise game is created with already leads with the brand.
+    [Test]
+    public void DoesNotRepeatAFranchiseNameTheTitleAlreadyCarries()
+    {
+        var game = Game(1, "Квиз, плиз! #12", DateTimeOffset.UtcNow.AddDays(1));
+
+        var text = BoardRenderer.RenderText(
+            [Entry(game, franchiseName: "Квиз, плиз!")],
+            SupergroupChatId,
+            "Europe/Berlin",
+            Strings
+        );
+
+        text.Should().Contain("Квиз, плиз! #12").And.NotContain("·");
+    }
+
+    // Contains, not StartsWith: a title that mentions the brand anywhere already answers the
+    // question the prefix exists to answer.
+    [Test]
+    public void DoesNotPrefixWhenTheFranchiseNameAppearsLaterInTheTitle()
+    {
+        var game = Game(1, "Осенний Квиз, плиз!", DateTimeOffset.UtcNow.AddDays(1));
+
+        var text = BoardRenderer.RenderText(
+            [Entry(game, franchiseName: "Квиз, плиз!")],
+            SupergroupChatId,
+            "Europe/Berlin",
+            Strings
+        );
+
+        text.Should().NotContain("·");
+    }
+
+    [Test]
+    public void LeavesAOneOffGameUnprefixed()
+    {
+        var game = Game(1, "Quiz Night", DateTimeOffset.UtcNow.AddDays(1));
+
+        var text = BoardRenderer.RenderText([Entry(game)], SupergroupChatId, "Europe/Berlin", Strings);
+
+        text.Should().Contain("Quiz Night").And.NotContain("·");
+    }
+
+    // The whole label is the link, not just the half of it that was already there.
+    [Test]
+    public void LinksThePrefixedTitleAsOnePiece()
+    {
+        var game = Game(1, "Halloween special", DateTimeOffset.UtcNow.AddDays(1), announcementMessageId: 42);
+
+        var text = BoardRenderer.RenderText(
+            [Entry(game, franchiseName: "Kviz")],
+            SupergroupChatId,
+            "Europe/Berlin",
+            Strings
+        );
+
+        text.Should().Contain("""<a href="https://t.me/c/1234567890/42">Kviz · Halloween special</a>""");
+    }
+
+    [Test]
+    public void HtmlEncodesTheFranchiseNameItPrefixes()
+    {
+        var game = Game(1, "Halloween special", DateTimeOffset.UtcNow.AddDays(1));
+
+        var text = BoardRenderer.RenderText(
+            [Entry(game, franchiseName: "<b>Kviz</b>")],
+            SupergroupChatId,
+            "Europe/Berlin",
+            Strings
+        );
+
+        text.Should().NotContain("<b>Kviz</b>");
+        text.Should().Contain("&lt;b&gt;Kviz&lt;/b&gt;");
+    }
+
     [Test]
     public void HtmlEncodesTheTitle()
     {
@@ -127,7 +219,8 @@ public class BoardRendererTests
         text.Should().Contain("&lt;b&gt;Quiz&lt;/b&gt;");
     }
 
-    private static BoardEntry Entry(Game game, int playing = 0, int reserve = 0) => new(game, playing, reserve);
+    private static BoardEntry Entry(Game game, int playing = 0, int reserve = 0, string? franchiseName = null) =>
+        new(game, playing, reserve, franchiseName);
 
     private static Game Game(long id, string title, DateTimeOffset startsAt, int? announcementMessageId = null) =>
         new()

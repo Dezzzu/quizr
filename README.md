@@ -35,6 +35,20 @@ and who has to wait for a seat — and rewrites its own messages whenever any of
   comments and tests.
 - **[CLAUDE.md](CLAUDE.md)** — working context for agent-assisted development: vocabulary,
   invariants, and the Telegram constraints worth designing around.
+- **[DEPLOY.md](DEPLOY.md)** — how the bot ships: the GitHub Actions pipeline and the Coolify
+  configuration it hands off to.
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** — how to report a bug, ask for a feature, and open a
+  pull request.
+
+## Contributing
+
+Bugs, ideas and pull requests are welcome — [open an
+issue](https://github.com/Dezzzu/quizr/issues) or read
+**[CONTRIBUTING.md](CONTRIBUTING.md)** first.
+
+Note that `main` autodeploys: merging a pull request ships it to the live bot within minutes,
+so `main` is protected, work reaches it through a pull request whose `build` check has passed,
+and merging is the owner's call rather than the contributor's.
 
 ## Stack
 

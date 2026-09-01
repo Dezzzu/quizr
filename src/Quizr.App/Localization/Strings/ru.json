@@ -6,6 +6,7 @@
   "Bot.Description": "Quizr ведёт запись на квиз-вечера вашей команды — кнопки вместо реакций и настоящий состав.\n\nДобавьте бота в чат команды и сделайте администратором. Капитан публикует игру, остальные нажимают «Я иду». Первые занимают места, остальные попадают в резерв и поднимаются автоматически, когда кто-то снимается. Гости тоже занимают места.\n\nЗакреплённое сообщение показывает ближайшие игры и сколько мест занято.\n\nДоступен на английском, русском и немецком.",
   "Start.Greeting": "Привет! Я Quizr — веду запись на квиз-вечера вашей команды.",
   "Help.Intro": "<b>Quizr</b> ведёт запись на ваши квиз-вечера — кнопки вместо реакций на сообщения, с настоящим составом, резервной очередью, гостями и напоминаниями.\n\nБольшая часть работы бота происходит через кнопки в объявлении об игре: запись, приведение гостя, выход, отмена игры, завершение. Эти команды — для настройки.",
+  "Help.Repo": "Исходный код Quizr открыт. Сообщения об ошибках, идеи и pull-реквесты приветствуются: <a href=\"{Url}\">{Url}</a>",
   "Help.EveryoneHeader": "Всем",
   "Help.CaptainsHeader": "Капитанам",
   "Setup.Welcome": "Спасибо, что добавили меня! Я установил язык группы: {Locale}. Прежде чем я смогу планировать игры, капитану нужно задать часовой пояс команды: отправьте /settimezone с IANA-идентификатором, например /settimezone Europe/Berlin. Отправьте /help в любой момент, чтобы увидеть полный список команд.",
@@ -54,6 +55,7 @@
   "Announcement.ManageRosterButton": "📋 Управление составом",
   "Announcement.ManagePlayersButton": "👤 Управление игроками",
   "Announcement.ManageGuestsButton": "👥 Управление гостями",
+  "Announcement.EditGameButton": "✏️ Изменить игру",
   "Announcement.FinishButton": "🏁 Завершить сейчас",
   "Announcement.DeclineButton": "🚫 Отменить",
   "Announcement.Joined": "Вы записаны!",
@@ -94,6 +96,7 @@
 
   "Board.Header": "📋 <b>Ближайшие игры</b>",
   "Board.NoGames": "Пока нет ближайших игр.",
+  "Board.TitleWithFranchise": "{Franchise} · {Title}",
   "Board.Entry": "{When:ddd, dd MMM, HH\\:mm} — {Title} ({Playing}/{Capacity})",
   "Board.EntryWithReserve": "{When:ddd, dd MMM, HH\\:mm} — {Title} ({Playing}/{Capacity} +{Reserve})",
 
@@ -161,6 +164,7 @@
   "NewGame.Price": "💵 {Price}",
   "NewGame.NoPrice": "💵 Бесплатно",
   "NewGame.MissingRequiredFields": "Пожалуйста, укажите место и вместимость перед созданием.",
+  "NewGame.EditTitleButton": "✏️ Название",
   "NewGame.EditVenueButton": "✏️ Место",
   "NewGame.EditCapacityButton": "✏️ Вместимость",
   "NewGame.EditPriceButton": "✏️ Цена",
@@ -172,6 +176,7 @@
   "NewGame.UseButtons": "Пожалуйста, используйте кнопки выше.",
 
   "EditGame.NoneYet": "Нет игр для редактирования.",
+  "EditGame.NoLongerEditable": "Эта игра уже завершена или отменена — редактировать в ней нечего.",
   "EditGame.PickGame": "Какую игру?",
   "EditGame.PickField": "Редактируем {Title}. Какое поле?",
   "EditGame.PickFieldFirst": "Сначала выберите поле для редактирования.",

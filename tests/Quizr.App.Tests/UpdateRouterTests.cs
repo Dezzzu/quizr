@@ -946,6 +946,103 @@ public class UpdateRouterTests
         (await db.Teams.AsNoTracking().SingleAsync(t => t.Id == activeTeam.Id, ct)).DeactivatedAt.Should().BeNull();
     }
 
+    // A franchise game's title arrives derived from the franchise and its game count, and
+    // before this the only way to change it was /editgame after the announcement had already
+    // been posted and read. The confirm screen is the last moment before that.
+    [Test]
+    public async Task AFranchiseGameCanBeRenamedOnTheConfirmScreenBeforeItIsAnnounced()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedCaptainedTeamAsync(db, chatId: 4049, telegramUserId: 4049, ct);
+        team.TimeZoneId = "Europe/Berlin";
+        var franchise = new Franchise
+        {
+            TeamId = team.Id,
+            Name = "Kviz, pliz!",
+            DefaultVenue = "The Pub",
+            DefaultCapacity = 8,
+            Schedule = [],
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+        db.Franchises.Add(franchise);
+        await db.SaveChangesAsync(ct);
+        var (router, _) = CreateRouter(db);
+
+        await router.RouteAsync(MessageUpdate(4049, 4049, "/newgame"), ct);
+        await router.RouteAsync(
+            CallbackUpdate(4049, 4049, CallbackData.Format(CallbackData.PickFranchise, franchise.Id)),
+            ct
+        );
+        await router.RouteAsync(CallbackUpdate(4049, 4049, CallbackData.Format(CallbackData.CustomDate, 0L)), ct);
+        await router.RouteAsync(MessageUpdate(4049, 4049, "2026-09-12"), ct);
+        await router.RouteAsync(MessageUpdate(4049, 4049, "19:00"), ct);
+
+        await router.RouteAsync(
+            CallbackUpdate(4049, 4049, CallbackData.Format(CallbackData.EditField, NewGameDialogData.OverrideTitle)),
+            ct
+        );
+        await router.RouteAsync(MessageUpdate(4049, 4049, "Kviz, pliz! — Halloween special"), ct);
+        await router.RouteAsync(CallbackUpdate(4049, 4049, CallbackData.Format(CallbackData.Confirm, 0L)), ct);
+
+        var game = await db.Games.AsNoTracking().SingleAsync(g => g.TeamId == team.Id, ct);
+        game.Title.Should().Be("Kviz, pliz! — Halloween special");
+        game.FranchiseId.Should().Be(franchise.Id, "renaming the game doesn't detach it from its franchise");
+    }
+
+    // A title is what the announcement leads with, so an override that cleared it would leave
+    // a nameless game — unlike price or notes, "skip" must not be on offer here.
+    [Test]
+    public async Task TheTitleOverridePromptHasCancelButNoSkipButton()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedCaptainedTeamAsync(db, chatId: 4050, telegramUserId: 4050, ct);
+        team.TimeZoneId = "Europe/Berlin";
+        await db.SaveChangesAsync(ct);
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(MessageUpdate(4050, 4050, "/newgame"), ct);
+        await router.RouteAsync(CallbackUpdate(4050, 4050, CallbackData.Format(CallbackData.OneOff, 0L)), ct);
+        await router.RouteAsync(MessageUpdate(4050, 4050, "One-off quiz"), ct);
+        await router.RouteAsync(MessageUpdate(4050, 4050, "The Pub"), ct);
+        await router.RouteAsync(MessageUpdate(4050, 4050, "2026-09-12"), ct);
+        await router.RouteAsync(MessageUpdate(4050, 4050, "19:00"), ct);
+        await router.RouteAsync(MessageUpdate(4050, 4050, "20"), ct);
+        await router.RouteAsync(MessageUpdate(4050, 4050, "skip"), ct); // price -> lands on Confirm
+
+        await router.RouteAsync(
+            CallbackUpdate(4050, 4050, CallbackData.Format(CallbackData.EditField, NewGameDialogData.OverrideTitle)),
+            ct
+        );
+
+        var buttons = bot.LastSentKeyboard(4050)!.InlineKeyboard.SelectMany(row => row).ToList();
+        buttons
+            .Should()
+            .ContainSingle(b => b.CallbackData!.StartsWith($"{CallbackData.CancelDialog}:", StringComparison.Ordinal));
+        buttons.Should().NotContain(b => b.CallbackData!.StartsWith($"{CallbackData.Skip}:", StringComparison.Ordinal));
+    }
+
+    // The bot autodeploys from main, so anyone reading /help is one tap from the repository
+    // that decides what the bot does next — see CONTRIBUTING.md. It sits above the command
+    // lists rather than under them, where a long list of captain commands would bury it.
+    [Test]
+    public async Task HelpPointsAtTheRepositoryAboveTheCommandLists()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        await SeedTeamAsync(db, chatId: 4051, ct);
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(MessageUpdate(4051, 4051, "/help"), ct);
+
+        var help = bot.SentTexts(4051).Should().ContainSingle().Subject;
+        help.Should().Contain("https://github.com/Dezzzu/quizr");
+        help.IndexOf("https://github.com/Dezzzu/quizr", StringComparison.Ordinal)
+            .Should()
+            .BeLessThan(help.IndexOf("/help", StringComparison.Ordinal), "the link comes before the first command");
+    }
+
     // Telegram reports private-chat membership only on block/unblock — Kicked and Member are
     // the two statuses that actually occur there.
     private static Update PrivateChatMemberUpdate(long telegramUserId, ChatMemberStatus newStatus) =>

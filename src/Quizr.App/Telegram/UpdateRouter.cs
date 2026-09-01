@@ -1309,6 +1309,13 @@ public sealed class UpdateRouter
 
         switch (data.EditingFieldIndex)
         {
+            case NewGameDialogData.OverrideTitle:
+                if (FieldParsing.TryParseText(input, out var title, out errorKey))
+                {
+                    updated = data with { Title = title };
+                }
+                break;
+
             case NewGameDialogData.OverrideVenue:
                 if (FieldParsing.TryParseText(input, out var venue, out errorKey))
                 {
@@ -2503,6 +2510,7 @@ public sealed class UpdateRouter
     private static string NewGameFieldPromptKey(int fieldIndex) =>
         fieldIndex switch
         {
+            NewGameDialogData.OverrideTitle => "NewGame.AskTitle",
             NewGameDialogData.OverrideVenue => "NewGame.AskVenue",
             NewGameDialogData.OverrideCapacity => "NewGame.AskCapacity",
             NewGameDialogData.OverridePrice => "NewGame.AskPrice",
@@ -2537,9 +2545,9 @@ public sealed class UpdateRouter
                 or EditFranchiseDialogData.Price
                 or EditFranchiseDialogData.Schedule;
 
-    // Venue and capacity aren't skippable here — Confirm requires both set (invariant: every
-    // Game needs a concrete capacity to derive playing/reserve from), so an override on either
-    // must replace it with something, not clear it.
+    // Title, venue and capacity aren't skippable here — Confirm requires all three set
+    // (invariant: every Game needs a concrete capacity to derive playing/reserve from), so an
+    // override on any of them must replace it with something, not clear it.
     private static bool IsNewGameOverrideSkippable(int fieldIndex) =>
         fieldIndex
             is NewGameDialogData.OverridePrice
@@ -2711,6 +2719,17 @@ public sealed class UpdateRouter
         if (game is null)
         {
             await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
+            return;
+        }
+
+        // Both ways in — /editgame's picker and the Manage panel's Edit game button — hand
+        // over a game that was live when the message was drawn, and either message outlives
+        // that: the 4-hour auto-finish (invariant 8) lands while it sits open. Re-checking
+        // here is what stops a stale button reopening a game whose signups invariant 11 has
+        // already turned into immutable history.
+        if (game.IsFinished || game.IsDeclined)
+        {
+            await AnswerAlertAsync(callbackQuery, scope.Strings.Text("EditGame.NoLongerEditable"), ct);
             return;
         }
 
@@ -3751,6 +3770,7 @@ public sealed class UpdateRouter
     {
         var text = new StringBuilder();
         text.Append(strings.Text("Help.Intro")).Append("\n\n");
+        text.Append(strings.Text("Help.Repo", new { Url = RepoUrl })).Append("\n\n");
 
         text.Append("<b>").Append(strings.Text("Help.EveryoneHeader")).Append("</b>\n");
         AppendCommandList(text, CommandMenu.EveryoneCommands, strings);
@@ -3760,6 +3780,11 @@ public sealed class UpdateRouter
 
         return text.ToString().TrimEnd();
     }
+
+    // Passed into the template rather than written into each locale file, so the three
+    // translations can't drift apart on it and moving the repository is a one-line change.
+    // CONTRIBUTING.md is what someone arriving from here is meant to read.
+    private const string RepoUrl = "https://github.com/Dezzzu/quizr";
 
     private static void AppendCommandList(
         StringBuilder text,
