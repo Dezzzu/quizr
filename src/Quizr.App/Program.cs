@@ -5,11 +5,14 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
 using Quizr.App.Data;
 using Quizr.App.Localization;
 using Quizr.App.Scheduling;
 using Quizr.App.Services;
 using Quizr.App.Telegram;
+using Quizr.App.Telemetry;
 using Quizr.Domain;
 using Telegram.Bot;
 
@@ -87,6 +90,35 @@ builder.Services.AddSingleton<ITelegramBotClient>(sp =>
     var httpClient = sp.GetRequiredService<IHttpClientFactory>().CreateClient("telegram-bot");
     return new TelegramBotClient(botToken, httpClient);
 });
+
+// Metrics leave over OTLP, which the process pushes — so the bot keeps the property that
+// nothing ever connects to it (README): no port to expose, no scrape target, and nothing for
+// Coolify to mistake for a health check it could hang a rolling update on. DEPLOY.md explains
+// why a second container holding the same token is the one failure that never recovers.
+//
+// Metrics only, and deliberately no tracing: an HttpClient span records the request URI in
+// url.full, and every Telegram call carries the bot token in its path. The metrics the same
+// instrumentation emits are labelled with server.address, method and status code only, so
+// they carry no secret — the same leak Program.cs already filters out of the HTTP logs below.
+builder.Services.AddMetrics();
+builder.Services.AddSingleton<QuizrMetrics>();
+
+// The standard OTEL_* variables configure the exporter itself — endpoint, protocol, headers —
+// so there is nothing to parse here. This only decides whether to turn it on, which keeps a
+// local run with no collector from retrying an export it can never make.
+if (!string.IsNullOrWhiteSpace(builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]))
+{
+    builder
+        .Services.AddOpenTelemetry()
+        .ConfigureResource(resource => resource.AddService("quizr"))
+        .WithMetrics(metrics =>
+            metrics
+                .AddMeter(QuizrMetrics.MeterName)
+                .AddRuntimeInstrumentation()
+                .AddHttpClientInstrumentation()
+                .AddOtlpExporter()
+        );
+}
 
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IStrings, Strings>();

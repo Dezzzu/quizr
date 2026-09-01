@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Quizr.App.Data;
 using Quizr.App.Localization;
 using Quizr.App.Telegram;
+using Quizr.App.Telemetry;
 using Quizr.App.Time;
 using Quizr.Domain;
 using Quizr.Domain.Entities;
@@ -32,6 +33,7 @@ public sealed class SchedulerService
     private readonly AnnouncementService _announcements;
     private readonly BoardService _board;
     private readonly TimeProvider _clock;
+    private readonly QuizrMetrics _metrics;
     private readonly ILogger<SchedulerService> _logger;
 
     public SchedulerService(
@@ -42,6 +44,7 @@ public sealed class SchedulerService
         AnnouncementService announcements,
         BoardService board,
         TimeProvider clock,
+        QuizrMetrics metrics,
         ILogger<SchedulerService> logger
     )
     {
@@ -52,6 +55,7 @@ public sealed class SchedulerService
         _announcements = announcements;
         _board = board;
         _clock = clock;
+        _metrics = metrics;
         _logger = logger;
     }
 
@@ -70,6 +74,7 @@ public sealed class SchedulerService
         }
         catch (Exception ex)
         {
+            _metrics.RecordException(ex, QuizrMetrics.SchedulerDialogsSource);
             _logger.LogError(ex, "Scheduler failed to expire stale dialogs");
         }
 
@@ -104,6 +109,7 @@ public sealed class SchedulerService
             }
             catch (Exception ex)
             {
+                _metrics.RecordException(ex, QuizrMetrics.SchedulerTeamSource);
                 _logger.LogError(ex, "Scheduler tick failed for team {TeamId}", team.Id);
             }
         }
@@ -145,6 +151,7 @@ public sealed class SchedulerService
             catch (Exception ex)
             {
                 // "One broken game must not stop reminders for everyone else" — STYLE.md.
+                _metrics.RecordException(ex, QuizrMetrics.SchedulerGameSource);
                 _logger.LogError(ex, "Scheduler failed to process game {GameId}", game.Id);
             }
         }
@@ -183,6 +190,7 @@ public sealed class SchedulerService
         {
             // Same reasoning as the per-game catch above — one unrestorable announcement must
             // not cost this team its Board refresh or the next team's whole tick.
+            _metrics.RecordException(ex, QuizrMetrics.SchedulerAnnouncementSource);
             _logger.LogError(ex, "Scheduler failed to verify the announcement for game {GameId}", game.Id);
         }
     }

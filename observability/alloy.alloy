@@ -1,0 +1,66 @@
+// Ships every container's stdout on this host to Grafana Cloud Loki.
+//
+// Log shipping is an agent's job rather than the bot's own, deliberately. The app already
+// writes structured JSON to stdout (Program.cs picks the JSON formatter whenever output is
+// redirected, which it always is under Docker), so Docker has the logs whether or not the app
+// is healthy — including a startup crash that happens before any exporter exists, and
+// including Postgres, whose own ERROR lines were half the evidence during the announcement
+// incident. An OTLP log exporter inside the app would have neither.
+//
+// UNVERIFIED: this config has never run. It was written against Alloy's documented syntax and
+// needs one smoke test on the host — `alloy fmt` then `alloy run` — before it is trusted.
+// docker-compose.yml beside it pins v1.19.2, which is what makes `sys.env(...)` below the
+// right spelling; on Alloy before 1.0 it is `env(...)`.
+
+discovery.docker "containers" {
+	host = "unix:///var/run/docker.sock"
+}
+
+// Docker reports names with a leading slash ("/quizr-app"); the capture group drops it so the
+// label reads the way `docker ps` does.
+discovery.relabel "containers" {
+	targets = discovery.docker.containers.targets
+
+	rule {
+		source_labels = ["__meta_docker_container_name"]
+		regex         = "/(.*)"
+		target_label  = "container"
+	}
+}
+
+loki.source.docker "containers" {
+	host       = "unix:///var/run/docker.sock"
+	targets    = discovery.relabel.containers.output
+	forward_to = [loki.process.quizr.receiver]
+}
+
+// Lifts the fields .NET's JsonConsoleFormatter writes so LogQL can filter on them without
+// re-parsing every line. Only LogLevel becomes a label: labels are an index, and Message or
+// Exception would be unbounded. The rest stays queryable inside the line itself.
+loki.process "quizr" {
+	stage.json {
+		expressions = {
+			level    = "LogLevel",
+			category = "Category",
+		}
+	}
+
+	stage.labels {
+		values = {
+			level = "",
+		}
+	}
+
+	forward_to = [loki.write.grafana_cloud.receiver]
+}
+
+loki.write "grafana_cloud" {
+	endpoint {
+		url = sys.env("LOKI_URL")
+
+		basic_auth {
+			username = sys.env("LOKI_USERNAME")
+			password = sys.env("LOKI_PASSWORD")
+		}
+	}
+}
