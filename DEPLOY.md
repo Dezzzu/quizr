@@ -171,35 +171,40 @@ self-run.
 
 ### Logs
 
-`observability/docker-compose.yml` is the whole thing: the Alloy service and, embedded in it,
-the Alloy config that discovers every container on the host, reads their stdout, lifts
-`LogLevel` into a label and writes to Grafana Cloud Loki. It covers Postgres as well as the
-bot on purpose — half the evidence during the announcement incident was Postgres' own
+`observability/alloy.alloy` is the Alloy config — it discovers every container on the host,
+reads their stdout, lifts `LogLevel` into a label and writes to Grafana Cloud Loki — and
+`observability/docker-compose.yml` is the service that runs it. It covers Postgres as well as
+the bot on purpose: half the evidence during the announcement incident was Postgres' own
 `duplicate key value` lines, and reading them beside the bot's is the point.
 
-**The config is inline, not a separate file, and that is deliberate.** A bind-mounted config
-ties the compose file to Coolify's Base Directory setting, because relative paths resolve
-against the *project* directory rather than against the compose file itself. Getting the two
-out of step produces errors that name neither cause — `Failed to read the Docker Compose file
-from the repository` when the path is wrong, and an OCI `not a directory` when Docker invents
-a directory at a bind source that doesn't exist and then refuses to mount it over a file. With
-nothing to bind-mount, none of that can happen, and the same file works pasted into Coolify's
-standalone *Docker Compose* resource, deployed from this repository, or run by hand.
+**Deploy it as a repository-backed application, with base directory `observability`.** Not as
+Coolify's standalone *Docker Compose* resource — that one has no repository behind it, so the
+config the compose file mounts would not exist.
 
-**Smoke-test it first.** From anywhere, with the three variables exported:
+That distinction is the whole trick, and it is worth writing down because neither error names
+its cause. Coolify runs compose as:
 
-```bash
-docker compose -f observability/docker-compose.yml up
+```
+docker compose --env-file <base>/.env --project-directory <base> -f <base>/docker-compose.yml up -d
 ```
 
-Parse errors show up immediately; logs should reach Grafana → Explore → Loki within a minute,
-carrying a `container` label.
+Relative paths inside the compose file resolve against **`--project-directory`**, which is the
+base directory — so `./alloy.alloy` means the file beside it, and any other spelling misses.
+When a bind-mount source is missing, Docker creates a *directory* there and then refuses to
+mount a directory over a file, which surfaces as an OCI `not a directory` error rather than
+anything about paths. Delete the stray directory before retrying or the retry fails the same
+way.
 
-**Then promote it.** Either Coolify resource type works — paste the file into a standalone
-*Docker Compose* resource, or deploy it from this repository. Set `LOKI_URL`, `LOKI_USERNAME`
-and `LOKI_PASSWORD` on the resource: from Grafana Cloud → Connections → Loki, where the
-username is the numeric instance id, not an email, and both differ from the OTLP credentials
-above.
+Coolify writes the resource's environment variables into that `.env`, so `LOKI_URL`,
+`LOKI_USERNAME` and `LOKI_PASSWORD` set on the resource are what the compose file
+interpolates. They come from Grafana Cloud → Connections → Loki, where the username is the
+numeric instance id, not an email, and both differ from the OTLP credentials above.
+
+**To run it by hand**, mirror that invocation rather than `cd`-ing into the folder:
+
+```bash
+docker compose --project-directory observability -f observability/docker-compose.yml up
+```
 
 A health check on *this* service is fine — the rolling-update hazard is specific to the bot
 and its single Telegram token.
