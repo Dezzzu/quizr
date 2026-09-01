@@ -71,7 +71,7 @@ configs:
       // `env(...)`).
 
       discovery.docker "containers" {
-      	host = "unix:///var/run/docker.sock"
+        host = "unix:///var/run/docker.sock"
       }
 
       // Names the log stream after the thing being deployed, not after the container running it.
@@ -86,80 +86,84 @@ configs:
       // one overwrites an earlier one, and a `replace` whose regex doesn't match is simply a no-op.
       // Each rule is therefore a preference, and the first is the guaranteed floor.
       discovery.relabel "containers" {
-      	targets = discovery.docker.containers.targets
+        targets = discovery.docker.containers.targets
 
-      	// Floor: the container name minus Docker's leading slash. Always matches, always sets
-      	// something, so a container Coolify didn't create still reaches Loki with a label.
-      	rule {
-      		source_labels = ["__meta_docker_container_name"]
-      		regex         = "/(.*)"
-      		target_label  = "container"
-      	}
+        // Floor: the container name minus Docker's leading slash. Always matches, always sets
+        // something, so a container Coolify didn't create still reaches Loki with a label.
+        rule {
+          source_labels = ["__meta_docker_container_name"]
+          regex         = "/(.*)"
+          target_label  = "container"
+        }
 
-      	// Better: drop Coolify's deploy-timestamp suffix. Still opaque, but stable across
-      	// deploys, which is the half that actually breaks queries.
-      	rule {
-      		source_labels = ["__meta_docker_container_name"]
-      		// [0-9] rather than \d: Alloy strings take Go-style escapes, so a backslash class
-      		// would have to be written doubled, and this needs no escaping to be read correctly.
-      		regex         = "/(.+)-[0-9]+"
-      		target_label  = "container"
-      	}
+        // Better: drop Coolify's deploy-timestamp suffix. Still opaque, but stable across
+        // deploys, which is the half that actually breaks queries.
+        rule {
+          source_labels = ["__meta_docker_container_name"]
+          // [0-9] rather than \d: Alloy strings take Go-style escapes, so a backslash class
+          // would have to be written doubled, and this needs no escaping to be read correctly.
+          regex         = "/(.+)-[0-9]+"
+          target_label  = "container"
+        }
 
-      	// Best: what the resource is called in Coolify — "quizr-bot", not a uuid. Written twice
-      	// because Docker label names are sanitised into meta-label names by replacing invalid
-      	// characters, and whether the original camelCase survives depends on the discovery
-      	// implementation. Only one of these can match; the other is a no-op, so covering both
-      	// costs nothing and saves finding out the hard way on a version bump.
-      	rule {
-      		source_labels = ["__meta_docker_container_label_coolify_resourcename"]
-      		regex         = "(.+)"
-      		target_label  = "container"
-      	}
+        // Best: what the resource is called in Coolify — "quizr-bot", not a uuid. Written twice
+        // because Docker label names are sanitised into meta-label names by replacing invalid
+        // characters, and whether the original camelCase survives depends on the discovery
+        // implementation. Only one of these can match; the other is a no-op, so covering both
+        // costs nothing and saves finding out the hard way on a version bump.
+        rule {
+          source_labels = ["__meta_docker_container_label_coolify_resourcename"]
+          regex         = "(.+)"
+          target_label  = "container"
+        }
 
-      	rule {
-      		source_labels = ["__meta_docker_container_label_coolify_resourceName"]
-      		regex         = "(.+)"
-      		target_label  = "container"
-      	}
+        rule {
+          source_labels = ["__meta_docker_container_label_coolify_resourceName"]
+          regex         = "(.+)"
+          target_label  = "container"
+        }
       }
 
       loki.source.docker "containers" {
-      	host       = "unix:///var/run/docker.sock"
-      	targets    = discovery.relabel.containers.output
-      	forward_to = [loki.process.quizr.receiver]
+        host       = "unix:///var/run/docker.sock"
+        targets    = discovery.relabel.containers.output
+        forward_to = [loki.process.quizr.receiver]
       }
 
       // Lifts the fields .NET's JsonConsoleFormatter writes so LogQL can filter on them without
       // re-parsing every line. Only LogLevel becomes a label: labels are an index, and Message or
       // Exception would be unbounded. The rest stays queryable inside the line itself.
       loki.process "quizr" {
-      	stage.json {
-      		expressions = {
-      			level    = "LogLevel",
-      			category = "Category",
-      		}
-      	}
+        stage.json {
+          expressions = {
+            level    = "LogLevel",
+            category = "Category",
+          }
+        }
 
-      	stage.labels {
-      		values = {
-      			level = "",
-      		}
-      	}
+        stage.labels {
+          values = {
+            level = "",
+          }
+        }
 
-      	forward_to = [loki.write.grafana_cloud.receiver]
+        forward_to = [loki.write.grafana_cloud.receiver]
       }
 
       loki.write "grafana_cloud" {
-      	endpoint {
-      		url = sys.env("LOKI_URL")
+        endpoint {
+          url = sys.env("LOKI_URL")
 
-      		basic_auth {
-      			username = sys.env("LOKI_USERNAME")
-      			password = sys.env("LOKI_PASSWORD")
-      		}
-      	}
+          basic_auth {
+            username = sys.env("LOKI_USERNAME")
+            password = sys.env("LOKI_PASSWORD")
+          }
+        }
       }
 
 volumes:
+  # Spelled out rather than left null. `alloy-data:` with no value is valid compose and means
+  # "default driver", but it parses to a null, and a consumer that iterates volumes expecting
+  # a mapping trips over it. Costs one line to not find out which ones do.
   alloy-data:
+    driver: local
