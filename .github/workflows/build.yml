@@ -120,4 +120,28 @@ jobs:
             exit 1
           fi
 
-          curl --fail --silent --show-error --request GET "$WEBHOOK" --header "Authorization: Bearer $TOKEN"
+          # Host and path only: enough to see which endpoint was called without
+          # putting the resource uuid in the log, and nothing of the token.
+          echo "calling $(printf '%s' "$WEBHOOK" | sed -E 's#\?.*##')"
+
+          # POST rather than GET. Coolify documents /api/v1/deploy as accepting
+          # both, and both answer 401 unauthenticated on this instance, so the
+          # method was never the constraint — but an authenticated GET returned
+          # 405 here, and POST is the method that actually describes what this
+          # does, so it is the one worth being on.
+          status=$(curl --silent --show-error --output response.txt \
+            --write-out '%{http_code}' \
+            --request POST "$WEBHOOK" \
+            --header "Authorization: Bearer $TOKEN")
+
+          # --fail hid this: it collapses every failure into an exit code and
+          # throws away the body, which is where Coolify says what it objected to.
+          echo "status: $status"
+          echo "response: $(head -c 500 response.txt)"
+
+          case "$status" in
+            2*) ;;
+            401) echo "::error::Coolify rejected COOLIFY_TOKEN (401). Check it has deploy permission and has not been revoked." ; exit 1 ;;
+            404 | 405) echo "::error::Coolify would not accept this URL ($status). COOLIFY_WEBHOOK should be the 'Deploy Webhook (auth required)' from the application's Webhooks tab, containing /api/v1/deploy?uuid=." ; exit 1 ;;
+            *) echo "::error::Coolify returned $status. The response body is above." ; exit 1 ;;
+          esac
