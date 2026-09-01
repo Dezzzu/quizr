@@ -23,7 +23,10 @@ namespace Quizr.App.Services;
 // many people are queued behind them. Playing is capped at Capacity, so an over-subscribed
 // game reads "8/8 +2" rather than "10/8" — the seats and the queue are separate facts, and
 // running them together would misreport how full the game is.
-public sealed record BoardEntry(Game Game, int Playing, int Reserve);
+//
+// FranchiseName is what lets a renamed game still say which brand it belongs to. Null for a
+// one-off, which is the ordinary case and why it defaults.
+public sealed record BoardEntry(Game Game, int Playing, int Reserve, string? FranchiseName = null);
 
 public sealed class BoardService
 {
@@ -50,8 +53,12 @@ public sealed class BoardService
 
     public async Task RefreshAsync(Team team, CancellationToken ct)
     {
+        // Franchise comes along for the entry label: a renamed game has to say which brand it
+        // belongs to. Unfiltered, so an archived franchise still names the games already built
+        // from it — archiving stops new games, it doesn't retract the brand of existing ones.
         var upcomingGames = await _db
             .Games.AsNoTracking()
+            .Include(g => g.Franchise)
             .Where(g => g.TeamId == team.Id && g.FinishedAt == null && g.DeclinedAt == null)
             .OrderBy(g => g.StartsAt)
             .ToListAsync(ct);
@@ -103,7 +110,12 @@ public sealed class BoardService
                 return new BoardEntry(
                     game,
                     Roster.PlayingCount(live, game.Capacity),
-                    Roster.ReserveCount(live, game.Capacity)
+                    Roster.ReserveCount(live, game.Capacity),
+                    // Read here rather than in the renderer: on Game, a null navigation also
+                    // means "not Included", and the Include that rules that out is in this
+                    // file. Passing the name across makes it a value the renderer was given
+                    // instead of one it has to trust somebody loaded.
+                    game.Franchise?.Name
                 );
             })
             .ToList();

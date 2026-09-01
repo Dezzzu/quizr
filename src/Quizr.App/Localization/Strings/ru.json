@@ -96,6 +96,7 @@
 
   "Board.Header": "📋 <b>Ближайшие игры</b>",
   "Board.NoGames": "Пока нет ближайших игр.",
+  "Board.TitleWithFranchise": "{Franchise} · {Title}",
   "Board.Entry": "{When:ddd, dd MMM, HH\\:mm} — {Title} ({Playing}/{Capacity})",
   "Board.EntryWithReserve": "{When:ddd, dd MMM, HH\\:mm} — {Title} ({Playing}/{Capacity} +{Reserve})",
 
