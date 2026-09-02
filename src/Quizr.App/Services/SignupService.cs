@@ -381,6 +381,7 @@ public sealed class SignupService : ISignupService
         var signups = await _db
             .Signups.AsNoTracking()
             .Include(s => s.Player)
+            .Include(s => s.InvitedByPlayer)
             .Where(s => s.GameId == game.Id && s.CancelledAt == null)
             .ToListAsync(ct);
 

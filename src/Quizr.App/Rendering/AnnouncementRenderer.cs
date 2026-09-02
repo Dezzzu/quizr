@@ -212,7 +212,7 @@ internal static class AnnouncementRenderer
 
         for (var i = 0; i < signups.Count; i++)
         {
-            text.Append(i + 1).Append(". ").Append(NameOf(signups[i], strings)).Append('\n');
+            text.Append(i + 1).Append(". ").Append(RenderName(signups[i], strings)).Append('\n');
         }
     }
 
@@ -223,7 +223,10 @@ internal static class AnnouncementRenderer
     // Every real person here is a mention rather than plain text, so two members who share a
     // display name are still tellable apart by tapping through to the profile. Guests are not:
     // a guest has no Telegram account to point at, only whoever brought them.
-    private static string NameOf(Signup signup, IStringsFor strings)
+    // Public because a roster line reads the same wherever it appears: the promotion notice
+    // renders the person it is about through this too, so a member is mentioned and a guest
+    // carries their inviter in exactly one place, not two that drift.
+    public static string RenderName(Signup signup, IStringsFor strings)
     {
         if (signup.IsMember)
         {

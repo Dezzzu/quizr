@@ -1532,7 +1532,7 @@ public sealed class UpdateRouter
         await _announcements.RefreshAsync(game, team, ct);
         await ReplyPrivatelyAsync(dialog, strings.Text("EditGame.Updated"), null, ct);
 
-        await SendPromotionMessagesAsync(chatId, promoted, strings, ct);
+        await SendPromotionMessagesAsync(chatId, game, promoted, strings, ct);
         return true;
     }
 
@@ -1975,7 +1975,7 @@ public sealed class UpdateRouter
             await SendGuestChoicePromptAsync(scope.ChatId, scope.Actor.TelegramUserId, guest, scope.Strings, ct);
         }
 
-        await SendPromotionMessagesAsync(scope.ChatId, outcome.NewlyPromoted, scope.Strings, ct);
+        await SendPromotionMessagesAsync(scope.ChatId, game, outcome.NewlyPromoted, scope.Strings, ct);
     }
 
     private async Task HandleStayAsync(CallbackScope scope, CallbackQuery callbackQuery, CancellationToken ct)
@@ -2064,7 +2064,7 @@ public sealed class UpdateRouter
         await _sender.TryEditImmediatelyAsync(scope.Message, text, keyboard, ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, scope.Strings.Text("MyGuests.Removed"), cancellationToken: ct);
 
-        await SendPromotionMessagesAsync(scope.ChatId, outcome.NewlyPromoted, scope.Strings, ct);
+        await SendPromotionMessagesAsync(scope.ChatId, game, outcome.NewlyPromoted, scope.Strings, ct);
     }
 
     private async Task HandleGuestCallbackAsync(char verb, CallbackQuery callbackQuery, CancellationToken ct)
@@ -2134,7 +2134,7 @@ public sealed class UpdateRouter
         var game = await _db.Games.SingleAsync(g => g.Id == outcome.Guest.GameId, ct);
         await _announcements.RefreshAsync(game, scope.Team, ct);
 
-        await SendPromotionMessagesAsync(scope.ChatId, outcome.NewlyPromoted, scope.Strings, ct);
+        await SendPromotionMessagesAsync(scope.ChatId, game, outcome.NewlyPromoted, scope.Strings, ct);
     }
 
     // Goes to the guest's inviter, who is not always the person whose drop caused it: a
@@ -3193,11 +3193,22 @@ public sealed class UpdateRouter
 
     // One message for every promotion a single change caused (a capacity bump or a drop can
     // promote several people at once), not one per person — same reasoning as
-    // SchedulerService's batched group reminder. Player is Included wherever these signups are
-    // loaded (GameService.SetCapacityAsync, SignupService.LoadRosterAsync), so this reads the
-    // navigation directly instead of a separate lookup per signup or a hand-rolled dictionary.
+    // SchedulerService's batched group reminder. Player and InvitedByPlayer are Included
+    // wherever these signups are loaded (GameService.SetCapacityAsync,
+    // SignupService.LoadRosterAsync), so AnnouncementRenderer reads the navigations directly
+    // instead of a separate lookup per signup or a hand-rolled dictionary.
+    //
+    // Names come from the announcement's own renderer, so whoever moved up reads here exactly
+    // as they read in the roster: a member as a real mention, a guest carrying their inviter's.
+    // A promotion is the one roster change that asks something of the person named, and a
+    // guest has no account to reach — the inviter is who has to act on the seat.
+    //
+    // Sent as a reply to the announcement so the notice points at the game it is about: a chat
+    // usually has several games open at once, and "X moved up to Playing" says nothing on its
+    // own about which roster changed.
     private async Task SendPromotionMessagesAsync(
         TelegramChatId chatId,
+        Game game,
         IReadOnlyList<Signup> promoted,
         IStringsFor strings,
         CancellationToken ct
@@ -3208,19 +3219,15 @@ public sealed class UpdateRouter
             return;
         }
 
-        // An anonymous guest is rare here — invariant 5 means one only survives with a live
-        // inviter, and this is the promotion path, not the removal cascade — but still a real,
-        // reachable case, so the fallback goes through the strings table like everything else
-        // user-visible, never a bare English literal.
-        var unnamedGuestLabel = strings.Text("Promotion.UnnamedGuest");
-        var who = string.Join(
-            ", ",
-            promoted.Select(s =>
-                WebUtility.HtmlEncode(s.IsMember ? s.Player!.DisplayName : s.GuestName ?? unnamedGuestLabel)
-            )
-        );
+        var who = string.Join(", ", promoted.Select(s => AnnouncementRenderer.RenderName(s, strings)));
 
-        await _sender.SendAsync(chatId, strings.Text("Promotion.Message", new { Who = who }), null, ct);
+        await _sender.SendReplyAsync(
+            chatId,
+            game.AnnouncementMessageId,
+            strings.Text("Promotion.Message", new { Who = who }),
+            null,
+            ct
+        );
     }
 
     // --- Decline (with confirm, mirroring Drop/ConfirmDrop/Stay) and the no-confirm Finish
@@ -3416,7 +3423,7 @@ public sealed class UpdateRouter
                 }
             }
 
-            await SendPromotionMessagesAsync(scope.ChatId, outcome.NewlyPromoted, strings, ct);
+            await SendPromotionMessagesAsync(scope.ChatId, game, outcome.NewlyPromoted, strings, ct);
         }
         else
         {
@@ -3614,7 +3621,7 @@ public sealed class UpdateRouter
         await _sender.TryEditImmediatelyAsync(scope.Message, text, keyboard, ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
 
-        await SendPromotionMessagesAsync(scope.ChatId, outcome.NewlyPromoted, strings, ct);
+        await SendPromotionMessagesAsync(scope.ChatId, game, outcome.NewlyPromoted, strings, ct);
     }
 
     // --- Reminder settings (/myreminders) — self-service, no captain check, no dialog. ---

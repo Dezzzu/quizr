@@ -25,6 +25,18 @@ public interface IMessageSender
         CancellationToken ct
     );
 
+    // Anchors the message to the one it is about, so a tap on the quote jumps straight there —
+    // what makes a promotion notice legible in a chat carrying several games at once. A null
+    // id, or an anchor that has since been deleted, still sends: the notice matters more than
+    // the thread it hangs off, which is what AllowSendingWithoutReply buys.
+    Task<TelegramMessageId> SendReplyAsync(
+        TelegramChatId chatId,
+        TelegramMessageId? replyToMessageId,
+        string text,
+        InlineKeyboardMarkup? keyboard,
+        CancellationToken ct
+    );
+
     Task EditAsync(
         TelegramChatId chatId,
         TelegramMessageId messageId,
@@ -102,8 +114,16 @@ public sealed class MessageSender : IMessageSender
         _debouncer = debouncer;
     }
 
-    public async Task<TelegramMessageId> SendAsync(
+    public Task<TelegramMessageId> SendAsync(
         TelegramChatId chatId,
+        string text,
+        InlineKeyboardMarkup? keyboard,
+        CancellationToken ct
+    ) => SendReplyAsync(chatId, null, text, keyboard, ct);
+
+    public async Task<TelegramMessageId> SendReplyAsync(
+        TelegramChatId chatId,
+        TelegramMessageId? replyToMessageId,
         string text,
         InlineKeyboardMarkup? keyboard,
         CancellationToken ct
@@ -116,6 +136,9 @@ public sealed class MessageSender : IMessageSender
                 Text = text,
                 ParseMode = ParseMode.Html,
                 ReplyMarkup = keyboard,
+                ReplyParameters = replyToMessageId is { } replyTo
+                    ? new ReplyParameters { MessageId = (int)replyTo.Value, AllowSendingWithoutReply = true }
+                    : null,
             },
             ct
         );

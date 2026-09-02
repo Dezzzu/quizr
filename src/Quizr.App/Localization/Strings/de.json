@@ -102,7 +102,6 @@
   "Board.EntryWithReserve": "{When:ddd, dd MMM, HH\\:mm} — {Title} ({Playing}/{Capacity} +{Reserve})",
 
   "Promotion.Message": "🎉 {Who} ist in die Startaufstellung nachgerückt!",
-  "Promotion.UnnamedGuest": "Gast",
 
   "Reminder.EveningBefore.Group": "⏰ Erinnerung für {Mentions}: <b>{Title}</b> ist morgen um {When:HH\\:mm}!",
   "Reminder.EveningBefore.Dm": "⏰ Erinnerung: <b>{Title}</b> ist morgen um {When:HH\\:mm}!",
