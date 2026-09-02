@@ -474,10 +474,10 @@ public class UpdateRouterSignupLoopTests
     }
 
     // A promoted signup can be an anonymous guest (invariant 5 only requires a live inviter,
-    // not a name) — the fallback label must come from the strings table like everything else
-    // user-visible, not a bare English literal.
+    // not a name) — there is no name to print, so the notice identifies them the way the
+    // roster does, by whoever brought them.
     [Test]
-    public async Task PromotingAnAnonymousGuestUsesTheLocalizedFallbackLabel()
+    public async Task PromotingAnAnonymousGuestIdentifiesThemByTheirInviter()
     {
         var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
@@ -542,7 +542,142 @@ public class UpdateRouterSignupLoopTests
             .Where(text => text.Contains("moved up", StringComparison.Ordinal))
             .ToList();
         promotionMessages.Should().ContainSingle();
-        promotionMessages[0].Should().Contain("Guest");
+        promotionMessages[0].Should().Contain("""<a href="tg://user?id=70512">Bob</a>'s guest""");
+    }
+
+    // A promotion asks something of the person named, so a promoted member is a real mention —
+    // the same tg://user link the announcement's own roster uses, which reaches them even with
+    // the group muted.
+    [Test]
+    public async Task PromotingAMemberMentionsThem()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 7057, capacity: 1, ct);
+        var (router, bot, _) = CreateRouter(db);
+
+        await router.RouteAsync(
+            CallbackUpdate(7057, 70571, "Alice", CallbackData.Format(CallbackData.Join, game.Id), 1),
+            ct
+        );
+        await router.RouteAsync(
+            CallbackUpdate(7057, 70572, "Bob", CallbackData.Format(CallbackData.Join, game.Id), 1),
+            ct
+        );
+
+        await router.RouteAsync(
+            CallbackUpdate(7057, 70571, "Alice", CallbackData.Format(CallbackData.ConfirmDrop, game.Id), 2),
+            ct
+        );
+
+        var promotionMessages = bot.SentTexts(7057)
+            .Where(text => text.Contains("moved up", StringComparison.Ordinal))
+            .ToList();
+        promotionMessages.Should().ContainSingle();
+        promotionMessages[0].Should().Contain("""<a href="tg://user?id=70572">Bob</a>""");
+    }
+
+    // A guest has no Telegram account to notify, so the notice mentions whoever invited them —
+    // they are the one who has to act on the seat.
+    [Test]
+    public async Task PromotingAGuestMentionsTheirInviter()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 7054, capacity: 2, ct);
+        var (router, bot, _) = CreateRouter(db);
+
+        await router.RouteAsync(
+            CallbackUpdate(7054, 70541, "Alice", CallbackData.Format(CallbackData.Join, game.Id), 1),
+            ct
+        );
+        await router.RouteAsync(
+            CallbackUpdate(7054, 70542, "Bob", CallbackData.Format(CallbackData.Join, game.Id), 1),
+            ct
+        );
+        await router.RouteAsync(
+            CallbackUpdate(7054, 70542, "Bob", CallbackData.Format(CallbackData.Guest, game.Id), 1),
+            ct
+        );
+        await router.RouteAsync(MessageUpdate(7054, 70542, "Bob", "Sasha"), ct);
+
+        await router.RouteAsync(
+            CallbackUpdate(7054, 70541, "Alice", CallbackData.Format(CallbackData.ConfirmDrop, game.Id), 2),
+            ct
+        );
+
+        var promotionMessages = bot.SentTexts(7054)
+            .Where(text => text.Contains("moved up", StringComparison.Ordinal))
+            .ToList();
+        promotionMessages.Should().ContainSingle();
+        promotionMessages[0].Should().Contain("Sasha").And.Contain("""<a href="tg://user?id=70542">Bob</a>""");
+    }
+
+    // A team guest has no inviter at all, so there is nobody to mention — the branch that
+    // would throw if it read the navigation instead of the id.
+    [Test]
+    public async Task PromotingATeamGuestNamesThemWithoutAMention()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 7055, capacity: 1, ct);
+        var (router, bot, _) = CreateRouter(db);
+
+        await router.RouteAsync(
+            CallbackUpdate(7055, 70551, "Alice", CallbackData.Format(CallbackData.Join, game.Id), 1),
+            ct
+        );
+        db.Signups.Add(
+            new Signup
+            {
+                GameId = game.Id,
+                GuestName = "Sasha",
+                CreatedAt = DateTimeOffset.UtcNow.AddMinutes(1),
+            }
+        );
+        await db.SaveChangesAsync(ct);
+
+        await router.RouteAsync(
+            CallbackUpdate(7055, 70551, "Alice", CallbackData.Format(CallbackData.ConfirmDrop, game.Id), 2),
+            ct
+        );
+
+        var promotionMessages = bot.SentTexts(7055)
+            .Where(text => text.Contains("moved up", StringComparison.Ordinal))
+            .ToList();
+        promotionMessages.Should().ContainSingle();
+        promotionMessages[0].Should().Contain("Sasha").And.NotContain("tg://user");
+    }
+
+    // A chat carries several open games at once, so "X moved up to Playing" only says which
+    // roster changed if it hangs off that game's announcement.
+    [Test]
+    public async Task ThePromotionNoticeRepliesToTheAnnouncement()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 7056, capacity: 1, ct);
+        var (router, bot, _) = CreateRouter(db);
+
+        await router.RouteAsync(
+            CallbackUpdate(7056, 70561, "Alice", CallbackData.Format(CallbackData.Join, game.Id), 1),
+            ct
+        );
+        await router.RouteAsync(
+            CallbackUpdate(7056, 70562, "Bob", CallbackData.Format(CallbackData.Join, game.Id), 1),
+            ct
+        );
+
+        await router.RouteAsync(
+            CallbackUpdate(7056, 70561, "Alice", CallbackData.Format(CallbackData.ConfirmDrop, game.Id), 2),
+            ct
+        );
+
+        bot.SentReplies(7056)
+            .Should()
+            .ContainSingle(sent => sent.Text.Contains("moved up", StringComparison.Ordinal))
+            .Which.ReplyToMessageId.Should()
+            .Be((int)game.AnnouncementMessageId!.Value.Value);
     }
 
     [Test]

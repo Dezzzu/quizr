@@ -102,7 +102,6 @@
   "Board.EntryWithReserve": "{When:ddd, dd MMM, HH\\:mm} — {Title} ({Playing}/{Capacity} +{Reserve})",
 
   "Promotion.Message": "🎉 {Who} перешёл(-ла) в основной состав!",
-  "Promotion.UnnamedGuest": "Гость",
 
   "Reminder.EveningBefore.Group": "⏰ Напоминание для {Mentions}: <b>{Title}</b> уже завтра, в {When:HH\\:mm}!",
   "Reminder.EveningBefore.Dm": "⏰ Напоминание: <b>{Title}</b> уже завтра, в {When:HH\\:mm}!",

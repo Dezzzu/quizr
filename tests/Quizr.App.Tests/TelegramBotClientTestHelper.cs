@@ -121,6 +121,19 @@ internal static class TelegramBotClientTestHelper
             .Select(request => request.Text)
             .ToList();
 
+    // What each visible send was anchored to, so a test can assert the notice hangs off the
+    // right message rather than merely that its text went out.
+    public static IReadOnlyList<(string Text, int? ReplyToMessageId)> SentReplies(
+        this ITelegramBotClient bot,
+        long chatId
+    ) =>
+        bot.ReceivedCalls()
+            .Select(call => call.GetArguments()[0])
+            .OfType<SendMessageRequest>()
+            .Where(request => request.EphemeralMessageParameters is null && request.ChatId.Identifier == chatId)
+            .Select(request => (request.Text, request.ReplyParameters?.MessageId))
+            .ToList();
+
     public static IReadOnlyList<string?> AnsweredCallbackAlerts(this ITelegramBotClient bot) =>
         bot.ReceivedCalls()
             .Select(call => call.GetArguments()[0])
