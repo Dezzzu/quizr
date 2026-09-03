@@ -40,6 +40,7 @@ public sealed class UpdateRouter
     private readonly IParticipationService _participations;
     private readonly AnnouncementService _announcements;
     private readonly BoardService _board;
+    private readonly MyScheduleService _mySchedule;
     private readonly TimeProvider _clock;
     private readonly ILogger<UpdateRouter> _logger;
 
@@ -58,6 +59,7 @@ public sealed class UpdateRouter
         IParticipationService participations,
         AnnouncementService announcements,
         BoardService board,
+        MyScheduleService mySchedule,
         TimeProvider clock,
         ILogger<UpdateRouter> logger
     )
@@ -76,6 +78,7 @@ public sealed class UpdateRouter
         _participations = participations;
         _announcements = announcements;
         _board = board;
+        _mySchedule = mySchedule;
         _clock = clock;
         _logger = logger;
     }
@@ -264,6 +267,14 @@ public sealed class UpdateRouter
 
             case "/myreminders" when team is not null && actor is { } a:
                 await HandleMyRemindersCommandAsync(team, a, chatId, ct);
+                handledPrivately = true;
+                break;
+
+            // The one command with no "team is not null" guard: in a DM there is no team to
+            // resolve from the chat id, and answering from the person's memberships instead is
+            // the whole point of it. See HandleMyScheduleCommandAsync.
+            case "/myschedule" when player is not null && actor is { } a:
+                await HandleMyScheduleCommandAsync(team, player, a, message, chatId, ct);
                 handledPrivately = true;
                 break;
 
@@ -3640,6 +3651,49 @@ public sealed class UpdateRouter
         // Somebody's own reminder preferences concern nobody else in the chat. The command
         // they typed is still theirs and still public — ephemeral only covers the bot's half.
         await _sender.SendEphemeralAsync(chatId, actor.TelegramUserId, text, keyboard, null, ct);
+    }
+
+    // The personal counterpart to the Board, and the only command that means something in a
+    // DM as well as a group.
+    //
+    // In a group it stays scoped to that team: the chat is the team, and "my games" asked there
+    // means that team's games. In a DM there is no chat id to resolve a team from at all, so it
+    // answers from every team the person belongs to at once — which is also the more useful
+    // answer, since a person in two teams still only has one Friday evening to spend and the
+    // two teams' Boards deliberately cannot see each other. Team calendars stay separate
+    // (CLAUDE.md); this is the person's, not a team's.
+    private async Task HandleMyScheduleCommandAsync(
+        Team? team,
+        Player player,
+        Actor actor,
+        Message message,
+        TelegramChatId chatId,
+        CancellationToken ct
+    )
+    {
+        IReadOnlyList<Team> teams = team is not null ? [team] : await _mySchedule.LoadTeamsAsync(player.Id, ct);
+
+        var strings = _strings.For(
+            LocaleResolver.Resolve(message.Chat.Type, player.Locale, message.From?.LanguageCode, team?.Locale ?? "en")
+        );
+
+        // Nobody who has never been in a team chat has a schedule to show, and "you aren't
+        // signed up to anything" would send them looking for a game to join that doesn't exist.
+        var text =
+            teams.Count == 0
+                ? strings.Text("MySchedule.NoTeams")
+                : MyScheduleRenderer.RenderText(await _mySchedule.LoadAsync(player.Id, teams, ct), strings);
+
+        // In a group, where somebody is going on Friday concerns nobody else in the chat. In a
+        // DM the message is already private and Telegram's ephemeral send is a group-chat
+        // mechanism, so an ordinary one is both correct and the only thing that would work.
+        if (message.Chat.Type == ChatType.Private)
+        {
+            await _sender.SendAsync(chatId, text, null, ct);
+            return;
+        }
+
+        await _sender.SendEphemeralAsync(chatId, actor.TelegramUserId, text, null, null, ct);
     }
 
     private async Task HandleReminderSettingsCallbackAsync(char verb, CallbackQuery callbackQuery, CancellationToken ct)

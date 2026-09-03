@@ -144,6 +144,7 @@ builder.Services.AddScoped<IGameService, GameService>();
 builder.Services.AddScoped<IParticipationService, ParticipationService>();
 builder.Services.AddScoped<AnnouncementService>();
 builder.Services.AddScoped<BoardService>();
+builder.Services.AddScoped<MyScheduleService>();
 builder.Services.AddScoped<SchedulerService>();
 builder.Services.AddScoped<UpdateRouter>();
 builder.Services.AddSingleton<UpdateDispatcher>();

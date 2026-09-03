@@ -242,6 +242,10 @@ only ever taps one button in the group chat stays a first-class member of the te
   chat or as a private message. Only people signed up to that game are reminded, and a
   separate switch decides whether reminders continue while you're on the reserve
 - Reserve promotion ping
+- **`/myschedule`** — your own upcoming games, with the venue and whether you're playing or
+  on the reserve. In the team chat it answers for that team and only you can see it; in a DM
+  it merges every team you play for into one date-ordered list, since a person in two teams
+  still only has one Friday evening. The team calendars themselves stay separate
 - **Nudge** — anyone signed up can ping the players who haven't arrived yet, in the team
   chat, so the replies land where everyone waiting can see them. Mandatory rather than
   opt-in, with a per-game cooldown

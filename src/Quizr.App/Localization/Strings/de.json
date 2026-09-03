@@ -27,6 +27,7 @@
   "Cancel.NothingToCancel": "Nichts zum Abbrechen.",
   "Commands.MyLanguage": "Eigene Sprache für Direktnachrichten festlegen",
   "Commands.MyReminders": "Erinnerungen konfigurieren",
+  "Commands.MySchedule": "Zeigt die Spiele, für die du angemeldet bist",
   "Commands.SetTimeZone": "Zeitzone des Teams festlegen",
   "Commands.SetLanguage": "Sprache der Gruppe festlegen",
   "Commands.SetReminders": "Standard-Erinnerungszeiten festlegen",
@@ -100,6 +101,17 @@
   "Board.NoGames": "Noch keine anstehenden Spiele.",
   "Board.Entry": "{When:ddd, dd MMM, HH\\:mm} — {Title} ({Playing}/{Capacity})",
   "Board.EntryWithReserve": "{When:ddd, dd MMM, HH\\:mm} — {Title} ({Playing}/{Capacity} +{Reserve})",
+
+  "MySchedule.Header": "🗓 <b>Deine nächsten Spiele</b>",
+  "MySchedule.NoGames": "Du bist zu keinem anstehenden Spiel angemeldet.",
+  "MySchedule.NoTeams": "Ich kenne dich noch aus keinem Quizteam. Füge mich zum Gruppenchat deines Teams hinzu und melde dich dort für ein Spiel an.",
+  "MySchedule.Entry": "{When:ddd, dd MMM, HH\\:mm} — {Title}",
+  "MySchedule.EntryWithTeam": "{When:ddd, dd MMM, HH\\:mm} — {Title} · {Team}",
+  "MySchedule.Venue": "📍 {Venue}",
+  "MySchedule.StatusPlaying": "✅ Du spielst",
+  "MySchedule.StatusPlayingWithGuests": "✅ Du spielst · +{Guests} {Guests:plural:Gast|Gäste}",
+  "MySchedule.StatusReserve": "⏳ Warteliste #{Position}",
+  "MySchedule.StatusReserveWithGuests": "⏳ Warteliste #{Position} · +{Guests} {Guests:plural:Gast|Gäste}",
 
   "Promotion.Message": "🎉 {Who} ist in die Startaufstellung nachgerückt!",
 

@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text;
 using Quizr.App.Localization;
 using Quizr.App.Services;
@@ -32,9 +31,7 @@ internal static class BoardRenderer
         {
             var local = TeamTime.ConvertToLocal(game.StartsAt, teamTimeZoneId);
             var label = GameLabel.Render(game.Title, franchiseName, strings);
-            var titleHtml = MessageLink(chatId, game.AnnouncementMessageId) is { } link
-                ? $"""<a href="{link}">{label}</a>"""
-                : label;
+            var titleHtml = AnnouncementLink.Wrap(label, chatId, game.AnnouncementMessageId);
 
             // Two whole templates rather than one plus a "+n" fragment appended to it: user-
             // visible text is never concatenated (CLAUDE.md), so a locale that wants the queue
@@ -56,25 +53,5 @@ internal static class BoardRenderer
         }
 
         return text.ToString().TrimEnd();
-    }
-
-    // Telegram's t.me/c/<id>/<messageId> link scheme only exists for supergroups and
-    // channels, whose chat ids look like -100XXXXXXXXXX. A plain basic group has no
-    // message-link scheme at all, so those entries render without a link rather than a
-    // broken one.
-    private static string? MessageLink(TelegramChatId chatId, TelegramMessageId? announcementMessageId)
-    {
-        if (announcementMessageId is not { } messageId)
-        {
-            return null;
-        }
-
-        var raw = chatId.Value.ToString(CultureInfo.InvariantCulture);
-        if (!raw.StartsWith("-100", StringComparison.Ordinal))
-        {
-            return null;
-        }
-
-        return $"https://t.me/c/{raw[4..]}/{messageId.Value}";
     }
 }
