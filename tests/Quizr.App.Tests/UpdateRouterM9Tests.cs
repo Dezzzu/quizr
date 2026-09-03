@@ -659,6 +659,7 @@ public class UpdateRouterM9Tests
         var participations = new ParticipationService(db, teamGuard, clock);
         var announcements = new AnnouncementService(db, sender, strings);
         var board = new BoardService(db, sender, bot, strings, NullLogger<BoardService>.Instance);
+        var mySchedule = new MyScheduleService(db);
 
         var router = new UpdateRouter(
             db,
@@ -675,6 +676,7 @@ public class UpdateRouterM9Tests
             participations,
             announcements,
             board,
+            mySchedule,
             clock,
             NullLogger<UpdateRouter>.Instance
         );

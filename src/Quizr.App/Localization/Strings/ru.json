@@ -27,6 +27,7 @@
   "Cancel.NothingToCancel": "Нечего отменять.",
   "Commands.MyLanguage": "Задать свой язык для личных сообщений",
   "Commands.MyReminders": "Настроить напоминания",
+  "Commands.MySchedule": "Показать игры, на которые вы записаны",
   "Commands.SetTimeZone": "Задать часовой пояс команды",
   "Commands.SetLanguage": "Задать язык группы",
   "Commands.SetReminders": "Задать напоминания команды по умолчанию",
@@ -100,6 +101,17 @@
   "Board.NoGames": "Пока нет ближайших игр.",
   "Board.Entry": "{When:ddd, dd MMM, HH\\:mm} — {Title} ({Playing}/{Capacity})",
   "Board.EntryWithReserve": "{When:ddd, dd MMM, HH\\:mm} — {Title} ({Playing}/{Capacity} +{Reserve})",
+
+  "MySchedule.Header": "🗓 <b>Ваши ближайшие игры</b>",
+  "MySchedule.NoGames": "Вы пока ни на одну игру не записаны.",
+  "MySchedule.NoTeams": "Я пока не знаю вас ни по одной команде. Добавьте меня в чат вашей команды и запишитесь там на игру.",
+  "MySchedule.Entry": "{When:ddd, dd MMM, HH\\:mm} — {Title}",
+  "MySchedule.EntryWithTeam": "{When:ddd, dd MMM, HH\\:mm} — {Title} · {Team}",
+  "MySchedule.Venue": "📍 {Venue}",
+  "MySchedule.StatusPlaying": "✅ Играете",
+  "MySchedule.StatusPlayingWithGuests": "✅ Играете · +{Guests} {Guests:plural:гость|гостя|гостей}",
+  "MySchedule.StatusReserve": "⏳ Резерв №{Position}",
+  "MySchedule.StatusReserveWithGuests": "⏳ Резерв №{Position} · +{Guests} {Guests:plural:гость|гостя|гостей}",
 
   "Promotion.Message": "🎉 {Who} перешёл(-ла) в основной состав!",
 

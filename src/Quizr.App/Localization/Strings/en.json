@@ -27,6 +27,7 @@
   "Cancel.NothingToCancel": "Nothing to cancel.",
   "Commands.MyLanguage": "Set your own language for DMs",
   "Commands.MyReminders": "Choose how and when you get reminded",
+  "Commands.MySchedule": "Show the games you're signed up to",
   "Commands.SetTimeZone": "Set the team's timezone",
   "Commands.SetLanguage": "Set the group's language",
   "Commands.SetReminders": "Set the team's default reminder times",
@@ -100,6 +101,17 @@
   "Board.NoGames": "No upcoming games yet.",
   "Board.Entry": "{When:ddd, dd MMM, HH\\:mm} — {Title} ({Playing}/{Capacity})",
   "Board.EntryWithReserve": "{When:ddd, dd MMM, HH\\:mm} — {Title} ({Playing}/{Capacity} +{Reserve})",
+
+  "MySchedule.Header": "🗓 <b>Your upcoming games</b>",
+  "MySchedule.NoGames": "You're not signed up to anything upcoming.",
+  "MySchedule.NoTeams": "I don't know you from any quiz team yet. Add me to your team's group chat and sign up to a game there.",
+  "MySchedule.Entry": "{When:ddd, dd MMM, HH\\:mm} — {Title}",
+  "MySchedule.EntryWithTeam": "{When:ddd, dd MMM, HH\\:mm} — {Title} · {Team}",
+  "MySchedule.Venue": "📍 {Venue}",
+  "MySchedule.StatusPlaying": "✅ Playing",
+  "MySchedule.StatusPlayingWithGuests": "✅ Playing · +{Guests} {Guests:plural:guest|guests}",
+  "MySchedule.StatusReserve": "⏳ Reserve #{Position}",
+  "MySchedule.StatusReserveWithGuests": "⏳ Reserve #{Position} · +{Guests} {Guests:plural:guest|guests}",
 
   "Promotion.Message": "🎉 {Who} moved up to Playing!",
 

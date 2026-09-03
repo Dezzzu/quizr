@@ -1121,6 +1121,7 @@ public class UpdateRouterTests
         var participations = new ParticipationService(db, teamGuard, clock);
         var announcements = new AnnouncementService(db, sender, strings);
         var board = new BoardService(db, sender, bot, strings, NullLogger<BoardService>.Instance);
+        var mySchedule = new MyScheduleService(db);
 
         var router = new UpdateRouter(
             db,
@@ -1137,6 +1138,7 @@ public class UpdateRouterTests
             participations,
             announcements,
             board,
+            mySchedule,
             clock,
             NullLogger<UpdateRouter>.Instance
         );

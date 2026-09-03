@@ -47,6 +47,25 @@ public class PluralTemplatesTests
         yield return ("de", "NewGame.Capacity", 111, "👥 Kapazität: 111 Spieler");
     }
 
+    public static IEnumerable<(string Locale, string Key, int Guests, string Expected)> GuestCases()
+    {
+        yield return ("en", "MySchedule.StatusPlayingWithGuests", 1, "✅ Playing · +1 guest");
+        yield return ("en", "MySchedule.StatusPlayingWithGuests", 2, "✅ Playing · +2 guests");
+        yield return ("en", "MySchedule.StatusPlayingWithGuests", 5, "✅ Playing · +5 guests");
+        yield return ("en", "MySchedule.StatusPlayingWithGuests", 21, "✅ Playing · +21 guests");
+        yield return ("en", "MySchedule.StatusPlayingWithGuests", 111, "✅ Playing · +111 guests");
+        yield return ("ru", "MySchedule.StatusPlayingWithGuests", 1, "✅ Играете · +1 гость");
+        yield return ("ru", "MySchedule.StatusPlayingWithGuests", 2, "✅ Играете · +2 гостя");
+        yield return ("ru", "MySchedule.StatusPlayingWithGuests", 5, "✅ Играете · +5 гостей");
+        yield return ("ru", "MySchedule.StatusPlayingWithGuests", 21, "✅ Играете · +21 гость");
+        yield return ("ru", "MySchedule.StatusPlayingWithGuests", 111, "✅ Играете · +111 гостей");
+        yield return ("de", "MySchedule.StatusPlayingWithGuests", 1, "✅ Du spielst · +1 Gast");
+        yield return ("de", "MySchedule.StatusPlayingWithGuests", 2, "✅ Du spielst · +2 Gäste");
+        yield return ("de", "MySchedule.StatusPlayingWithGuests", 5, "✅ Du spielst · +5 Gäste");
+        yield return ("de", "MySchedule.StatusPlayingWithGuests", 21, "✅ Du spielst · +21 Gäste");
+        yield return ("de", "MySchedule.StatusPlayingWithGuests", 111, "✅ Du spielst · +111 Gäste");
+    }
+
     [Test]
     [MethodDataSource(nameof(CapacityCases))]
     public void CapacityRendersTheCorrectPluralFormAtEveryBoundary(
@@ -57,6 +76,20 @@ public class PluralTemplatesTests
     )
     {
         var text = _strings.For(locale).Text(key, new { Capacity = capacity });
+
+        text.Should().Be(expected);
+    }
+
+    [Test]
+    [MethodDataSource(nameof(GuestCases))]
+    public void GuestCountRendersTheCorrectPluralFormAtEveryBoundary(
+        string locale,
+        string key,
+        int guests,
+        string expected
+    )
+    {
+        var text = _strings.For(locale).Text(key, new { Guests = guests });
 
         text.Should().Be(expected);
     }
