@@ -264,5 +264,20 @@
   "Validation.PriceInvalid": "Это не похоже на корректную цену. Ответьте числом, или напишите \"skip\", если цены нет.",
   "Validation.DateInvalid": "Это не похоже на корректную дату. Формат yyyy-MM-dd, например 2026-09-12.",
   "Validation.TimeInvalid": "Это не похоже на корректное время. Формат HH:mm, например 19:00.",
-  "Validation.ScheduleInvalid": "Это не похоже на корректное расписание. Перечислите дни и время, например \"Пн-Пт: 19:00, Сб: 16:00, Вс: 16:00\"."
+  "Validation.ScheduleInvalid": "Это не похоже на корректное расписание. Перечислите дни и время, например \"Пн-Пт: 19:00, Сб: 16:00, Вс: 16:00\".",
+  "Calendar.Name": "Quizr — {Team}",
+  "Calendar.NameAllTeams": "Quizr",
+  "Calendar.TitleWithTeam": "{Team} · {Title}",
+  "Calendar.SummaryReserve": "{Title} (резерв #{Position})",
+  "Calendar.SummaryDidNotPlay": "{Title} (не играли)",
+  "Calendar.VenueTime": "Начало: {When:ddd, dd MMM, HH\\:mm} · {Zone} (UTC{Offset})",
+  "Calendar.StatusPlaying": "Вы играете",
+  "Calendar.StatusReserve": "Резерв #{Position}",
+  "Calendar.StatusPlayed": "Вы играли",
+  "Calendar.StatusDidNotPlay": "Вы не играли",
+  "Calendar.Guests": "+{Guests} {Guests:plural:гость|гостя|гостей}",
+  "Calendar.Price": "Цена: {Price}",
+  "Calendar.Notes": "{Notes}",
+  "Calendar.Tags": "{Tags}",
+  "Calendar.OpenInTelegram": "Открыть в Telegram: {Url}"
 }

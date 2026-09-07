@@ -64,6 +64,21 @@ public class PluralTemplatesTests
         yield return ("de", "MySchedule.StatusPlayingWithGuests", 5, "✅ Du spielst · +5 Gäste");
         yield return ("de", "MySchedule.StatusPlayingWithGuests", 21, "✅ Du spielst · +21 Gäste");
         yield return ("de", "MySchedule.StatusPlayingWithGuests", 111, "✅ Du spielst · +111 Gäste");
+        yield return ("en", "Calendar.Guests", 1, "+1 guest");
+        yield return ("en", "Calendar.Guests", 2, "+2 guests");
+        yield return ("en", "Calendar.Guests", 5, "+5 guests");
+        yield return ("en", "Calendar.Guests", 21, "+21 guests");
+        yield return ("en", "Calendar.Guests", 111, "+111 guests");
+        yield return ("ru", "Calendar.Guests", 1, "+1 гость");
+        yield return ("ru", "Calendar.Guests", 2, "+2 гостя");
+        yield return ("ru", "Calendar.Guests", 5, "+5 гостей");
+        yield return ("ru", "Calendar.Guests", 21, "+21 гость");
+        yield return ("ru", "Calendar.Guests", 111, "+111 гостей");
+        yield return ("de", "Calendar.Guests", 1, "+1 Gast");
+        yield return ("de", "Calendar.Guests", 2, "+2 Gäste");
+        yield return ("de", "Calendar.Guests", 5, "+5 Gäste");
+        yield return ("de", "Calendar.Guests", 21, "+21 Gäste");
+        yield return ("de", "Calendar.Guests", 111, "+111 Gäste");
     }
 
     [Test]

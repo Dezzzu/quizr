@@ -200,7 +200,7 @@ internal static class AnnouncementRenderer
     // token. This is deliberately the interim archive: Telegram's own in-chat search already
     // finds every message with a given hashtag, finished and declined games included, with no
     // bot command needed until the mini app's archive lands.
-    private static string ToHashtag(string tag) => "#" + WebUtility.HtmlEncode(tag.Trim().Replace(' ', '_'));
+    private static string ToHashtag(string tag) => WebUtility.HtmlEncode(Hashtag.Render(tag));
 
     private static void AppendRoster(StringBuilder text, IReadOnlyList<Signup> signups, IStringsFor strings)
     {

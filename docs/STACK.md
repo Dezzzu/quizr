@@ -19,6 +19,7 @@ in the repo today.
 | Hosting | `Microsoft.Extensions.Hosting` **10.0.11** | generic host; no web server in phase 1 |
 | Resilience | `Microsoft.Extensions.Http.Resilience` **10.9.0** | Polly 8; retries honouring `retry_after` |
 | Localization | `SmartFormat.NET` **3.6.1** | JSON string files |
+| Calendar feeds | `Ical.Net` **5.2.3** | RFC 5545 escaping and the 75-**octet** line fold. Brings `NodaTime` **3.2.2**, which nothing here consults — see below |
 | Tests | `TUnit` **1.65.68**, `AwesomeAssertions` **9.6.0**, `NSubstitute` **6.2.0**, `Testcontainers.PostgreSql` **4.14.0**, `Microsoft.Extensions.TimeProvider.Testing` **10.9.0** | source-generated, native to Microsoft.Testing.Platform — see below |
 | Formatter | `csharpier` **1.3.0** | local tool; print width 120 |
 | Migrations CLI | `dotnet-ef` **10.0.11** | local tool |
@@ -77,7 +78,7 @@ over unchanged. Four new pieces live inside it, none needing a project of their 
 - **initData validation** — HMAC-SHA256 over the payload using the bot token. No dependency,
   and it is the entire auth story: a mini app has no login.
 - **A JSON API** for games, rosters and franchises.
-- **The iCal feed** — a per-user secret URL, rotatable. `Ical.Net`, or hand-rolled VEVENT.
+- ~~**The iCal feed**~~ — built ahead of the rest of phase 2; see `docs/CALENDAR.md`.
 - **Static file serving** for the built frontend.
 
 `Quizr.App.Tests` gains `WebApplicationFactory` integration tests. Same project — it is
@@ -160,6 +161,13 @@ Two hazards this surfaced during the migration, worth knowing before adding a te
   fine sequentially but can collide when two calls a few instructions apart land in the same
   clock tick under parallel load. Use a counter or a distinct literal per test instead.
 
+- A seeded row's **foreign keys must point at rows that test created itself**. Writing
+  `CreatedByPlayerId = new PlayerId(1)` works whenever some other test happened to insert the
+  first player already, and fails with a bare `23503` foreign key violation when it did not —
+  so it passes alone, passes most of the time in a suite, and fails on someone else's machine.
+  The renderer tests that use `PlayerId(1)` are fine precisely because they never touch a
+  database; anything holding a `PostgresFixture` seeds a real row.
+
 A missing `.ThenBy(id)` tiebreaker on an `OrderBy(createdAt)` query is the same hazard from
 the other direction: two rows with count identical timestamps (a `FakeTimeProvider` that
 never advances, or a batch insert stamped with one `now`) sort in a database-decided,
@@ -180,7 +188,9 @@ structural. Don't replace one with a library without a real reason.
 - **The edit debouncer** — coalesce a burst of signups into one message edit, respecting the
   per-group rate limit.
 - **Message rendering** — interpolated strings and a function per message type. No templating
-  engine.
+  engine. The `.ics` feed is the one exception, and only for escaping and folding: those count
+  octets rather than characters, and a Cyrillic venue name is what turns a hand-rolled fold
+  into mojibake.
 - **The alert path** — unhandled exception to a private channel.
 - **`Result<T>` and the `BusinessError` hierarchy** — about twenty lines. See below for why no
   library fits.
@@ -234,4 +244,5 @@ Nothing above is permanent. These are the specific triggers that should reopen a
 | You want to change log level without a redeploy | Reconsider Serilog. `Serilog.Sinks.Seq`'s `controlLevelSwitch` is the one capability OTLP has no answer for: Seq pushes a level change down to the running process, so Debug can be turned on from the UI, an update watched, and it turned back off. Durable disk buffering while Seq is unreachable comes along with it. Both cost a second logging pipeline, so wait until an incident has actually made you want them. |
 | Scheduling grows teeth — backoff, one-off jobs, an operational dashboard | TickerQ becomes the right library to reach for: EF Core-backed, so no separate storage or migration story. |
 | A second process appears | Two assumptions break — migrations applied at startup, and the in-process edit debouncer. Both need rethinking *before* a second instance exists, not after. |
+| Recurring games as real `RRULE`s, per-person timezones, or arithmetic on local dates across a DST transition | Adopt NodaTime as the conversion engine inside `TeamTime`. It is already in the process as an Ical.Net dependency and is deliberately never consulted: the feed emits UTC instants, so `TimeZoneInfo` stays the single timezone authority and the two databases cannot disagree. Any of these triggers changes that — they need ambiguity resolved explicitly, which is the thing NodaTime is actually better at and which a domain of evening kick-offs never runs into. See `docs/CALENDAR.md` §3. |
 | A fourth language with unfamiliar plural rules | Revisit SmartFormat against ICU MessageFormat. SmartFormat's plural forms are positional, so a wrong form order can't be checked automatically; ICU's named CLDR categories can. Until then the snapshot tests in `CLAUDE.md` cover it. |

@@ -313,11 +313,36 @@ public class CalendarVersionInterceptorTests
             StartsAt = DateTimeOffset.UtcNow.AddDays(3),
             Capacity = 6,
             CreatedAt = DateTimeOffset.UtcNow,
-            CreatedByPlayerId = new PlayerId(1),
+            CreatedByPlayerId = await CreatorAsync(db, team, ct),
         };
         db.Games.Add(game);
         await db.SaveChangesAsync(ct);
         return game;
+    }
+
+    // Games.CreatedByPlayerId is a real foreign key, so a seeded game needs a real player
+    // behind it — PlayerId(1) only happens to exist when another test got there first, which
+    // under TUnit's in-class parallelism is luck rather than a fact. One creator per team,
+    // keyed off the team's own chat id, which every test here already keeps unique; negated so
+    // it cannot collide with the Telegram user ids the tests hand to their own players.
+    private static async Task<PlayerId> CreatorAsync(QuizrDb db, Team team, CancellationToken ct)
+    {
+        var telegramUserId = new TelegramUserId(-team.ChatId.Value);
+        var existing = await db.Players.SingleOrDefaultAsync(p => p.TelegramUserId == telegramUserId, ct);
+        if (existing is not null)
+        {
+            return existing.Id;
+        }
+
+        var creator = new Player
+        {
+            TelegramUserId = telegramUserId,
+            DisplayName = "Captain",
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+        db.Players.Add(creator);
+        await db.SaveChangesAsync(ct);
+        return creator.Id;
     }
 
     private static Task<Player> SeedSubscriberAsync(

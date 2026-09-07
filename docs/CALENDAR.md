@@ -161,6 +161,14 @@ Whole days matter: the boundary moving is what makes the date part of the cache 
 
 ### Which games appear
 
+A live game is one this person holds a live signup for; a **finished** one is read off its
+participation rows instead, never its signups. That is invariant 10 restated — once a game is
+finished, what happened is what the participation says happened, including a captain's later
+correction. It has one visible consequence: a finished game cannot report how many guests
+somebody brought, because a participation row records who was there and not who invited them.
+The guest line is omitted there rather than guessed at from history.
+
+
 | Game | In the feed? |
 | --- | --- |
 | Live signup, inside capacity → **playing** | Yes |
@@ -200,7 +208,7 @@ Apple honours the refresh hints. Google ignores them and refreshes on its own sc
 | `DTEND` | `game.EndsAt`, likewise — the same 3 hours the scheduler auto-finishes on |
 | `SUMMARY` | Localized. Franchise + title (the `GameLabel` rule, in plain text), prefixed with the team name when the feed spans teams, suffixed with the reserve position or the did-not-play marker |
 | `LOCATION` | `Game.Venue` |
-| `DESCRIPTION` | Localized lines, venue time first: the start in the team's own zone and offset, then status, price, notes, tags, guests brought, and a link back to the announcement |
+| `DESCRIPTION` | Localized lines, venue time first: the start in the team's own zone and offset, then status, guests brought, price, notes, tags as hashtags, and a link back to the announcement |
 | `URL` | The `t.me/c/...` announcement link where the chat has one — supergroups only, same rule as `AnnouncementLink` |
 | `STATUS` | `CONFIRMED` playing, `TENTATIVE` reserve |
 | `TRANSP` | `OPAQUE` playing, `TRANSPARENT` reserve |
@@ -281,6 +289,13 @@ able to catch it. Emitting the instant removes that by construction rather than 
 databases agree and asserting that they still do. It is also the most faithful projection
 available: `CLAUDE.md` stores the computed instant and nothing else, and this renders the
 instant as an instant.
+
+**One thing Ical.Net gets wrong.** It escapes `,` and `;` in a TEXT value but leaves a
+backslash alone, which RFC 5545 §3.3.11 does not allow — a lone `\` opens an escape sequence,
+so a venue like `C:\bar` reaches a client as the undefined `\b` and a strict parser may reject
+the whole calendar. `CalendarRenderer.Text` pre-escapes ours so Ical.Net passes both through.
+Two tests pin it, in both directions; if a future version fixes the library, they fail on a
+doubled backslash rather than going quietly wrong.
 
 **NodaTime is therefore not adopted.** It arrives as a hard dependency of Ical.Net and is never
 consulted — no zone is ever resolved through it. `docs/STACK.md`'s "When to revisit" records
@@ -457,7 +472,7 @@ Four things it must say, because each is a support question otherwise:
 `MyScheduleRendererTests`, which are equally pure; the project only starts a container for the
 classes that ask for `PostgresFixture`.
 
-- `CalendarSerializerTests` — the bug farm, and where the effort goes:
+- `CalendarRendererTests` — the bug farm, and where the effort goes:
   - every `DTSTART` and `DTEND` ends in `Z`; `TZID` and `VTIMEZONE` appear nowhere in the output
   - the venue-time description line carries the team's zone, offset and local date for a feed whose games sit in two different zones
   - CRLF line endings; folding at 75 octets; a long Russian venue name folds without splitting a UTF-8 sequence
@@ -552,13 +567,13 @@ Standalone and mergeable on its own; everything after it depends on `game.EndsAt
 
 ### Slice 2 — ICS serialization
 
-- [ ] `Ical.Net` + `NodaTime` pins; `docs/STACK.md` table entry and its "When to revisit" row for NodaTime
-- [ ] Feed DTOs and `CalendarFeedService` (window, playing/reserve, finished, multi-team merge)
-- [ ] `CalendarSerializer` — pure, no clock, no EF
-- [ ] `CalendarFormat.Version` constant
-- [ ] Localization keys in `en` / `ru` / `de`
-- [ ] `CalendarSerializerTests`, `CalendarFeedServiceTests`
-- [ ] Docs: `STACK.md`, this file if the serializer forces a change
+- [x] `Ical.Net` + `NodaTime` pins; `docs/STACK.md` table entry and its "When to revisit" row for NodaTime
+- [x] Feed DTOs and `CalendarFeedService` (window, playing/reserve, finished, multi-team merge)
+- [x] `CalendarRenderer` — pure, no clock, no EF (renamed from `CalendarSerializer`, which is the name of a type in Ical.Net)
+- [x] `CalendarFormat` — the format version and the UID domain
+- [x] Localization keys in `en` / `ru` / `de`, with plural snapshots for the guest count
+- [x] `CalendarRendererTests`, `CalendarFeedServiceTests`
+- [x] Docs: `docs/STACK.md`, and this file where the serializer forced a change
 
 ### Slice 3 — HTTP endpoint
 

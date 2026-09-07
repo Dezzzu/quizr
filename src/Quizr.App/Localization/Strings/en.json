@@ -264,5 +264,20 @@
   "Validation.PriceInvalid": "That doesn't look like a valid price. Reply with a number, or \"skip\" for none.",
   "Validation.DateInvalid": "That doesn't look like a valid date. Use yyyy-MM-dd, e.g. 2026-09-12.",
   "Validation.TimeInvalid": "That doesn't look like a valid time. Use HH:mm, e.g. 19:00.",
-  "Validation.ScheduleInvalid": "That doesn't look like a valid schedule. List days and times, e.g. \"Mon-Fri: 19:00, Sat: 16:00, Sun: 16:00\"."
+  "Validation.ScheduleInvalid": "That doesn't look like a valid schedule. List days and times, e.g. \"Mon-Fri: 19:00, Sat: 16:00, Sun: 16:00\".",
+  "Calendar.Name": "Quizr — {Team}",
+  "Calendar.NameAllTeams": "Quizr",
+  "Calendar.TitleWithTeam": "{Team} · {Title}",
+  "Calendar.SummaryReserve": "{Title} (reserve #{Position})",
+  "Calendar.SummaryDidNotPlay": "{Title} (didn't play)",
+  "Calendar.VenueTime": "Starts {When:ddd, dd MMM, HH\\:mm} · {Zone} (UTC{Offset})",
+  "Calendar.StatusPlaying": "You're playing",
+  "Calendar.StatusReserve": "Reserve #{Position}",
+  "Calendar.StatusPlayed": "You played",
+  "Calendar.StatusDidNotPlay": "You didn't play",
+  "Calendar.Guests": "+{Guests} {Guests:plural:guest|guests}",
+  "Calendar.Price": "Price: {Price}",
+  "Calendar.Notes": "{Notes}",
+  "Calendar.Tags": "{Tags}",
+  "Calendar.OpenInTelegram": "Open in Telegram: {Url}"
 }
