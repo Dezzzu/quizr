@@ -60,8 +60,10 @@ EF Core 10 + PostgreSQL 18 · SmartFormat.NET.
 Tested with TUnit, AwesomeAssertions, NSubstitute and Testcontainers.
 Full set, and what was rejected, in **[STACK.md](docs/STACK.md)**.
 
-Because the bot long-polls, nothing ever connects to it — no domain, no TLS, no open ports.
-It dials out to Telegram and talks to its database.
+The bot long-polls, so nothing has to connect to it for it to work: it dials out to Telegram
+and talks to its database. The one exception is the per-player calendar feed — a single
+read-only `GET /cal/{token}.ics`, which is what a calendar client subscribes to. It is not
+served at all unless `QUIZR_PUBLIC_URL` is set.
 
 ## Setup
 

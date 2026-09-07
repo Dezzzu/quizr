@@ -112,12 +112,19 @@ Npgsql and Telegram.Bot all throw — a `Result`-based error model would mean wr
 third-party call to convert exceptions into results, which is *more* exception handling, not
 less.
 
-Exactly two places catch broadly:
+Exactly three places catch broadly, and they are all boundaries where one failure must not
+take down work that has nothing to do with it:
 
 - **The update dispatch boundary** — one failing handler must not take the bot down. Log (the
   update scope is already attached), reply with a generic apology in the right language, alert
   the private channel.
 - **The scheduler tick** — one broken game must not stop reminders for everyone else.
+- **The calendar feed's HTTP handler** (`CalendarEndpoint`) — one failing request must not
+  take anything else down, and there is a second reason specific to it: an exception that
+  escapes to ASP.NET's own diagnostics middleware puts `RequestPath` into a logging scope, and
+  the calendar token lives in that path. `IncludeScopes` would then ship the credential to Seq.
+  Catching inside the handler is what keeps the token out of every log, alongside the
+  `Microsoft.AspNetCore` level filter in `Program.cs`.
 
 **A broad `catch` anywhere else is almost always someone hiding a fault.** Catch narrowly, to
 add context, and rethrow.

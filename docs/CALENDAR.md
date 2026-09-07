@@ -501,11 +501,30 @@ classes that ask for `PostgresFixture`.
   field, finish, decline, participation toggle, team timezone change: each bumps exactly the
   players it should and leaves the others alone.
 
-**Gap, named:** no `WebApplicationFactory` test of the real HTTP pipeline — rate limiting,
-forwarded headers and the route constraint are covered by their own unit tests but not
-end-to-end. `Program.cs` starts long polling unconditionally, so hosting it in a test would
-need a guard that is a bigger change than this feature warrants. `STACK.md` already flags
-`WebApplicationFactory` as arriving with the mini app; this is where it earns its keep.
+**Gap, named:** no `WebApplicationFactory` test of the real HTTP pipeline. `Program.cs` starts
+long polling unconditionally, so hosting it in a test would need a guard that is a bigger change
+than this feature warrants. `docs/STACK.md` already flags `WebApplicationFactory` as arriving
+with the mini app; this is where it will earn its keep.
+
+What the unit tests cannot reach was checked by hand instead, once, against a real Postgres and
+a real seeded subscriber — worth repeating rather than trusting if any of it changes:
+
+| Checked | Result |
+| --- | --- |
+| Route constraint on a wrong-length token | `404`, no handler reached |
+| `HEAD` | `404`/`200` as the token warrants — **not** `405` |
+| `POST` | `405` |
+| Eleven rapid `GET`s on one token | seven answered, then `429` with `Retry-After: 60` |
+| A seeded subscriber's real feed | `200`, correct `ETag`, `Cache-Control`, `Content-Disposition`, and a valid `VCALENDAR` |
+| Conditional `GET`, matching and `W/`-weakened | `304` both; a stale tag gets `200` |
+| **The token in any log line** | **absent across ~20 requests including 404s and 429s** |
+| The `AddCalendarFeed` migration against an empty database | applied clean |
+
+One honest limitation the same run confirmed: a row written by raw SQL bypasses
+`CalendarVersionInterceptor`, so the version does not move and a client keeps its cached body.
+That is by construction — the interceptor is an EF-level mechanism and the application only
+ever writes through EF — but it is the thing to remember before anyone reaches for
+`ExecuteUpdate` on a signup or a game.
 
 ## 9. Rollout
 
@@ -577,12 +596,12 @@ Standalone and mergeable on its own; everything after it depends on `game.EndsAt
 
 ### Slice 3 — HTTP endpoint
 
-- [ ] `Microsoft.NET.Sdk.Web`; `WebApplication` in `Program.cs`
-- [ ] `GET`/`HEAD /cal/{token}.ics`, route constraint, ETag, 304, caching
-- [ ] Rate limiters, `UseForwardedHeaders`
-- [ ] Log filtering and the handler's own error boundary
-- [ ] `CalendarEndpointTests`, `CalendarCacheKeyTests`, `CalendarTokenTests`
-- [ ] Docs: `STYLE.md` (third catch boundary), `STACK.md` (host change), `CLAUDE.md` (HTTP constraints)
+- [x] `Microsoft.NET.Sdk.Web`; `WebApplication` in `Program.cs`, and the two packages the shared framework now supplies dropped
+- [x] `GET`/`HEAD /cal/{token}.ics`, route constraint, ETag, 304, caching
+- [x] Rate limiters, `UseForwardedHeaders`
+- [x] Log filtering and the handler's own error boundary
+- [x] `CalendarEndpointTests`, `CalendarCacheKeyTests`, `CalendarTokenTests`, plus a manual end-to-end run recorded below
+- [x] Docs: `docs/STYLE.md` (third catch boundary), `docs/STACK.md` (host change), `CLAUDE.md` (a new HTTP surface section), `README.md`
 
 ### Slice 4 — Bot surface
 

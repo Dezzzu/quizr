@@ -16,7 +16,7 @@ in the repo today.
 | Database | **PostgreSQL 18** | |
 | Telegram | `Telegram.Bot` **22.10.3** | long polling |
 | Data access | `Npgsql.EntityFrameworkCore.PostgreSQL` **10.0.3**, `Microsoft.EntityFrameworkCore.Design` **10.0.11** | migrations applied at startup |
-| Hosting | `Microsoft.Extensions.Hosting` **10.0.11** | generic host; no web server in phase 1 |
+| Hosting | ASP.NET Core (shared framework) | `WebApplication`; Kestrel serves exactly one route |
 | Resilience | `Microsoft.Extensions.Http.Resilience` **10.9.0** | Polly 8; retries honouring `retry_after` |
 | Localization | `SmartFormat.NET` **3.6.1** | JSON string files |
 | Calendar feeds | `Ical.Net` **5.2.3** | RFC 5545 escaping and the 75-**octet** line fold. Brings `NodaTime` **3.2.2**, which nothing here consults — see below |
@@ -31,15 +31,23 @@ in the repo today.
 out of support. .NET 10 is LTS through November 2028. It also settles EF Core 10 and Npgsql
 10, since those track the runtime's major version.
 
-### No inbound connectivity
+### One inbound route, and only one
 
-Long polling means **nothing ever connects to the bot** — no domain, no TLS, no open ports.
-It dials out to Telegram and talks to its database. Don't add a dependency that breaks that
-without flagging it.
+Long polling means the bot itself needs nothing to connect to it: it dials out to Telegram and
+talks to its database. That was the whole story until the per-player calendar feed
+(`docs/CALENDAR.md`), which cannot be anything but an inbound HTTP endpoint — a calendar client
+subscribes to a URL.
 
-Phase 2 (the mini app) will need ASP.NET Core. Switching from the generic host to
-`WebApplication` is a few lines and the hosted services carry over unchanged, so build for
-the generic host now.
+So `Quizr.App` is an `Sdk.Web` project on `WebApplication`, and the prediction this section used
+to make held exactly: the swap was a few lines and the hosted services carried over unchanged.
+**`GET`/`HEAD /cal/{token}.ics` is the only route**, it is read-only, it touches no Telegram
+API, and it is not mapped at all unless `QUIZR_PUBLIC_URL` is set.
+
+What this costs is real and worth weighing before a second route is added: a domain, TLS, a
+reverse proxy, and a public surface that has to be correct about authorization on its own. And
+one trap — see `DEPLOY.md` — **configuring a Coolify health check is now possible and still
+must not be done**, because a passing one lets Coolify start a second container before stopping
+the first, and two pollers on one bot token collide.
 
 ## Repository layout
 

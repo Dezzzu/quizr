@@ -163,6 +163,27 @@ Breaking one of these is a bug, not a preference.
   the team for this chat id" query goes through `TeamLookup.ByChatId`, which matches either
   id, rather than repeating `|| t.OldChatId == chatId` at each call site.
 
+## The HTTP surface
+
+The bot gained exactly one inbound route, for the per-player calendar feed
+(`docs/CALENDAR.md`). Everything else about it still dials outward.
+
+- **`GET`/`HEAD /cal/{token}.ics`, and nothing else.** Read-only, touches no Telegram API, and
+  not mapped at all unless `QUIZR_PUBLIC_URL` is set — so a local run and a deployment with no
+  domain behave exactly as they did before it existed.
+- **The token in the path is a credential**, and the only one: a calendar client cannot perform
+  interactive auth, so whoever holds the URL is the subscriber. It must never reach a log.
+  Two things keep it out and both are load-bearing — `Microsoft.AspNetCore` is filtered to
+  Warning in `Program.cs` (its request logging prints the full path at Information), and
+  `CalendarEndpoint` catches its own exceptions so none reaches the diagnostics middleware,
+  which would put `RequestPath` into a logging scope that `IncludeScopes` ships to Seq.
+- **Every failure is a bare `404`** — malformed, unknown and revoked are deliberately
+  indistinguishable. No `401`, no `403`: a challenge teaches a scanner the path is real, and no
+  calendar client could answer one.
+- **Do not configure a Coolify health check**, even though there is now a port to point one at.
+  See `docs/DEPLOY.md`: a passing health check is what lets Coolify start a second container
+  before stopping the first, and two long-pollers on one bot token collide.
+
 ## Time
 
 Native BCL types throughout.

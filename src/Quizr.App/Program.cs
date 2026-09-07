@@ -1,4 +1,9 @@
 using System.Globalization;
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
@@ -8,6 +13,7 @@ using Microsoft.Extensions.Logging;
 using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
+using Quizr.App.Calendar;
 using Quizr.App.Data;
 using Quizr.App.Localization;
 using Quizr.App.Scheduling;
@@ -17,15 +23,20 @@ using Quizr.App.Telemetry;
 using Quizr.Domain;
 using Telegram.Bot;
 
-// Composition root. Generic host, not ASP.NET Core — nothing listens on a port
-// in phase 1. See STACK.md before adding anything here.
-var builder = Host.CreateApplicationBuilder(args);
+// Composition root. A WebApplication rather than the generic host, for exactly one reason:
+// the per-player calendar feed is an HTTP endpoint (docs/CALENDAR.md), and STACK.md's own
+// prediction that the swap would cost "a few lines with hosted services carrying over
+// unchanged" held. The bot still long-polls and still dials outward for everything it does.
+//
+// One thing that came with the port and must not follow: DEPLOY.md forbids configuring a
+// Coolify health check, because a passing one is what lets Coolify start a second container
+// before stopping the first, and two pollers on one bot token collide.
+var builder = WebApplication.CreateBuilder(args);
 
-// Host.CreateApplicationBuilder only auto-loads user secrets when EnvironmentName is
-// "Development", which needs DOTNET_ENVIRONMENT set — easy to forget locally, unlike
-// WebApplication.CreateBuilder's ASPNETCORE_ENVIRONMENT default. Added explicitly so
-// CLAUDE.md's "user secrets locally" actually works without that extra env var. Optional:
-// the secrets file won't exist in a real deployment, where env vars are used instead.
+// Both builders only auto-load user secrets when EnvironmentName is "Development", which
+// needs ASPNETCORE_ENVIRONMENT (or DOTNET_ENVIRONMENT) set — easy to forget locally. Added
+// explicitly so CLAUDE.md's "user secrets locally" works without that extra env var.
+// Optional: the secrets file won't exist in a real deployment, where env vars are used.
 builder.Configuration.AddUserSecrets<Program>(optional: true);
 
 // Readable text everywhere, including under Docker. Structure leaves over OTLP instead
@@ -51,9 +62,20 @@ builder.Logging.AddFilter("Microsoft.EntityFrameworkCore.Update", LogLevel.Warni
 builder.Logging.AddFilter("System.Net.Http.HttpClient", LogLevel.Warning);
 builder.Logging.AddFilter("Polly", LogLevel.Warning);
 
+// The calendar token is the credential and lives in the request path, so ASP.NET's own
+// "Request starting HTTP/1.1 GET /cal/<token>.ics" at Information would write it to stdout and
+// ship it to Seq on every fetch — the same leak the HttpClient filter above exists for, now
+// pointing inward. CalendarEndpoint catches its own exceptions for the other half of this: an
+// exception reaching the diagnostics middleware carries RequestPath in a logging scope.
+builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
+
 var botToken =
     builder.Configuration["QUIZR_BOT_TOKEN"] ?? throw new InvalidOperationException("QUIZR_BOT_TOKEN is not set.");
 var connectionString = builder.Configuration["QUIZR_DB"] ?? throw new InvalidOperationException("QUIZR_DB is not set.");
+
+// Unset means the feed is off: the endpoint is never mapped and /mycalendar says so. A local
+// run and a deployment with no domain yet both behave exactly as they did before it existed.
+var publicUrl = builder.Configuration["QUIZR_PUBLIC_URL"];
 
 var alertChatIdRaw = builder.Configuration["QUIZR_ALERT_CHAT_ID"];
 TelegramChatId? alertChatId = alertChatIdRaw is null
@@ -130,6 +152,47 @@ if (!string.IsNullOrWhiteSpace(builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOIN
         );
 }
 
+builder.Services.AddSingleton(new CalendarUrls(publicUrl));
+builder.Services.AddScoped<CalendarFeedService>();
+builder.Services.AddScoped<CalendarEndpoint>();
+
+// Keyed by (player, version, format version, UTC date), so a bump changes the key and nothing
+// needs evicting for correctness. The size limit is for the date component alone: yesterday's
+// keys are unreachable but would otherwise sit here for the life of the process.
+builder.Services.AddMemoryCache(options => options.SizeLimit = 64 * 1024 * 1024);
+
+// Two limits, chained. The per-token one stops a single misconfigured client outweighing all
+// real traffic; the per-IP one stops a scanner, whose requests never reach a real token at all.
+// GlobalLimiter rather than a named policy because chaining produces a PartitionedRateLimiter
+// that AddPolicy cannot take — and because the feed is the only endpoint this process serves,
+// so global and per-endpoint are the same set today.
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = (context, _) =>
+    {
+        context.HttpContext.Response.Headers.RetryAfter = "60";
+        return ValueTask.CompletedTask;
+    };
+
+    options.GlobalLimiter = PartitionedRateLimiter.CreateChained(
+        // The path *is* the token, which keeps this off route values and therefore
+        // independent of where the middleware sits relative to routing.
+        PartitionedRateLimiter.Create<HttpContext, string>(context =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                context.Request.Path.Value ?? string.Empty,
+                _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1) }
+            )
+        ),
+        PartitionedRateLimiter.Create<HttpContext, string>(context =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                _ => new FixedWindowRateLimiterOptions { PermitLimit = 60, Window = TimeSpan.FromMinutes(1) }
+            )
+        )
+    );
+});
+
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IStrings, Strings>();
 builder.Services.AddSingleton<IMessageEditDebouncer, MessageEditDebouncer>();
@@ -158,12 +221,36 @@ builder.Services.AddSingleton<UpdateDispatcher>();
 builder.Services.AddHostedService<BotHostedService>();
 builder.Services.AddHostedService<SchedulerHostedService>();
 
-var host = builder.Build();
+var app = builder.Build();
 
 // Migrations applied at startup — STACK.md.
-using (var migrationScope = host.Services.CreateScope())
+using (var migrationScope = app.Services.CreateScope())
 {
     await migrationScope.ServiceProvider.GetRequiredService<QuizrDb>().Database.MigrateAsync();
 }
 
-await host.RunAsync();
+// Coolify's proxy terminates TLS and forwards, so without this every request appears to come
+// from the proxy and the per-IP rate limit degenerates into one global bucket. The known-proxy
+// lists are cleared because that proxy's address on the Docker network isn't knowable from
+// here and isn't stable; the container is never exposed directly, so the only thing that can
+// set these headers is the proxy in front of it.
+var forwardedHeaders = new ForwardedHeadersOptions { ForwardedHeaders = ForwardedHeaders.XForwardedFor };
+forwardedHeaders.KnownIPNetworks.Clear();
+forwardedHeaders.KnownProxies.Clear();
+app.UseForwardedHeaders(forwardedHeaders);
+
+app.UseRateLimiter();
+
+if (publicUrl is not null)
+{
+    app.MapMethods(
+        CalendarUrls.Route,
+        // HEAD explicitly: several calendar clients probe with it before subscribing, and
+        // MapGet alone answers those 405.
+        ["GET", "HEAD"],
+        (HttpContext http, CalendarEndpoint endpoint, string token, CancellationToken ct) =>
+            endpoint.HandleAsync(http, token, ct)
+    );
+}
+
+await app.RunAsync();
