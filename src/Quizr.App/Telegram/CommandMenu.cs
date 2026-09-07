@@ -25,6 +25,7 @@ internal static class CommandMenu
         ("mylanguage", "Commands.MyLanguage"),
         ("myreminders", "Commands.MyReminders"),
         ("myschedule", "Commands.MySchedule"),
+        ("mycalendar", "Commands.MyCalendar"),
     ];
 
     public static readonly (string Command, string DescriptionKey)[] CaptainOnlyCommands =

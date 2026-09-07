@@ -7,24 +7,31 @@ with a roster the bot owns.
 Read it before designing anything — most of what follows was decided deliberately and is not
 worth re-deriving.
 
-- **`PLAN.md`** — the data model and the ordered milestones. **Start here.**
-- **`STACK.md`** — the chosen tools and versions, what is built here rather than taken from a
-  library, and what was considered and rejected.
-- **`STYLE.md`** — how code here is written: error handling, interfaces, async, comments,
+**Everything except this file, `README.md` and `CONTRIBUTING.md` lives in `docs/`.** Code
+comments name a doc without its path — `see STACK.md` means `docs/STACK.md`.
+
+- **`docs/PLAN.md`** — the data model and the ordered milestones. **Start here.**
+- **`docs/STACK.md`** — the chosen tools and versions, what is built here rather than taken
+  from a library, and what was considered and rejected.
+- **`docs/STYLE.md`** — how code here is written: error handling, interfaces, async, comments,
   tests, and the conventions agents most often diverge on.
-- **`VISION.md`** — the product description, roadmap and decision log.
-- **`DEPLOY.md`** — how the bot ships: the GitHub Actions pipeline, and the Coolify
+- **`docs/VISION.md`** — the product description, roadmap and decision log.
+- **`docs/DEPLOY.md`** — how the bot ships: the GitHub Actions pipeline, and the Coolify
   configuration it hands off to.
+- **`docs/CALENDAR.md`** — the per-player `.ics` subscription feed: design and live
+  implementation plan.
 - **`CONTRIBUTING.md`** — the outward-facing version of the branch/PR rules below, plus what a
   useful bug report contains. Written for people, not agents.
 
 ## Start here
 
-Project layout and tooling are in place; **no domain code yet**. The product description and
-the stack are settled.
+M1–M9 are built: the domain, persistence, the Telegram plumbing, the signup loop, the Board,
+the scheduler, the captain flows and all three languages. **Once the EF entities exist they
+are the source of truth** — `docs/PLAN.md`'s field tables are history, kept for the reasoning
+rather than the schema.
 
-**`PLAN.md` has the data model and the milestone to start from.** Read this file and
-`STYLE.md` first, then work through `PLAN.md` in order.
+Read this file and `docs/STYLE.md` first. `docs/PLAN.md` says what was built and in what
+order; `docs/CALENDAR.md` is the work in progress.
 
 ## Commands
 
@@ -70,6 +77,8 @@ actually talks about quiz nights.
 | **Guest** | Brought by a member. Anonymous by default, optionally named. Occupies a seat and holds its own queue position. |
 | **Team guest** | A guest with no owner. Must be named. Either a guest who stayed after their inviter dropped out, or one a captain added directly for someone not signed up themselves. |
 | **Venue-assigned** | A stranger the organisers add to the team on the night. Recorded after the fact. |
+| **Feed** | One person's games as a subscribable `.ics` calendar, generated on read. Per person, never per team, and it crosses every team they play for — the same reasoning as `/myschedule`. |
+| **Calendar token** | The opaque random string in a feed's URL. It *is* the credential: a calendar client cannot do interactive auth, so whoever holds the URL is the subscriber. Never logged, replaceable, revocable. |
 
 ## Invariants
 
@@ -93,8 +102,10 @@ Breaking one of these is a bug, not a preference.
    indefinitely. No timers. If they go quiet, a captain removes them by hand.
 7. **Nothing is ever deleted.** Cancellation is a state change. The audit trail is what makes
    queue disputes answerable.
-8. **A game auto-finishes 4 hours after its start time.** Captains can finish it early with an
-   explicit button. Until then it is live and players can still self-serve.
+8. **A game lasts 3 hours, and auto-finishes at the end of them.** One number, in
+   `GameExtensions`, behind `game.EndsAt` — the scheduler's auto-finish and the calendar feed's
+   event duration both read it, so they cannot drift apart. Captains can finish a game early
+   with an explicit button. Until it ends it is live and players can still self-serve.
 9. **A finished game counts as played unless declined.** The ordinary case requires zero
    input.
 10. **Finishing a game materialises participation.** Until then the roster is derived from
@@ -153,6 +164,29 @@ Breaking one of these is a bug, not a preference.
   already in flight when the upgrade completed can still arrive tagged with it. Every "find
   the team for this chat id" query goes through `TeamLookup.ByChatId`, which matches either
   id, rather than repeating `|| t.OldChatId == chatId` at each call site.
+
+## The HTTP surface
+
+The bot gained exactly one inbound route, for the per-player calendar feed
+(`docs/CALENDAR.md`). Everything else about it still dials outward.
+
+- **`GET`/`HEAD /api/cal/feed.ics?t=<token>`, and nothing else.** Read-only, touches no Telegram
+  API, and not mapped at all unless `QUIZR_PUBLIC_URL` is set — so a local run and a deployment
+  with no domain behave exactly as they did before it existed.
+- **The token is a credential**, and the only one: a calendar client cannot perform interactive
+  auth, so whoever holds the URL is the subscriber. It must never reach a log, and **that is
+  why it is a query parameter rather than a path segment**. Every log record written during a
+  request carries `RequestPath` in its scope, and `IncludeScopes` ships scopes to Seq — so a
+  token in the path leaks the moment *anything* logs, including this endpoint's own error
+  handler. The scope does not carry the query string. `Microsoft.AspNetCore` is filtered to
+  Warning as well, since its request logging prints the full URL, query included.
+- **Never move it back into the path**, and think before logging the request URL anywhere.
+- **Every failure is a bare `404`** — malformed, unknown and revoked are deliberately
+  indistinguishable. No `401`, no `403`: a challenge teaches a scanner the path is real, and no
+  calendar client could answer one.
+- **Do not configure a Coolify health check**, even though there is now a port to point one at.
+  See `docs/DEPLOY.md`: a passing health check is what lets Coolify start a second container
+  before stopping the first, and two long-pollers on one bot token collide.
 
 ## Time
 
@@ -227,6 +261,13 @@ Native BCL types throughout.
   game's participation), not a general-purpose event log. Unlike the notifications table,
   there's no uniqueness constraint to enforce, so the write just rides along in the caller's
   own `SaveChangesAsync`.
+- **Don't bump a calendar version by hand.** `CalendarVersionInterceptor` watches the change
+  tracker on every `SaveChanges` and bumps `Player.CalendarVersion` for whoever a change
+  affects, plus `Game.Revision`/`RevisedAt` when the change is to a field the feed renders. A
+  new service method that saves a signup, a game or a participation needs nothing added. What
+  it *does* need, if it adds a **new column the feed renders**, is that column's name in the
+  interceptor's `FeedVisibleGameProperties` — that list is the one thing there that a new
+  field can fall out of. See `docs/CALENDAR.md`.
 - **`main` is protected: nothing is pushed to it directly, by anyone.** Work goes on a branch
   and reaches `main` through a pull request whose `build` check has passed. The rule applies to
   the repository owner too, so a red CI genuinely blocks everything — which is the point, and

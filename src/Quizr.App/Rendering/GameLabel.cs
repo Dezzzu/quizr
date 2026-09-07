@@ -18,17 +18,25 @@ internal static class GameLabel
     //
     // Contains rather than StartsWith: the point is not to say the name twice, and a title
     // like "Осенний Квиз, плиз!" already says it.
-    public static string Render(string title, string? franchiseName, IStringsFor strings)
+    public static string Render(string title, string? franchiseName, IStringsFor strings) =>
+        Combine(title, franchiseName, strings, WebUtility.HtmlEncode);
+
+    // The same rule for somewhere HTML would be wrong: a calendar event's SUMMARY, which is
+    // plain text that the .ics escaping handles on its own terms. Shared rather than copied so
+    // a game cannot be named one way in the chat and another way in a calendar.
+    public static string RenderPlain(string title, string? franchiseName, IStringsFor strings) =>
+        Combine(title, franchiseName, strings, text => text);
+
+    private static string Combine(string title, string? franchiseName, IStringsFor strings, Func<string, string> escape)
     {
-        var encodedTitle = WebUtility.HtmlEncode(title);
         if (franchiseName is null || title.Contains(franchiseName, StringComparison.OrdinalIgnoreCase))
         {
-            return encodedTitle;
+            return escape(title);
         }
 
         return strings.Text(
             "Game.TitleWithFranchise",
-            new { Franchise = WebUtility.HtmlEncode(franchiseName), Title = encodedTitle }
+            new { Franchise = escape(franchiseName), Title = escape(title) }
         );
     }
 }

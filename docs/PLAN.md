@@ -314,7 +314,36 @@ naming who did it.
 Governed by: invariant 13, `CLAUDE.md` Conventions (audit logging), `VISION.md`'s Bot v1
 list.
 
+### M10 — Per-player calendar feeds
+
+**Designed and planned in its own file: `docs/CALENDAR.md`.** That file is the live one — the
+slice checklist there is kept current as the work lands, and this entry only says where the
+milestone sits and what it costs the rest of the project.
+
+Each player gets one personal `.ics` subscription URL listing the games they are rostered for,
+generated on read from the same database the bot already owns. `VISION.md` had it under
+**Later**, behind the mini app; it is pulled forward because it needs none of the mini app —
+no initData validation, no JSON API, no frontend.
+
+The one thing it costs is the property `STACK.md` opens with: the bot stops being outbound-only
+and gains a public HTTP endpoint, a domain and TLS. `docs/CALENDAR.md` opens with the three
+standing claims that stop being true and the deployment rule that must **not** be relaxed
+alongside them.
+
+Built in slices, each ending green: a shared game duration; the migration and the version
+interceptor; ICS serialization; the endpoint; the bot commands; wiring and deployment.
+
+Done when: a player can run `/mycalendar`, paste the link into Google or Apple Calendar, and
+see the games they are signed up to — with the reserve marked and not booking the evening —
+kept current without anyone doing anything; the link can be replaced and turned off; and the
+feed is off entirely, with no tokens issued, until `QUIZR_PUBLIC_URL` is set.
+
+Governed by: invariants 1-3 and 8-11 (what the feed may say about a roster), `docs/CALENDAR.md`.
+
 ## Deliberately not in scope
+
+The phone-calendar subscription feed has moved out of this list and into M10 above; the rest
+of `VISION.md`'s **Later** stays where it is.
 
 A browsable archive UI — M9 built tags rendered as real Telegram hashtags instead, the
 interim way to find past games via Telegram's own in-chat search until the mini app's

@@ -35,6 +35,17 @@ public class GameExtensionsTests
         game.IsFinished.Should().BeFalse();
     }
 
+    // The one number the scheduler's auto-finish and the calendar feed's DTEND both read
+    // (docs/CALENDAR.md). Pinned here so changing it is a deliberate edit to a failing test
+    // rather than a quiet adjustment nobody notices in two places at once.
+    [Test]
+    public void AGameEndsThreeHoursAfterItStarts()
+    {
+        var game = Game();
+
+        game.EndsAt.Should().Be(game.StartsAt.AddHours(3));
+    }
+
     private static Game Game() =>
         new()
         {

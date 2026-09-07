@@ -112,12 +112,18 @@ Npgsql and Telegram.Bot all throw — a `Result`-based error model would mean wr
 third-party call to convert exceptions into results, which is *more* exception handling, not
 less.
 
-Exactly two places catch broadly:
+Exactly three places catch broadly, and they are all boundaries where one failure must not
+take down work that has nothing to do with it:
 
 - **The update dispatch boundary** — one failing handler must not take the bot down. Log (the
   update scope is already attached), reply with a generic apology in the right language, alert
   the private channel.
 - **The scheduler tick** — one broken game must not stop reminders for everyone else.
+- **The calendar feed's HTTP handler** (`CalendarEndpoint`) — one failing request must not
+  take anything else down, and a 500 with no detail is the right answer to a caller holding
+  only a credential. Note what this catch does *not* buy: logging from inside it is still
+  inside the request's logging scope, so it was never what kept the calendar token out of Seq.
+  Keeping the token in the query string rather than the path is what does that.
 
 **A broad `catch` anywhere else is almost always someone hiding a fault.** Catch narrowly, to
 add context, and rethrow.

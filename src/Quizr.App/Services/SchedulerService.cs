@@ -1,6 +1,5 @@
 using System.Net;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using Quizr.App.Data;
 using Quizr.App.Localization;
 using Quizr.App.Telegram;
@@ -14,14 +13,11 @@ using Telegram.Bot.Exceptions;
 namespace Quizr.App.Services;
 
 // One scheduler tick's worth of work for every active team: send whatever reminders are due,
-// auto-finish games whose 4-hour window elapsed, and keep the Board correct. Deliberately a
+// auto-finish games whose window has elapsed, and keep the Board correct. Deliberately a
 // query — "what's due now" — not a job queue (STACK.md): idempotent, and a restart just asks
 // again, which is what gives M6's "catch up on start" for free.
 public sealed class SchedulerService
 {
-    // Invariant 8.
-    private static readonly TimeSpan AutoFinishAfter = TimeSpan.FromHours(4);
-
     // Long enough that a captain distracted mid-wizard isn't cut off, short enough that a
     // dialog abandoned entirely doesn't sit around swallowing an unrelated message for hours.
     private static readonly TimeSpan DialogExpiryAfter = TimeSpan.FromMinutes(20);
@@ -139,7 +135,7 @@ public sealed class SchedulerService
         {
             try
             {
-                if (now >= game.StartsAt + AutoFinishAfter)
+                if (now >= game.EndsAt)
                 {
                     await FinishGameAsync(team, game, ct);
                 }

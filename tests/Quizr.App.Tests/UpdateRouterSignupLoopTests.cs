@@ -2,6 +2,7 @@ using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
+using Quizr.App.Calendar;
 using Quizr.App.Data;
 using Quizr.App.Localization;
 using Quizr.App.Services;
@@ -902,6 +903,8 @@ public class UpdateRouterSignupLoopTests
         var announcements = new AnnouncementService(db, sender, strings);
         var board = new BoardService(db, sender, bot, strings, NullLogger<BoardService>.Instance);
         var mySchedule = new MyScheduleService(db);
+        var calendars = new CalendarSubscriptionService(db, clock);
+        var calendarUrls = new CalendarUrls("https://quizr.test");
 
         var router = new UpdateRouter(
             db,
@@ -919,6 +922,8 @@ public class UpdateRouterSignupLoopTests
             announcements,
             board,
             mySchedule,
+            calendars,
+            calendarUrls,
             clock,
             NullLogger<UpdateRouter>.Instance
         );

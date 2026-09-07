@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using Quizr.App.Data;
 using Quizr.Domain;
 using Quizr.Domain.Entities;

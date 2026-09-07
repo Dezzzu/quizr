@@ -3,7 +3,8 @@
 Telegram bot for pub quiz teams: game announcements with a real roster, a reserve queue,
 guests, and reminders — instead of counting message reactions.
 
-**Status:** the bot is built (M1–M9) and passing tests. The mini app is phase 2, not started.
+**Status:** the bot is built (M1–M9, plus per-player calendar feeds) and passing tests. The
+mini app is phase 2, not started.
 
 ## What it does
 
@@ -22,21 +23,25 @@ and who has to wait for a seat — and rewrites its own messages whenever any of
 - **Reminders** that fire themselves.
 - **Tags as hashtags**, the interim way to find past games via Telegram's own in-chat search,
   until a browsable archive lands with the mini app.
+- **A calendar subscription** — `/mycalendar` gives each player a private `.ics` link, so the
+  games they're signed up to appear in Google or Apple Calendar and stay current.
 - **English, Russian and German**, with group posts in the team's language and private
   messages in each person's own.
 
 ## Documentation
 
-- **[PLAN.md](PLAN.md)** — the data model and the ordered implementation milestones.
-- **[VISION.md](VISION.md)** — the idea, how it works, the roadmap, and the decision log.
-- **[STACK.md](STACK.md)** — the tools and versions, what is built here rather than taken
+- **[PLAN.md](docs/PLAN.md)** — the data model and the ordered implementation milestones.
+- **[VISION.md](docs/VISION.md)** — the idea, how it works, the roadmap, and the decision log.
+- **[STACK.md](docs/STACK.md)** — the tools and versions, what is built here rather than taken
   from a library, and what was considered and rejected.
-- **[STYLE.md](STYLE.md)** — how code here is written: error handling, interfaces, async,
+- **[STYLE.md](docs/STYLE.md)** — how code here is written: error handling, interfaces, async,
   comments and tests.
 - **[CLAUDE.md](CLAUDE.md)** — working context for agent-assisted development: vocabulary,
   invariants, and the Telegram constraints worth designing around.
-- **[DEPLOY.md](DEPLOY.md)** — how the bot ships: the GitHub Actions pipeline and the Coolify
+- **[DEPLOY.md](docs/DEPLOY.md)** — how the bot ships: the GitHub Actions pipeline and the Coolify
   configuration it hands off to.
+- **[CALENDAR.md](docs/CALENDAR.md)** — the per-player `.ics` subscription feed: design,
+  and the implementation plan it is being built against.
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** — how to report a bug, ask for a feature, and open a
   pull request.
 
@@ -56,10 +61,12 @@ and merging is the owner's call rather than the contributor's.
 EF Core 10 + PostgreSQL 18 · SmartFormat.NET.
 
 Tested with TUnit, AwesomeAssertions, NSubstitute and Testcontainers.
-Full set, and what was rejected, in **[STACK.md](STACK.md)**.
+Full set, and what was rejected, in **[STACK.md](docs/STACK.md)**.
 
-Because the bot long-polls, nothing ever connects to it — no domain, no TLS, no open ports.
-It dials out to Telegram and talks to its database.
+The bot long-polls, so nothing has to connect to it for it to work: it dials out to Telegram
+and talks to its database. The one exception is the per-player calendar feed — a single
+read-only `GET /api/cal/feed.ics`, which is what a calendar client subscribes to. It is not
+served at all unless `QUIZR_PUBLIC_URL` is set.
 
 ## Setup
 
@@ -76,6 +83,7 @@ string, and optionally a chat id to receive unhandled-exception alerts:
 export QUIZR_BOT_TOKEN="..."
 export QUIZR_DB="Host=localhost;Database=quizr;Username=quizr;Password=..."
 export QUIZR_ALERT_CHAT_ID="..."   # optional
+export QUIZR_PUBLIC_URL="https://..."  # optional; enables the calendar feed
 ```
 
 Never commit the token — leaked bot tokens are scraped off GitHub within minutes. Locally,

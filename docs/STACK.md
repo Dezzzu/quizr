@@ -16,9 +16,10 @@ in the repo today.
 | Database | **PostgreSQL 18** | |
 | Telegram | `Telegram.Bot` **22.10.3** | long polling |
 | Data access | `Npgsql.EntityFrameworkCore.PostgreSQL` **10.0.3**, `Microsoft.EntityFrameworkCore.Design` **10.0.11** | migrations applied at startup |
-| Hosting | `Microsoft.Extensions.Hosting` **10.0.11** | generic host; no web server in phase 1 |
+| Hosting | ASP.NET Core (shared framework) | `WebApplication`; Kestrel serves exactly one route |
 | Resilience | `Microsoft.Extensions.Http.Resilience` **10.9.0** | Polly 8; retries honouring `retry_after` |
 | Localization | `SmartFormat.NET` **3.6.1** | JSON string files |
+| Calendar feeds | `Ical.Net` **5.2.3** | RFC 5545 escaping and the 75-**octet** line fold. Brings `NodaTime` **3.2.2**, which nothing here consults — see below |
 | Tests | `TUnit` **1.65.68**, `AwesomeAssertions` **9.6.0**, `NSubstitute` **6.2.0**, `Testcontainers.PostgreSql` **4.14.0**, `Microsoft.Extensions.TimeProvider.Testing` **10.9.0** | source-generated, native to Microsoft.Testing.Platform — see below |
 | Formatter | `csharpier` **1.3.0** | local tool; print width 120 |
 | Migrations CLI | `dotnet-ef` **10.0.11** | local tool |
@@ -30,15 +31,25 @@ in the repo today.
 out of support. .NET 10 is LTS through November 2028. It also settles EF Core 10 and Npgsql
 10, since those track the runtime's major version.
 
-### No inbound connectivity
+### One inbound route, and only one
 
-Long polling means **nothing ever connects to the bot** — no domain, no TLS, no open ports.
-It dials out to Telegram and talks to its database. Don't add a dependency that breaks that
-without flagging it.
+Long polling means the bot itself needs nothing to connect to it: it dials out to Telegram and
+talks to its database. That was the whole story until the per-player calendar feed
+(`docs/CALENDAR.md`), which cannot be anything but an inbound HTTP endpoint — a calendar client
+subscribes to a URL.
 
-Phase 2 (the mini app) will need ASP.NET Core. Switching from the generic host to
-`WebApplication` is a few lines and the hosted services carry over unchanged, so build for
-the generic host now.
+So `Quizr.App` is an `Sdk.Web` project on `WebApplication`, and the prediction this section used
+to make held exactly: the swap was a few lines and the hosted services carried over unchanged.
+**`GET`/`HEAD /api/cal/feed.ics?t=<token>` is the only route**, it is read-only, it touches no
+Telegram API, and it is not mapped at all unless `QUIZR_PUBLIC_URL` is set. The token is a
+query parameter rather than a path segment for one specific reason — see `CLAUDE.md`'s HTTP
+surface section.
+
+What this costs is real and worth weighing before a second route is added: a domain, TLS, a
+reverse proxy, and a public surface that has to be correct about authorization on its own. And
+one trap — see `DEPLOY.md` — **configuring a Coolify health check is now possible and still
+must not be done**, because a passing one lets Coolify start a second container before stopping
+the first, and two pollers on one bot token collide.
 
 ## Repository layout
 
@@ -77,7 +88,7 @@ over unchanged. Four new pieces live inside it, none needing a project of their 
 - **initData validation** — HMAC-SHA256 over the payload using the bot token. No dependency,
   and it is the entire auth story: a mini app has no login.
 - **A JSON API** for games, rosters and franchises.
-- **The iCal feed** — a per-user secret URL, rotatable. `Ical.Net`, or hand-rolled VEVENT.
+- ~~**The iCal feed**~~ — built ahead of the rest of phase 2; see `docs/CALENDAR.md`.
 - **Static file serving** for the built frontend.
 
 `Quizr.App.Tests` gains `WebApplicationFactory` integration tests. Same project — it is
@@ -106,11 +117,11 @@ of bug that stays invisible until someone's queue position is wrong.
 
 ### What actually gets harder
 
-**The bot stops being outbound-only.** Today "nothing ever connects to it" buys no domain, no
-TLS, no open ports and effectively no attack surface. The mini app requires all of them —
-a domain, certificates, a reverse proxy, and a public endpoint that has to be correct about
-auth. That is a larger cost than any project reshuffle, and it should be weighed before
-starting rather than discovered during.
+**The bot has already stopped being outbound-only**, and it happened before the mini app: the
+calendar feed brought the domain, the TLS and the reverse proxy with it (`docs/CALENDAR.md`).
+So this cost is paid rather than pending. What the mini app still adds is a public surface that
+has to be correct about *auth* — the feed's answer is a single unguessable URL and nothing else,
+which does not generalise to a screen that can act on somebody's behalf.
 
 **Stay single-process.** Bot and web in one host keeps startup migrations and the in-process
 edit debouncer valid. Two processes breaks both — see the revisit table — and "just deploy the
@@ -160,6 +171,13 @@ Two hazards this surfaced during the migration, worth knowing before adding a te
   fine sequentially but can collide when two calls a few instructions apart land in the same
   clock tick under parallel load. Use a counter or a distinct literal per test instead.
 
+- A seeded row's **foreign keys must point at rows that test created itself**. Writing
+  `CreatedByPlayerId = new PlayerId(1)` works whenever some other test happened to insert the
+  first player already, and fails with a bare `23503` foreign key violation when it did not —
+  so it passes alone, passes most of the time in a suite, and fails on someone else's machine.
+  The renderer tests that use `PlayerId(1)` are fine precisely because they never touch a
+  database; anything holding a `PostgresFixture` seeds a real row.
+
 A missing `.ThenBy(id)` tiebreaker on an `OrderBy(createdAt)` query is the same hazard from
 the other direction: two rows with count identical timestamps (a `FakeTimeProvider` that
 never advances, or a batch insert stamped with one `now`) sort in a database-decided,
@@ -180,7 +198,9 @@ structural. Don't replace one with a library without a real reason.
 - **The edit debouncer** — coalesce a burst of signups into one message edit, respecting the
   per-group rate limit.
 - **Message rendering** — interpolated strings and a function per message type. No templating
-  engine.
+  engine. The `.ics` feed is the one exception, and only for escaping and folding: those count
+  octets rather than characters, and a Cyrillic venue name is what turns a hand-rolled fold
+  into mojibake.
 - **The alert path** — unhandled exception to a private channel.
 - **`Result<T>` and the `BusinessError` hierarchy** — about twenty lines. See below for why no
   library fits.
@@ -201,7 +221,7 @@ the next tick simply asks again. A queue would require finding and cancelling sc
 jobs on every edit, which is pure bug surface.
 
 **On start, catch up**: send reminders that came due while the process was down and are still
-relevant, and finish games whose 4-hour window elapsed. Uptime is then not a correctness
+relevant, and finish games whose window elapsed (`game.EndsAt` — see invariant 8). Uptime is then not a correctness
 requirement.
 
 ## Don't reach for these
@@ -234,4 +254,5 @@ Nothing above is permanent. These are the specific triggers that should reopen a
 | You want to change log level without a redeploy | Reconsider Serilog. `Serilog.Sinks.Seq`'s `controlLevelSwitch` is the one capability OTLP has no answer for: Seq pushes a level change down to the running process, so Debug can be turned on from the UI, an update watched, and it turned back off. Durable disk buffering while Seq is unreachable comes along with it. Both cost a second logging pipeline, so wait until an incident has actually made you want them. |
 | Scheduling grows teeth — backoff, one-off jobs, an operational dashboard | TickerQ becomes the right library to reach for: EF Core-backed, so no separate storage or migration story. |
 | A second process appears | Two assumptions break — migrations applied at startup, and the in-process edit debouncer. Both need rethinking *before* a second instance exists, not after. |
+| Recurring games as real `RRULE`s, per-person timezones, or arithmetic on local dates across a DST transition | Adopt NodaTime as the conversion engine inside `TeamTime`. It is already in the process as an Ical.Net dependency and is deliberately never consulted: the feed emits UTC instants, so `TimeZoneInfo` stays the single timezone authority and the two databases cannot disagree. Any of these triggers changes that — they need ambiguity resolved explicitly, which is the thing NodaTime is actually better at and which a domain of evening kick-offs never runs into. See `docs/CALENDAR.md` §3. |
 | A fourth language with unfamiliar plural rules | Revisit SmartFormat against ICU MessageFormat. SmartFormat's plural forms are positional, so a wrong form order can't be checked automatically; ICU's named CLDR categories can. Until then the snapshot tests in `CLAUDE.md` cover it. |

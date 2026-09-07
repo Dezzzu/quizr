@@ -7,8 +7,9 @@
     <!-- Application -->
     <ItemGroup>
         <PackageVersion Include="Telegram.Bot" Version="22.10.3" />
-        <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.11" />
-        <PackageVersion Include="Microsoft.Extensions.Configuration.UserSecrets" Version="10.0.11" />
+        <!-- Hosting and user secrets arrive with the ASP.NET Core shared framework now that
+             Quizr.App is an Sdk.Web project; referencing them explicitly makes NuGet complain
+             that the packages cannot be pruned. -->
         <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.9.0" />
         <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
         <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.11" />
@@ -18,6 +19,14 @@
         <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.11" />
         <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.11" />
         <PackageVersion Include="SmartFormat.NET" Version="3.6.1" />
+        <!-- RFC 5545 escaping and the 75-octet line fold are where an .ics goes wrong, and
+             both have to count octets rather than characters — a Russian venue name folds in
+             the middle of a UTF-8 sequence otherwise. That is what this is here for; the
+             feed emits UTC instants, so no VTIMEZONE is generated. NodaTime comes along as
+             Ical.Net's own dependency and is never consulted — see docs/CALENDAR.md §3 —
+             but central transitive pinning needs it named explicitly. -->
+        <PackageVersion Include="Ical.Net" Version="5.2.3" />
+        <PackageVersion Include="NodaTime" Version="3.2.2" />
         <!-- Metrics only, pushed over OTLP. STACK.md's own escape hatch for aggregation:
              "Add OpenTelemetry at the composition root and point OTLP wherever you like." -->
         <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.18.0" />

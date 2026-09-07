@@ -36,7 +36,7 @@ public class SchedulerServiceTests
     public SchedulerServiceTests(PostgresFixture fixture) => _fixture = fixture;
 
     [Test]
-    public async Task AGameLeftAloneFinishesItselfFourHoursAfterItStarted()
+    public async Task AGameLeftAloneFinishesItselfOnceItsThreeHoursHaveElapsed()
     {
         var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
@@ -47,7 +47,7 @@ public class SchedulerServiceTests
         var reserve = await SeedPlayerAsync(db, 9002, ct);
         await SeedSignupAsync(db, game, playing, startsAt.AddMinutes(-100), ct);
         await SeedSignupAsync(db, game, reserve, startsAt.AddMinutes(-90), ct);
-        var (scheduler, _) = CreateScheduler(db, startsAt.AddHours(4).AddMinutes(1));
+        var (scheduler, _) = CreateScheduler(db, startsAt.AddHours(3).AddMinutes(1));
 
         await scheduler.RunTickAsync(ct);
 
@@ -61,14 +61,14 @@ public class SchedulerServiceTests
     }
 
     [Test]
-    public async Task AGameNotYetFourHoursPastItsStartIsLeftAlone()
+    public async Task AGameAMinuteShortOfItsEndIsLeftAlone()
     {
         var ct = TestContext.Current!.Execution.CancellationToken;
         await using var db = _fixture.CreateContext();
         var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
         var team = await SeedTeamAsync(db, chatId: 9003, ct);
         var game = await SeedGameAsync(db, team, startsAt, capacity: 5, ct);
-        var (scheduler, _) = CreateScheduler(db, startsAt.AddHours(3));
+        var (scheduler, _) = CreateScheduler(db, startsAt.AddHours(3).AddMinutes(-1));
 
         await scheduler.RunTickAsync(ct);
 

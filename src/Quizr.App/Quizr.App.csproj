@@ -1,4 +1,6 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<!-- Sdk.Web, not Sdk: one public endpoint serves the per-player calendar feed
+     (docs/CALENDAR.md). The bot itself still long-polls and connects outward. -->
+<Project Sdk="Microsoft.NET.Sdk.Web">
     <PropertyGroup>
         <OutputType>Exe</OutputType>
         <RootNamespace>Quizr.App</RootNamespace>
@@ -21,11 +23,10 @@
 
     <ItemGroup>
         <PackageReference Include="Telegram.Bot" />
-        <PackageReference Include="Microsoft.Extensions.Hosting" />
-        <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" />
         <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
         <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
         <PackageReference Include="SmartFormat.NET" />
+        <PackageReference Include="Ical.Net" />
         <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
         <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
         <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
