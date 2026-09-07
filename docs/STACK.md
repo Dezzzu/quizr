@@ -40,7 +40,7 @@ subscribes to a URL.
 
 So `Quizr.App` is an `Sdk.Web` project on `WebApplication`, and the prediction this section used
 to make held exactly: the swap was a few lines and the hosted services carried over unchanged.
-**`GET`/`HEAD /cal/feed.ics?t=<token>` is the only route**, it is read-only, it touches no
+**`GET`/`HEAD /api/cal/feed.ics?t=<token>` is the only route**, it is read-only, it touches no
 Telegram API, and it is not mapped at all unless `QUIZR_PUBLIC_URL` is set. The token is a
 query parameter rather than a path segment for one specific reason — see `CLAUDE.md`'s HTTP
 surface section.

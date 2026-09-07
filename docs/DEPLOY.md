@@ -123,7 +123,7 @@ Confirm on the first deploy after the calendar feed, rather than trusting it:
 ```bash
 docker ps --filter name=quizr                      # expect exactly one container
 docker logs <container> 2>&1 | grep -i conflict    # expect nothing
-curl -sI https://<domain>/cal/feed.ics             # expect 404 — no token, so nothing to serve
+curl -sI https://<domain>/api/cal/feed.ics             # expect 404 — no token, so nothing to serve
 ```
 
 That last one answering `404` rather than timing out is the whole of "the domain reaches the

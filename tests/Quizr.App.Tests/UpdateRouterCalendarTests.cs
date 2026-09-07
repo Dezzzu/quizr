@@ -33,7 +33,7 @@ public class UpdateRouterCalendarTests
 
         var token = (await ReloadAsync(db, player, ct)).CalendarToken;
         token.Should().NotBeNull();
-        bot.SentTexts(8601).Single().Should().Contain($"https://quizr.test/cal/feed.ics?t={token}");
+        bot.SentTexts(8601).Single().Should().Contain($"https://quizr.test/api/cal/feed.ics?t={token}");
     }
 
     // A group is the wrong place for a credential, so the preferred delivery is a DM and the
@@ -52,7 +52,7 @@ public class UpdateRouterCalendarTests
         await router.RouteAsync(GroupMessage(8602, 8612, "/mycalendar"), ct);
 
         var token = (await ReloadAsync(db, player, ct)).CalendarToken;
-        bot.SentTexts(8612).Single().Should().Contain($"https://quizr.test/cal/feed.ics?t={token}");
+        bot.SentTexts(8612).Single().Should().Contain($"https://quizr.test/api/cal/feed.ics?t={token}");
         bot.SentTexts(8602).Should().BeEmpty();
         bot.EphemeralTexts(8602).Single().Should().Contain("private chat");
         bot.EphemeralTexts(8602).Single().Should().NotContain(token!);
@@ -75,7 +75,7 @@ public class UpdateRouterCalendarTests
         var token = (await ReloadAsync(db, player, ct)).CalendarToken;
         bot.SentTexts(8613).Should().BeEmpty();
         bot.SentTexts(8603).Should().BeEmpty();
-        bot.EphemeralTexts(8603).Single().Should().Contain($"https://quizr.test/cal/feed.ics?t={token}");
+        bot.EphemeralTexts(8603).Single().Should().Contain($"https://quizr.test/api/cal/feed.ics?t={token}");
     }
 
     [Test]
@@ -142,7 +142,7 @@ public class UpdateRouterCalendarTests
 
         var after = (await ReloadAsync(db, player, ct)).CalendarToken;
         after.Should().NotBeNull().And.NotBe(before);
-        bot.EditedTexts(8607)[^1].Should().Contain($"https://quizr.test/cal/feed.ics?t={after}");
+        bot.EditedTexts(8607)[^1].Should().Contain($"https://quizr.test/api/cal/feed.ics?t={after}");
     }
 
     // Cancelling is the only way out of a confirm prompt that doesn't destroy anything, so it
@@ -161,7 +161,7 @@ public class UpdateRouterCalendarTests
         await router.RouteAsync(PrivateCallback(8608, CallbackData.ShowCalendar), ct);
 
         (await ReloadAsync(db, player, ct)).CalendarToken.Should().Be(before);
-        bot.EditedTexts(8608)[^1].Should().Contain($"https://quizr.test/cal/feed.ics?t={before}");
+        bot.EditedTexts(8608)[^1].Should().Contain($"https://quizr.test/api/cal/feed.ics?t={before}");
     }
 
     [Test]
@@ -234,7 +234,7 @@ public class UpdateRouterCalendarTests
 
         var token = (await ReloadAsync(db, player, ct)).CalendarToken!;
         var text = bot.SentTexts(8614).Single();
-        text.Should().Contain($"/cal/feed.ics?t={token}");
+        text.Should().Contain($"/api/cal/feed.ics?t={token}");
         text.Should().NotContain($"/cal/{token}");
     }
 

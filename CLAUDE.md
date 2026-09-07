@@ -170,7 +170,7 @@ Breaking one of these is a bug, not a preference.
 The bot gained exactly one inbound route, for the per-player calendar feed
 (`docs/CALENDAR.md`). Everything else about it still dials outward.
 
-- **`GET`/`HEAD /cal/feed.ics?t=<token>`, and nothing else.** Read-only, touches no Telegram
+- **`GET`/`HEAD /api/cal/feed.ics?t=<token>`, and nothing else.** Read-only, touches no Telegram
   API, and not mapped at all unless `QUIZR_PUBLIC_URL` is set — so a local run and a deployment
   with no domain behave exactly as they did before it existed.
 - **The token is a credential**, and the only one: a calendar client cannot perform interactive

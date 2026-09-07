@@ -102,8 +102,8 @@ Applied at startup like every other (`DEPLOY.md`). Safe to deploy before anythin
 ## 2. Endpoint contract
 
 ```
-GET  /cal/feed.ics?t=<token>
-HEAD /cal/feed.ics?t=<token>
+GET  /api/cal/feed.ics?t=<token>
+HEAD /api/cal/feed.ics?t=<token>
 ```
 
 Mapped only when `QUIZR_PUBLIC_URL` is set. `HEAD` is mapped explicitly — several clients probe
@@ -621,7 +621,7 @@ Standalone and mergeable on its own; everything after it depends on `game.EndsAt
 ### Slice 3 — HTTP endpoint
 
 - [x] `Microsoft.NET.Sdk.Web`; `WebApplication` in `Program.cs`, and the two packages the shared framework now supplies dropped
-- [x] `GET`/`HEAD /cal/feed.ics`, token in the query string, ETag, 304, caching
+- [x] `GET`/`HEAD /api/cal/feed.ics`, token in the query string, ETag, 304, caching
 - [x] Rate limiters (lifted into `CalendarRateLimits`), `UseForwardedHeaders`, `UseRequestTimeouts`
 - [x] Log filtering and the handler's own error boundary
 - [x] `CalendarEndpointTests`, `CalendarCacheKeyTests`, `CalendarTokenTests`, plus a manual end-to-end run recorded below

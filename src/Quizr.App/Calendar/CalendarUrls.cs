@@ -15,8 +15,15 @@ public sealed class CalendarUrls
     // endpoint's own error handler. The scope does not carry the query string, which is the
     // whole reason for this shape.
     //
+    // Under /api because docs/STACK.md's phase 2 puts the built frontend in this same host's
+    // wwwroot: one namespace the server owns, one path prefix a proxy can route on, and no
+    // question later about which side of the app a path belongs to. Worth settling now rather
+    // than later — this URL is a credential people paste into a device once and never revisit,
+    // so moving it after anyone has subscribed stops their calendar updating with no error
+    // they would ever see.
+    //
     // The .ics suffix stays in the path so a client still sees a calendar file.
-    public const string Route = "/cal/feed.ics";
+    public const string Route = "/api/cal/feed.ics";
 
     public const string TokenParameter = "t";
 
@@ -26,5 +33,8 @@ public sealed class CalendarUrls
 
     public bool Available => _baseUrl is not null;
 
-    public string For(string token) => $"{_baseUrl}/cal/feed.ics?{TokenParameter}={token}";
+    // Built from Route rather than repeating it: the template carries no parameters, so the
+    // path the endpoint is mapped at and the link handed to a player are the same string by
+    // construction and cannot drift.
+    public string For(string token) => $"{_baseUrl}{Route}?{TokenParameter}={token}";
 }

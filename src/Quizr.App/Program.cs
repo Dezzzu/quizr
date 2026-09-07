@@ -55,7 +55,7 @@ builder.Logging.AddFilter("System.Net.Http.HttpClient", LogLevel.Warning);
 builder.Logging.AddFilter("Polly", LogLevel.Warning);
 
 // The calendar token is the credential and lives in the request path, so ASP.NET's own
-// "Request starting HTTP/1.1 GET /cal/feed.ics?t=<token>" at Information prints the whole URL,
+// "Request starting HTTP/1.1 GET /api/cal/feed.ics?t=<token>" at Information prints the whole URL,
 // query included, which would write the credential to stdout and ship it to Seq on every fetch
 // — the same leak the HttpClient filter above exists for, now pointing inward. The token being
 // in the query rather than the path is what handles the rest: see CalendarUrls.Route.
