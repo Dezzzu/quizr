@@ -22,6 +22,8 @@ and who has to wait for a seat — and rewrites its own messages whenever any of
 - **Reminders** that fire themselves.
 - **Tags as hashtags**, the interim way to find past games via Telegram's own in-chat search,
   until a browsable archive lands with the mini app.
+- **A calendar subscription** — `/mycalendar` gives each player a private `.ics` link, so the
+  games they're signed up to appear in Google or Apple Calendar and stay current.
 - **English, Russian and German**, with group posts in the team's language and private
   messages in each person's own.
 
@@ -80,6 +82,7 @@ string, and optionally a chat id to receive unhandled-exception alerts:
 export QUIZR_BOT_TOKEN="..."
 export QUIZR_DB="Host=localhost;Database=quizr;Username=quizr;Password=..."
 export QUIZR_ALERT_CHAT_ID="..."   # optional
+export QUIZR_PUBLIC_URL="https://..."  # optional; enables the calendar feed
 ```
 
 Never commit the token — leaked bot tokens are scraped off GitHub within minutes. Locally,

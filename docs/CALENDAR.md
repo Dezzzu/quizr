@@ -434,13 +434,20 @@ Single characters, per `CallbackData`'s scheme, all with dummy ids:
 
 | Verb | Action |
 | --- | --- |
-| `y` | Rotate — asks to confirm |
-| `Y` | Confirm rotate |
+| `y` | Replace link — asks to confirm |
+| `Y` | Confirm replace |
 | `Z` | Turn off — asks to confirm |
 | `Q` | Confirm turn off |
+| `L` | Back to the calendar view — the way out of either prompt, and the only one that destroys nothing |
 
-Both destructive actions confirm first, matching Drop and Decline. Rotation's confirm text says
-plainly that every device subscribed to the old link stops updating.
+Both destructive actions confirm first, matching Drop and Decline, and both confirm texts say
+plainly that every device subscribed to the old link stops updating. The callbacks resolve no
+team: a calendar is a person's own, so unlike every other callback handler these work in a DM,
+where there is no team to resolve from the chat id.
+
+**"Replace" rather than "rotate" in the user-facing text.** Rotation is what it is called here
+and in the code; it is not a word to put in front of somebody looking for the button that fixes
+a leaked link.
 
 ### Onboarding text
 
@@ -605,11 +612,11 @@ Standalone and mergeable on its own; everything after it depends on `game.EndsAt
 
 ### Slice 4 — Bot surface
 
-- [ ] `/mycalendar` in `UpdateRouter` and `CommandMenu`
-- [ ] Rotate and turn-off callbacks with their confirm steps
-- [ ] Onboarding, rotation and confirmation strings in three languages
-- [ ] Router tests
-- [ ] Docs: `CLAUDE.md` vocabulary, `README.md` feature list
+- [x] `/mycalendar` in `UpdateRouter` and `CommandMenu`, plus `CalendarSubscriptionService` for the write side
+- [x] Replace and turn-off callbacks with their confirm steps, and a cancel that re-renders
+- [x] Onboarding, replacement and confirmation strings in three languages
+- [x] `UpdateRouterCalendarTests`
+- [x] Docs: `CLAUDE.md` vocabulary, `README.md` feature list and setup
 
 ### Slice 5 — Wiring, config, deployment
 

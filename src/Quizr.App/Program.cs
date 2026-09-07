@@ -154,6 +154,7 @@ if (!string.IsNullOrWhiteSpace(builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOIN
 
 builder.Services.AddSingleton(new CalendarUrls(publicUrl));
 builder.Services.AddScoped<CalendarFeedService>();
+builder.Services.AddScoped<ICalendarSubscriptionService, CalendarSubscriptionService>();
 builder.Services.AddScoped<CalendarEndpoint>();
 
 // Keyed by (player, version, format version, UTC date), so a bump changes the key and nothing

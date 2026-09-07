@@ -279,5 +279,17 @@
   "Calendar.Price": "Preis: {Price}",
   "Calendar.Notes": "{Notes}",
   "Calendar.Tags": "{Tags}",
-  "Calendar.OpenInTelegram": "In Telegram öffnen: {Url}"
+  "Calendar.OpenInTelegram": "In Telegram öffnen: {Url}",
+  "Commands.MyCalendar": "Deine Spiele im eigenen Kalender abonnieren",
+  "Calendar.Unavailable": "Kalenderlinks sind für diesen Bot noch nicht eingerichtet.",
+  "Calendar.Intro": "🗓 <b>Dein Kalenderlink</b>\n\n<code>{Url}</code>\n\nEinmal hinzufügen — dann stehen die Spiele, für die du angemeldet bist, in deinem eigenen Kalender und bleiben aktuell.\n\n<b>Google Kalender</b> — nur die Desktop-Website kann einen Kalender per URL hinzufügen, die App nicht. Gehe auf calendar.google.com → Weitere Kalender → <b>+</b> → Per URL. Danach erscheint er auch auf dem Handy.\n\n<b>Apple Kalender</b> — Einstellungen → Apps → Kalender → Accounts → Account hinzufügen → Andere → Kalenderabo hinzufügen.\n\nKalender aktualisieren sich langsam: Google alle 8–24 Stunden, Apple etwa stündlich. Kurzfristige Änderungen erfährst du weiterhin hier im Chat.\n\n⚠️ Wer diesen Link hat, sieht deine Spiele — poste ihn nirgendwo. Falls er doch herauskommt, ersetze ihn unten.",
+  "Calendar.SentToDm": "🗓 Ich habe dir deinen Kalenderlink privat geschickt.",
+  "Calendar.ReplaceButton": "🔄 Link ersetzen",
+  "Calendar.TurnOffButton": "🚫 Abschalten",
+  "Calendar.ReplaceConfirm": "Kalenderlink ersetzen?\n\nDer alte funktioniert sofort nicht mehr, und jedes Gerät, auf dem du ihn eingetragen hast, aktualisiert sich stillschweigend nicht mehr, bis du den neuen hinzufügst.",
+  "Calendar.ReplaceConfirmButton": "🔄 Ja, ersetzen",
+  "Calendar.ReplacedToast": "Link ersetzt.",
+  "Calendar.TurnOffConfirm": "Kalenderlink abschalten?\n\nEr funktioniert sofort nicht mehr und jedes Gerät, auf dem du ihn eingetragen hast, aktualisiert sich nicht mehr. Einen neuen Link bekommst du jederzeit mit /mycalendar.",
+  "Calendar.TurnOffConfirmButton": "🚫 Ja, abschalten",
+  "Calendar.TurnedOff": "🚫 <b>Kalenderlink abgeschaltet</b>\n\nDer alte Link funktioniert nicht mehr. Tippe /mycalendar, wenn du einen neuen möchtest."
 }

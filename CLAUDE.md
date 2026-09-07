@@ -77,6 +77,8 @@ actually talks about quiz nights.
 | **Guest** | Brought by a member. Anonymous by default, optionally named. Occupies a seat and holds its own queue position. |
 | **Team guest** | A guest with no owner. Must be named. Either a guest who stayed after their inviter dropped out, or one a captain added directly for someone not signed up themselves. |
 | **Venue-assigned** | A stranger the organisers add to the team on the night. Recorded after the fact. |
+| **Feed** | One person's games as a subscribable `.ics` calendar, generated on read. Per person, never per team, and it crosses every team they play for — the same reasoning as `/myschedule`. |
+| **Calendar token** | The opaque random string in a feed's URL. It *is* the credential: a calendar client cannot do interactive auth, so whoever holds the URL is the subscriber. Never logged, replaceable, revocable. |
 
 ## Invariants
 

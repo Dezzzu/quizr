@@ -279,5 +279,17 @@
   "Calendar.Price": "Price: {Price}",
   "Calendar.Notes": "{Notes}",
   "Calendar.Tags": "{Tags}",
-  "Calendar.OpenInTelegram": "Open in Telegram: {Url}"
+  "Calendar.OpenInTelegram": "Open in Telegram: {Url}",
+  "Commands.MyCalendar": "Subscribe to your games in your own calendar",
+  "Calendar.Unavailable": "Calendar links aren't set up on this bot yet.",
+  "Calendar.Intro": "🗓 <b>Your calendar link</b>\n\n<code>{Url}</code>\n\nAdd it once and the games you're signed up to appear in your own calendar, kept up to date.\n\n<b>Google Calendar</b> — only the desktop site can add a calendar by URL; the mobile app can't. Go to calendar.google.com → Other calendars → <b>+</b> → From URL. It shows up on your phone afterwards.\n\n<b>Apple Calendar</b> — Settings → Apps → Calendar → Accounts → Add Account → Other → Add Subscribed Calendar.\n\nCalendars refresh slowly: Google every 8–24 hours, Apple about hourly. Last-minute changes still reach you here, in the chat.\n\n⚠️ Anyone with this link can see your games — don't post it anywhere. If it gets out, replace it below.",
+  "Calendar.SentToDm": "🗓 I've sent your calendar link to our private chat.",
+  "Calendar.ReplaceButton": "🔄 Replace link",
+  "Calendar.TurnOffButton": "🚫 Turn off",
+  "Calendar.ReplaceConfirm": "Replace your calendar link?\n\nThe old one stops working straight away, so every device you've added it to will quietly stop updating until you add the new one.",
+  "Calendar.ReplaceConfirmButton": "🔄 Yes, replace it",
+  "Calendar.ReplacedToast": "Link replaced.",
+  "Calendar.TurnOffConfirm": "Turn off your calendar link?\n\nIt stops working straight away and every device you've added it to stops updating. You can get a new link any time with /mycalendar.",
+  "Calendar.TurnOffConfirmButton": "🚫 Yes, turn it off",
+  "Calendar.TurnedOff": "🚫 <b>Calendar link turned off</b>\n\nThe old link no longer works. Run /mycalendar whenever you want a new one."
 }

@@ -68,6 +68,19 @@ internal static class CallbackData
     public const char CancelDecline = 'C';
     public const char FinishGame = 'E';
 
+    // The calendar feed's own settings view (/mycalendar) — dummy ids throughout, since a
+    // person only ever acts on their own subscription and the callback carries no target.
+    // Both destructive actions confirm first, the same shape as Drop and Decline: replacing a
+    // link silently breaks every device already subscribed to the old one.
+    public const char RotateCalendar = 'y';
+    public const char ConfirmRotateCalendar = 'Y';
+    public const char RevokeCalendar = 'Z';
+    public const char ConfirmRevokeCalendar = 'Q';
+
+    // Back to the calendar view — from either confirm prompt, and the only way out of one
+    // that isn't destructive.
+    public const char ShowCalendar = 'L';
+
     // Ends an open-ended view (Manage guests, Manage players) with no further action —
     // dummy id. Shared across every such view rather than one verb per view, since the
     // action is identical: strip the keyboard, clear any dialog behind it.

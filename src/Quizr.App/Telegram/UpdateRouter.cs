@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Quizr.App.Calendar;
 using Quizr.App.Data;
 using Quizr.App.Localization;
 using Quizr.App.Rendering;
@@ -14,6 +15,7 @@ using Quizr.Domain;
 using Quizr.Domain.Entities;
 using Quizr.Domain.Extensions;
 using Telegram.Bot;
+using Telegram.Bot.Exceptions;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
@@ -41,6 +43,8 @@ public sealed class UpdateRouter
     private readonly AnnouncementService _announcements;
     private readonly BoardService _board;
     private readonly MyScheduleService _mySchedule;
+    private readonly ICalendarSubscriptionService _calendars;
+    private readonly CalendarUrls _calendarUrls;
     private readonly TimeProvider _clock;
     private readonly ILogger<UpdateRouter> _logger;
 
@@ -60,6 +64,8 @@ public sealed class UpdateRouter
         AnnouncementService announcements,
         BoardService board,
         MyScheduleService mySchedule,
+        ICalendarSubscriptionService calendars,
+        CalendarUrls calendarUrls,
         TimeProvider clock,
         ILogger<UpdateRouter> logger
     )
@@ -79,6 +85,8 @@ public sealed class UpdateRouter
         _announcements = announcements;
         _board = board;
         _mySchedule = mySchedule;
+        _calendars = calendars;
+        _calendarUrls = calendarUrls;
         _clock = clock;
         _logger = logger;
     }
@@ -275,6 +283,14 @@ public sealed class UpdateRouter
             // the whole point of it. See HandleMyScheduleCommandAsync.
             case "/myschedule" when player is not null && actor is { } a:
                 await HandleMyScheduleCommandAsync(team, player, a, message, chatId, ct);
+                handledPrivately = true;
+                break;
+
+            // Like /myschedule, no "team is not null" guard: a calendar is a person's own and
+            // crosses every team they play for, so it answers in a DM where there is no team to
+            // resolve at all.
+            case "/mycalendar" when player is not null && actor is { } a:
+                await HandleMyCalendarCommandAsync(team, player, a, message, chatId, ct);
                 handledPrivately = true;
                 break;
 
@@ -1736,6 +1752,14 @@ public sealed class UpdateRouter
             case CallbackData.CycleReminderChannel:
             case CallbackData.ToggleReserveReminder:
                 await HandleReminderSettingsCallbackAsync(verb, callbackQuery, ct);
+                break;
+
+            case CallbackData.RotateCalendar:
+            case CallbackData.ConfirmRotateCalendar:
+            case CallbackData.RevokeCalendar:
+            case CallbackData.ConfirmRevokeCalendar:
+            case CallbackData.ShowCalendar:
+                await HandleCalendarCallbackAsync(verb, callbackQuery, ct);
                 break;
 
             case CallbackData.ToggleCaptain:
@@ -3662,6 +3686,210 @@ public sealed class UpdateRouter
     // answer, since a person in two teams still only has one Friday evening to spend and the
     // two teams' Boards deliberately cannot see each other. Team calendars stay separate
     // (CLAUDE.md); this is the person's, not a team's.
+    private async Task HandleMyCalendarCommandAsync(
+        Team? team,
+        Player player,
+        Actor actor,
+        Message message,
+        TelegramChatId chatId,
+        CancellationToken ct
+    )
+    {
+        var strings = _strings.For(
+            LocaleResolver.Resolve(message.Chat.Type, player.Locale, message.From?.LanguageCode, team?.Locale ?? "en")
+        );
+
+        // No public URL configured means no feed to hand out, and issuing a token here would
+        // mint a credential for an endpoint that isn't mapped.
+        if (!_calendarUrls.Available)
+        {
+            await ReplyToOneMemberAsync(message, chatId, actor, strings.Text("Calendar.Unavailable"), null, ct);
+            return;
+        }
+
+        var token = await _calendars.IssueAsync(player, ct);
+        var (text, keyboard) = BuildCalendarView(token, strings);
+
+        // In a DM the message is already private, so it just goes.
+        if (message.Chat.Type == ChatType.Private)
+        {
+            await _sender.SendAsync(chatId, text, keyboard, ct);
+            return;
+        }
+
+        // In a group the link is a credential, so the preferred delivery is a DM — which needs
+        // them to have started the bot. Where that fails, an ephemeral message in the group is
+        // visible only to them and is better than a dead end: this is the feature most likely
+        // to be tried by somebody who has never opened a private chat with the bot.
+        if (player.DmEnabled && await TrySendDirectlyAsync(player, text, keyboard, ct))
+        {
+            await _sender.SendEphemeralAsync(
+                chatId,
+                actor.TelegramUserId,
+                strings.Text("Calendar.SentToDm"),
+                null,
+                null,
+                ct
+            );
+            return;
+        }
+
+        await _sender.SendEphemeralAsync(chatId, actor.TelegramUserId, text, keyboard, null, ct);
+    }
+
+    // DmEnabled is the best answer we have and it can still be stale — somebody blocks the bot
+    // and Telegram's my_chat_member never arrives, or arrives after this. A refusal is an
+    // ordinary outcome rather than a fault, so it is caught here and recorded, which both
+    // repairs the flag and falls through to the delivery that always works.
+    private async Task<bool> TrySendDirectlyAsync(
+        Player player,
+        string text,
+        InlineKeyboardMarkup? keyboard,
+        CancellationToken ct
+    )
+    {
+        try
+        {
+            await _sender.SendAsync(new TelegramChatId(player.TelegramUserId.Value), text, keyboard, ct);
+            return true;
+        }
+        catch (ApiRequestException ex)
+        {
+            _logger.LogInformation(
+                ex,
+                "Could not DM the calendar link to player {PlayerId}; falling back to the group",
+                player.Id
+            );
+            await _playerBootstrap.SetDmEnabledAsync(player, false, ct);
+            return false;
+        }
+    }
+
+    // Every calendar callback acts on the tapper's own subscription, so unlike the other
+    // callback handlers this one needs no team: it works in a DM, where there is none.
+    private async Task HandleCalendarCallbackAsync(char verb, CallbackQuery callbackQuery, CancellationToken ct)
+    {
+        var player = await _playerBootstrap.GetOrCreateAsync(callbackQuery.From, ct);
+        var receiver = new TelegramUserId(callbackQuery.From.Id);
+        var chatId = await ResolveChatIdAsync(new TelegramChatId(callbackQuery.Message!.Chat.Id), ct);
+        var team = await _db.Teams.ByChatId(chatId).SingleOrDefaultAsync(ct);
+
+        var strings = _strings.For(
+            LocaleResolver.Resolve(
+                callbackQuery.Message.Chat.Type,
+                player.Locale,
+                callbackQuery.From.LanguageCode,
+                team?.Locale ?? "en"
+            )
+        );
+
+        var message = callbackQuery.Message.EphemeralMessageId is { } ephemeralId
+            ? MessageRef.Ephemeral(chatId, new TelegramMessageId(ephemeralId), receiver)
+            : MessageRef.Ordinary(chatId, new TelegramMessageId(callbackQuery.Message.MessageId));
+
+        string? toast = null;
+
+        switch (verb)
+        {
+            case CallbackData.RotateCalendar:
+                await _sender.TryEditImmediatelyAsync(
+                    message,
+                    strings.Text("Calendar.ReplaceConfirm"),
+                    ConfirmKeyboard(strings, "Calendar.ReplaceConfirmButton", CallbackData.ConfirmRotateCalendar),
+                    ct
+                );
+                break;
+
+            case CallbackData.RevokeCalendar:
+                await _sender.TryEditImmediatelyAsync(
+                    message,
+                    strings.Text("Calendar.TurnOffConfirm"),
+                    ConfirmKeyboard(strings, "Calendar.TurnOffConfirmButton", CallbackData.ConfirmRevokeCalendar),
+                    ct
+                );
+                break;
+
+            case CallbackData.ConfirmRotateCalendar:
+            {
+                var rotated = await _calendars.RotateAsync(player, ct);
+                var (text, keyboard) = BuildCalendarView(rotated, strings);
+                await _sender.TryEditImmediatelyAsync(message, text, keyboard, ct);
+                toast = strings.Text("Calendar.ReplacedToast");
+                break;
+            }
+
+            case CallbackData.ConfirmRevokeCalendar:
+                await _calendars.RevokeAsync(player, ct);
+                await _sender.TryEditImmediatelyAsync(message, strings.Text("Calendar.TurnedOff"), null, ct);
+                break;
+
+            // The only way out of either confirm prompt that doesn't destroy anything. The
+            // token is unchanged, so this re-renders rather than re-issues.
+            case CallbackData.ShowCalendar:
+            {
+                var token = await _calendars.IssueAsync(player, ct);
+                var (text, keyboard) = BuildCalendarView(token, strings);
+                await _sender.TryEditImmediatelyAsync(message, text, keyboard, ct);
+                break;
+            }
+        }
+
+        await _bot.AnswerCallbackQuery(callbackQuery.Id, toast, cancellationToken: ct);
+    }
+
+    private (string Text, InlineKeyboardMarkup Keyboard) BuildCalendarView(string token, IStringsFor strings)
+    {
+        var keyboard = new InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton.WithCallbackData(
+                    strings.Text("Calendar.ReplaceButton"),
+                    CallbackData.Format(CallbackData.RotateCalendar, 0L)
+                ),
+                InlineKeyboardButton.WithCallbackData(
+                    strings.Text("Calendar.TurnOffButton"),
+                    CallbackData.Format(CallbackData.RevokeCalendar, 0L)
+                ),
+            ],
+        ]);
+
+        // The URL is HTML-encoded like any other value spliced into a message: the token's own
+        // alphabet is safe, but the configured base is whatever an operator typed.
+        var text = strings.Text("Calendar.Intro", new { Url = WebUtility.HtmlEncode(_calendarUrls.For(token)) });
+
+        return (text, keyboard);
+    }
+
+    private static InlineKeyboardMarkup ConfirmKeyboard(IStringsFor strings, string confirmKey, char confirmVerb) =>
+        new([
+            [InlineKeyboardButton.WithCallbackData(strings.Text(confirmKey), CallbackData.Format(confirmVerb, 0L))],
+            [
+                InlineKeyboardButton.WithCallbackData(
+                    strings.Text("Common.CancelButton"),
+                    CallbackData.Format(CallbackData.ShowCalendar, 0L)
+                ),
+            ],
+        ]);
+
+    // A reply meant for one person, wherever they asked from: an ordinary message in a DM,
+    // ephemeral in a group where it concerns nobody else.
+    private async Task ReplyToOneMemberAsync(
+        Message message,
+        TelegramChatId chatId,
+        Actor actor,
+        string text,
+        InlineKeyboardMarkup? keyboard,
+        CancellationToken ct
+    )
+    {
+        if (message.Chat.Type == ChatType.Private)
+        {
+            await _sender.SendAsync(chatId, text, keyboard, ct);
+            return;
+        }
+
+        await _sender.SendEphemeralAsync(chatId, actor.TelegramUserId, text, keyboard, null, ct);
+    }
+
     private async Task HandleMyScheduleCommandAsync(
         Team? team,
         Player player,
