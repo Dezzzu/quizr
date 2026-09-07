@@ -7,6 +7,7 @@ using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using Quizr.App.Calendar;
 using Quizr.App.Data;
+using Quizr.App.Http;
 using Quizr.App.Localization;
 using Quizr.App.Scheduling;
 using Quizr.App.Services;
@@ -154,8 +155,9 @@ builder.Services.AddScoped<CalendarEndpoint>();
 // keys are unreachable but would otherwise sit here for the life of the process.
 builder.Services.AddMemoryCache(options => options.SizeLimit = 64 * 1024 * 1024);
 
-// The numbers, and the reasoning behind them, live with the feature rather than here.
-builder.Services.AddRateLimiter(CalendarRateLimits.Configure);
+// The numbers, and the reasoning for splitting them between a global limiter and a
+// per-endpoint policy, live in RateLimits rather than here.
+builder.Services.AddRateLimiter(RateLimits.Configure);
 
 // Caps how long a feed request may take. Middleware rather than a linked CancellationToken
 // inside the handler: the timeout is then declared next to the route it applies to, and a
@@ -225,7 +227,10 @@ if (publicUrl is not null)
             (HttpContext http, CalendarEndpoint endpoint, string? t, CancellationToken ct) =>
                 endpoint.HandleAsync(http, t, ct)
         )
-        .WithRequestTimeout(CalendarEndpoint.Timeout);
+        .WithRequestTimeout(CalendarEndpoint.Timeout)
+        // The per-token limit is the feed's own; the per-address one is global and needs no
+        // opt-in. See RateLimits.
+        .RequireRateLimiting(RateLimits.CalendarFeedPolicy);
 }
 
 await app.RunAsync();
