@@ -236,6 +236,13 @@ Native BCL types throughout.
   game's participation), not a general-purpose event log. Unlike the notifications table,
   there's no uniqueness constraint to enforce, so the write just rides along in the caller's
   own `SaveChangesAsync`.
+- **Don't bump a calendar version by hand.** `CalendarVersionInterceptor` watches the change
+  tracker on every `SaveChanges` and bumps `Player.CalendarVersion` for whoever a change
+  affects, plus `Game.Revision`/`RevisedAt` when the change is to a field the feed renders. A
+  new service method that saves a signup, a game or a participation needs nothing added. What
+  it *does* need, if it adds a **new column the feed renders**, is that column's name in the
+  interceptor's `FeedVisibleGameProperties` — that list is the one thing there that a new
+  field can fall out of. See `docs/CALENDAR.md`.
 - **`main` is protected: nothing is pushed to it directly, by anyone.** Work goes on a branch
   and reaches `main` through a pull request whose `build` check has passed. The rule applies to
   the repository owner too, so a red CI genuinely blocks everything — which is the point, and

@@ -43,6 +43,16 @@ public sealed class Game
     // Cooldown for nudges, not deduplication.
     public DateTimeOffset? LastNudgedAt { get; set; }
 
+    // The calendar event's SEQUENCE and DTSTAMP. Maintained by CalendarVersionInterceptor:
+    // RevisedAt starts equal to CreatedAt, and a change to any field the feed renders bumps
+    // both. Separate from a subscriber's own CalendarVersion because these describe the
+    // event itself — a roster change alters what one person's feed says without revising
+    // the game. DTSTAMP has to be derived rather than taken from the clock at render time,
+    // or the body would differ on every request and the ETag would be a lie.
+    public int Revision { get; set; }
+
+    public DateTimeOffset RevisedAt { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
     public required PlayerId CreatedByPlayerId { get; set; }
 }

@@ -60,21 +60,28 @@ TelegramChatId? alertChatId = alertChatIdRaw is null
     ? null
     : new TelegramChatId(long.Parse(alertChatIdRaw, CultureInfo.InvariantCulture));
 
-builder.Services.AddDbContext<QuizrDb>(options =>
-    options
-        .UseNpgsql(connectionString)
-        // NotificationRecorder's dedup insert (CLAUDE.md's Conventions) deliberately relies on
-        // a unique-constraint rejection on the expected duplicate path — EF logs the failed
-        // command and the failed SaveChanges at Error *inside* SaveChangesAsync, before the
-        // catch that handles it ever runs, so left alone every rejected duplicate reads as a
-        // crash. Only these two events, not the whole Database.Command/Update categories: a
-        // genuinely unexpected failure elsewhere still logs at its own severity.
-        .ConfigureWarnings(warnings =>
-            warnings.Log(
-                (RelationalEventId.CommandError, LogLevel.Warning),
-                (CoreEventId.SaveChangesFailed, LogLevel.Warning)
+// Singleton because it holds only the clock and reads everything else off the context it is
+// handed. Registered on the context rather than called by each service that saves — see the
+// file's own header, and docs/CALENDAR.md.
+builder.Services.AddSingleton<CalendarVersionInterceptor>();
+
+builder.Services.AddDbContext<QuizrDb>(
+    (sp, options) =>
+        options
+            .UseNpgsql(connectionString)
+            .AddInterceptors(sp.GetRequiredService<CalendarVersionInterceptor>())
+            // NotificationRecorder's dedup insert (CLAUDE.md's Conventions) deliberately relies on
+            // a unique-constraint rejection on the expected duplicate path — EF logs the failed
+            // command and the failed SaveChanges at Error *inside* SaveChangesAsync, before the
+            // catch that handles it ever runs, so left alone every rejected duplicate reads as a
+            // crash. Only these two events, not the whole Database.Command/Update categories: a
+            // genuinely unexpected failure elsewhere still logs at its own severity.
+            .ConfigureWarnings(warnings =>
+                warnings.Log(
+                    (RelationalEventId.CommandError, LogLevel.Warning),
+                    (CoreEventId.SaveChangesFailed, LogLevel.Warning)
+                )
             )
-        )
 );
 
 // Retries honouring Telegram's `retry_after` come from the standard handler's default

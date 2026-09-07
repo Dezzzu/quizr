@@ -355,12 +355,12 @@ table and of `AuditEntry`.
 
 | Change tracker sees | Bumped |
 | --- | --- |
-| A `Signup` added or modified | Every player with a live signup on that game — a seat taken or freed moves everyone below it across the playing/reserve line |
-| A `Game` modified in a feed-visible field (`Title`, `Venue`, `StartsAt`, `Capacity`, `Price`, `Notes`, `Tags`, `FinishedAt`, `DeclinedAt`) | Every player with a live signup on that game, **and** the game's own `Revision` / `RevisedAt` |
+| A `Signup` added or modified | Every player with a live signup on that game — a seat taken or freed moves everyone below it across the playing/reserve line — plus the signup's own player and inviter, read from the change tracker because a row being inserted is not yet visible to that query |
+| A `Game` modified in a feed-visible field (`Title`, `Venue`, `StartsAt`, `Capacity`, `Price`, `Notes`, `Tags`, `FinishedAt`, `DeclinedAt`) | Every player with a live signup on that game, **and** the game's own `Revision` / `RevisedAt`. Deliberately not `LastNudgedAt` or `AnnouncementMessageId`, or every nudge would read as a rescheduling |
 | A `Participation` added or modified | Every player with a live signup on that game |
 | A `Team` modified in `TimeZoneId` or `Name` | Every member of the team |
 | A `Player`'s `Locale` modified | That player |
-| A `Game` added | Nobody — a new game has no signups yet |
+| A `Game` added | Nobody — a new game has no signups yet. `RevisedAt` is stamped with `CreatedAt`, since a game nobody has revised was last revised when it was made |
 
 **This is a judgment call, and the interesting one.** The alternative — an explicit
 `await _calendarVersions.BumpAsync(...)` at each of the ~15 service call sites that save a
@@ -371,10 +371,23 @@ happens to fix it, which is exactly the class of bug the strongly-typed ids and
 that cannot be forgotten beats fifteen calls that can. If it proves too clever to live with,
 the explicit form is a mechanical refactor.
 
-**Known staleness, accepted:** renaming a `Franchise` changes the `SUMMARY` of every game built
-from it, and is not bumped. A rename does not move anyone's evening, and the next roster change
-on that game corrects it. Bumping it would mean a fourth query shape for the rarest edit in
-the system.
+**Only subscribers are bumped.** The write is filtered to players whose `CalendarToken` is not
+null, so a team where nobody uses the feature pays one query per save and writes nothing. A
+version nobody can read is a version not worth writing, and it keeps the interceptor off the
+critical path of every button tap in a team that never subscribes.
+
+**Known staleness, accepted, two kinds:**
+
+- Renaming a `Franchise` changes the `SUMMARY` of every game built from it, and is not bumped.
+  A rename does not move anyone's evening, and the next roster change on that game corrects
+  it. Bumping it would mean a fourth query shape for the rarest edit in the system.
+- The bump is a read-modify-write, so two concurrent saves affecting the same person can both
+  read version 5 and both write 6. If a feed request lands exactly between those two commits it
+  caches the first change's body under version 6 and answers `304` for the second. Closing it
+  properly means serializing the read against the write, which is a much larger machine than
+  this feature earns. It is bounded rather than open-ended: the next change to any of that
+  person's games fixes it, and failing that the `utcDate` component of the cache key clears it
+  within a day — which is inside Google's own 8–24 hour refresh window anyway.
 
 **Not built yet, deliberately:** team-level caching (one rendered event reused across a team's
 subscribers) and background pre-rendering. At ~20 subscribers refreshing hourly at most, the
@@ -530,12 +543,12 @@ Standalone and mergeable on its own; everything after it depends on `game.EndsAt
 
 ### Slice 1 — Migration and model
 
-- [ ] `Player.CalendarToken`, `CalendarTokenIssuedAt`, `CalendarVersion`; `Game.Revision`, `RevisedAt`
-- [ ] `PlayerConfiguration` / `GameConfiguration` updates, partial unique index
-- [ ] `AddCalendarFeed` migration, with the `RevisedAt` backfill
-- [ ] `CalendarVersionInterceptor` and its registration
-- [ ] `CalendarVersionInterceptorTests`
-- [ ] Docs: this file, `PLAN.md` milestone entry
+- [x] `Player.CalendarToken`, `CalendarTokenIssuedAt`, `CalendarVersion`; `Game.Revision`, `RevisedAt`
+- [x] `PlayerConfiguration` partial unique index on `CalendarToken`
+- [x] `AddCalendarFeed` migration, with the `RevisedAt` backfill
+- [x] `CalendarVersionInterceptor` and its registration, on every context including `PostgresFixture`'s
+- [x] `CalendarVersionInterceptorTests`
+- [x] Docs: this file, `docs/PLAN.md` milestone entry
 
 ### Slice 2 — ICS serialization
 

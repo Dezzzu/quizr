@@ -20,9 +20,15 @@ public sealed class PostgresFixture : IAsyncInitializer, IAsyncDisposable
         await db.Database.MigrateAsync();
     }
 
-    public QuizrDb CreateContext()
+    // The interceptor is on by default because it is on in production: a service test that
+    // saved without it would be exercising a context this app never constructs. Pass a
+    // FakeTimeProvider where a test asserts on Game.RevisedAt.
+    public QuizrDb CreateContext(TimeProvider? clock = null)
     {
-        var options = new DbContextOptionsBuilder<QuizrDb>().UseNpgsql(_container.GetConnectionString()).Options;
+        var options = new DbContextOptionsBuilder<QuizrDb>()
+            .UseNpgsql(_container.GetConnectionString())
+            .AddInterceptors(new CalendarVersionInterceptor(clock ?? TimeProvider.System))
+            .Options;
 
         return new QuizrDb(options);
     }
