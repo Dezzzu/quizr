@@ -64,7 +64,7 @@ Full set, and what was rejected, in **[STACK.md](docs/STACK.md)**.
 
 The bot long-polls, so nothing has to connect to it for it to work: it dials out to Telegram
 and talks to its database. The one exception is the per-player calendar feed — a single
-read-only `GET /cal/{token}.ics`, which is what a calendar client subscribes to. It is not
+read-only `GET /cal/feed.ics`, which is what a calendar client subscribes to. It is not
 served at all unless `QUIZR_PUBLIC_URL` is set.
 
 ## Setup

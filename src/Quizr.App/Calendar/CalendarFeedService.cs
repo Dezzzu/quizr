@@ -74,6 +74,10 @@ public sealed class CalendarFeedService
             )
             .OrderBy(g => g.StartsAt)
             .ThenBy(g => g.Id)
+            // Two collection Includes on one query multiply each other: a game with 20 signups
+            // and 20 participations comes back as 400 rows, all but 40 of them duplicated.
+            // One query per collection instead — EF warns about exactly this otherwise.
+            .AsSplitQuery()
             .ToListAsync(ct);
 
         var teamsById = teams.ToDictionary(t => t.Id);

@@ -8,11 +8,17 @@ namespace Quizr.App.Calendar;
 // given a domain both keep behaving exactly as they did before this existed.
 public sealed class CalendarUrls
 {
-    // The token's length is fixed (CalendarToken.Length), so the constraint rejects a
-    // wrong-sized one during routing, before any handler or database work happens. The charset
-    // is checked in the handler — a route constraint cannot express it without a regex whose
-    // braces have to be escaped into the template, which is a worse trade than one `if`.
-    public const string Route = "/cal/{token:length(43)}.ics";
+    // The token is a query parameter and deliberately not a path segment. ASP.NET's own
+    // request scope carries RequestPath, and IncludeScopes ships scopes to Seq — so anything
+    // at all that logs during a feed request would carry a token that lived in the path. That
+    // is not hypothetical: an EF Core query warning did exactly that, and so did this
+    // endpoint's own error handler. The scope does not carry the query string, which is the
+    // whole reason for this shape.
+    //
+    // The .ics suffix stays in the path so a client still sees a calendar file.
+    public const string Route = "/cal/feed.ics";
+
+    public const string TokenParameter = "t";
 
     private readonly string? _baseUrl;
 
@@ -20,5 +26,5 @@ public sealed class CalendarUrls
 
     public bool Available => _baseUrl is not null;
 
-    public string For(string token) => $"{_baseUrl}/cal/{token}.ics";
+    public string For(string token) => $"{_baseUrl}/cal/feed.ics?{TokenParameter}={token}";
 }

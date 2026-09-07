@@ -102,12 +102,20 @@ Applied at startup like every other (`DEPLOY.md`). Safe to deploy before anythin
 ## 2. Endpoint contract
 
 ```
-GET  /cal/{token}.ics
-HEAD /cal/{token}.ics
+GET  /cal/feed.ics?t=<token>
+HEAD /cal/feed.ics?t=<token>
 ```
 
 Mapped only when `QUIZR_PUBLIC_URL` is set. `HEAD` is mapped explicitly — several clients probe
 with it before subscribing, and `MapGet` alone would answer 405.
+
+**The token is a query parameter, not a path segment, and that is a security requirement rather
+than a style choice.** Every log record written during a request carries `RequestPath` in its
+logging scope, and `IncludeScopes` ships scopes to Seq. A token in the path therefore leaks the
+moment *anything* logs during a feed request — which was not hypothetical: an EF Core
+query-splitting warning did it, and so did this endpoint's own `catch`, which logs by design.
+The scope does not carry the query string; that was verified against a running process before
+the shape was changed. The `.ics` suffix stays in the path so clients still see a calendar file.
 
 ### Responses
 
@@ -133,19 +141,20 @@ with it before subscribing, and `MapGet` alone would answer 405.
 
 ### The token never enters a log
 
-`Program.cs` already filters `System.Net.Http.HttpClient` to Warning because every Telegram
-call carries the bot token in its URI. The same leak now exists inbound, and it needs two
-things:
+`Program.cs` already filters `System.Net.Http.HttpClient` to Warning because every Telegram call
+carries the bot token in its URI. The same leak exists inbound, and closing it took three
+things — the first of which was found by running the thing rather than by reasoning about it:
 
-1. `Microsoft.AspNetCore.Hosting.Diagnostics` filtered to Warning, which is what emits
-   `Request starting HTTP/1.1 GET /cal/<token>.ics` at Information.
-2. **The handler catches its own exceptions.** `STYLE.md` names exactly two places that catch
-   broadly — the update dispatch boundary and the scheduler tick — and says a third is almost
-   always someone hiding a fault. This is a genuine third boundary, for the same reason as the
-   first: one failing request must not take anything else down, and here additionally because
-   an exception escaping to the diagnostics middleware puts `RequestPath` into a logging scope,
-   and `IncludeScopes` ships scopes to Seq. `STYLE.md` gains this as a named third boundary
-   rather than an exception to itself.
+1. **The token lives in the query string.** See the contract above. This is the one that
+   actually matters; the other two are narrower.
+2. `Microsoft.AspNetCore` filtered to Warning, since its request logging prints the whole URL,
+   query included, at Information.
+3. **The handler catches its own exceptions.** `STYLE.md` names exactly two places that catch
+   broadly and says a third is almost always someone hiding a fault. This is a genuine third
+   boundary — one failing request must not take anything else down, and a caller holding only a
+   credential gets a bare 500. It was originally justified as the thing keeping the token out of
+   the logs, which was **wrong**: logging from inside the catch is still inside the request
+   scope. Item 1 is what does that.
 
 Constant-time comparison is not used and is not needed: the lookup is an indexed equality
 query, not a byte comparison, and the token is 256 bits of CSPRNG output.
@@ -518,14 +527,22 @@ a real seeded subscriber — worth repeating rather than trusting if any of it c
 
 | Checked | Result |
 | --- | --- |
-| Route constraint on a wrong-length token | `404`, no handler reached |
+| A missing, malformed, or old-path-shaped token | `404` |
 | `HEAD` | `404`/`200` as the token warrants — **not** `405` |
 | `POST` | `405` |
 | Eleven rapid `GET`s on one token | seven answered, then `429` with `Retry-After: 60` |
 | A seeded subscriber's real feed | `200`, correct `ETag`, `Cache-Control`, `Content-Disposition`, and a valid `VCALENDAR` |
 | Conditional `GET`, matching and `W/`-weakened | `304` both; a stale tag gets `200` |
-| **The token in any log line** | **absent across ~20 requests including 404s and 429s** |
+| **The token in any log line** | **absent** — checked after a real feed fetch and 13 further requests, which is what the first attempt at this check got wrong (see below) |
 | The `AddCalendarFeed` migration against an empty database | applied clean |
+
+**The first run of that check was wrong, and it is worth recording why.** It reported no token
+in any log — but it ran *before* the real feed had ever been fetched, so nothing had yet logged
+inside a feed request. A later run caught an EF Core warning carrying
+`RequestPath:/cal/<token>.ics` in its scope. Two things came out of it: the token moved to the
+query string, and the query itself gained `AsSplitQuery()` — the warning was a genuine cartesian
+product between the `Signups` and `Participations` includes, 400 rows for a game with 20 of
+each. A check that runs before the interesting path has executed proves nothing.
 
 One honest limitation the same run confirmed: a row written by raw SQL bypasses
 `CalendarVersionInterceptor`, so the version does not move and a client keeps its cached body.
@@ -604,8 +621,8 @@ Standalone and mergeable on its own; everything after it depends on `game.EndsAt
 ### Slice 3 — HTTP endpoint
 
 - [x] `Microsoft.NET.Sdk.Web`; `WebApplication` in `Program.cs`, and the two packages the shared framework now supplies dropped
-- [x] `GET`/`HEAD /cal/{token}.ics`, route constraint, ETag, 304, caching
-- [x] Rate limiters, `UseForwardedHeaders`
+- [x] `GET`/`HEAD /cal/feed.ics`, token in the query string, ETag, 304, caching
+- [x] Rate limiters (lifted into `CalendarRateLimits`), `UseForwardedHeaders`, `UseRequestTimeouts`
 - [x] Log filtering and the handler's own error boundary
 - [x] `CalendarEndpointTests`, `CalendarCacheKeyTests`, `CalendarTokenTests`, plus a manual end-to-end run recorded below
 - [x] Docs: `docs/STYLE.md` (third catch boundary), `docs/STACK.md` (host change), `CLAUDE.md` (a new HTTP surface section), `README.md`

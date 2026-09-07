@@ -1,8 +1,10 @@
 using System.Text;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Timeouts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+using Microsoft.Net.Http.Headers;
 using Quizr.App.Data;
 using Quizr.App.Localization;
 using Quizr.Domain;
@@ -13,12 +15,11 @@ namespace Quizr.App.Calendar;
 //
 // The shape of a request, in the order it gets cheaper to answer:
 //
-//   1. the route constraint rejects a wrong-length token during routing
-//   2. a charset check rejects a malformed one with no query
-//   3. one indexed row read turns the token into a player, a version and a locale
-//   4. If-None-Match against the ETag answers 304 — nothing is loaded, nothing is rendered
-//   5. the in-memory cache answers with a body built by an earlier request
-//   6. only then does anything touch the roster
+//   1. a length and charset check rejects a malformed token before any database work
+//   2. one indexed row read turns the token into a player, a version and a locale
+//   3. If-None-Match against the ETag answers 304 — nothing is loaded, nothing is rendered
+//   4. the in-memory cache answers with a body built by an earlier request
+//   5. only then does anything touch the roster
 //
 // Every failure answers a bare 404: malformed, unknown and revoked are deliberately
 // indistinguishable, and there is no 401 or 403 anywhere, because a challenge would only teach
@@ -28,8 +29,9 @@ public sealed class CalendarEndpoint
     private const string ContentType = "text/calendar; charset=utf-8";
 
     // Long enough that a busy database still answers, short enough that a hung query cannot
-    // pile connections up behind an aggressive client's retries.
-    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
+    // pile connections up behind an aggressive client's retries. Applied by the
+    // RequestTimeouts middleware, which Program.cs attaches to the route with this value.
+    public static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
 
     // A key changes whenever anything in it changes, so nothing here ever needs evicting for
     // correctness — but the UTC date is one of those parts, so yesterday's keys would
@@ -60,33 +62,32 @@ public sealed class CalendarEndpoint
         _logger = logger;
     }
 
-    public async Task<IResult> HandleAsync(HttpContext http, string token, CancellationToken ct)
+    public async Task<IResult> HandleAsync(HttpContext http, string? token, CancellationToken ct)
     {
         // The third place in this codebase that catches broadly, and the first one STYLE.md did
-        // not already name. Two reasons, and the second is the one that matters: a failing
-        // request must not take anything else down, and an exception escaping to ASP.NET's own
-        // diagnostics middleware puts RequestPath — which contains the token — into a logging
-        // scope that IncludeScopes ships to Seq. Nothing below ever logs the path or the token.
+        // not already name: one failing request must not take anything else down. Logging from
+        // in here is safe only because the token lives in the query string rather than the
+        // path — every log record written during a request carries RequestPath in its scope,
+        // and IncludeScopes ships scopes to Seq. See CalendarUrls.Route.
         try
         {
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            timeout.CancelAfter(Timeout);
-
-            return await RespondAsync(http, token, timeout.Token);
+            return await RespondAsync(http, token, ct);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        // The client hung up: nothing to say and nobody to say it to. A *timeout* cancels the
+        // same token, and that one deliberately falls through — the RequestTimeouts middleware
+        // turns it into a 504, which it can only do if the cancellation reaches it.
+        catch (OperationCanceledException) when (!TimedOut(http))
         {
-            // The client hung up. Nothing to say and nobody to say it to.
             return Results.Empty;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogError(ex, "Calendar feed request failed");
             return Results.StatusCode(StatusCodes.Status500InternalServerError);
         }
     }
 
-    private async Task<IResult> RespondAsync(HttpContext http, string token, CancellationToken ct)
+    private async Task<IResult> RespondAsync(HttpContext http, string? token, CancellationToken ct)
     {
         if (!CalendarToken.IsWellFormed(token))
         {
@@ -116,7 +117,7 @@ public sealed class CalendarEndpoint
 
         // A conditional request that matches ends here: no roster is loaded and nothing is
         // serialized, which is the entire point of keeping the version on the player row.
-        if (Matches(http.Request.Headers.IfNoneMatch, etag))
+        if (Matches(http, etag))
         {
             return Results.StatusCode(StatusCodes.Status304NotModified);
         }
@@ -150,18 +151,26 @@ public sealed class CalendarEndpoint
         return body;
     }
 
-    // If-None-Match may carry several tags, and a client is allowed to send W/ in front of one
-    // it received strong. Both are the same body here, so the comparison ignores the prefix.
-    private static bool Matches(IEnumerable<string?> ifNoneMatch, string etag) =>
-        ifNoneMatch
-            .Where(header => header is not null)
-            .SelectMany(header =>
-                header!.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
-            )
-            .Any(candidate => candidate == "*" || Strip(candidate) == etag);
+    // Parsed by the framework rather than by splitting on commas here: If-None-Match is a list,
+    // its members are quoted, any of them may carry a W/ prefix, and "*" matches anything
+    // (RFC 9110 section 13.1.2). EntityTagHeaderValue knows all of that.
+    //
+    // Weak comparison, because a client is allowed to send back weakened any tag it was given
+    // strong, and both refer to the same body.
+    private static bool Matches(HttpContext http, string etag)
+    {
+        var candidates = http.Request.GetTypedHeaders().IfNoneMatch;
+        var current = new EntityTagHeaderValue(etag);
 
-    private static string Strip(string candidate) =>
-        candidate.StartsWith("W/", StringComparison.Ordinal) ? candidate[2..] : candidate;
+        return candidates.Any(candidate =>
+            candidate.Equals(EntityTagHeaderValue.Any) || candidate.Compare(current, useStrongComparison: false)
+        );
+    }
+
+    // Whether the RequestTimeouts middleware is the one that cancelled us, rather than the
+    // client going away. The feature is absent when no timeout policy applies to the route.
+    private static bool TimedOut(HttpContext http) =>
+        http.Features.Get<IHttpRequestTimeoutFeature>()?.RequestTimeoutToken.IsCancellationRequested == true;
 
     private sealed record Subscriber(PlayerId PlayerId, long CalendarVersion, string? Locale);
 }

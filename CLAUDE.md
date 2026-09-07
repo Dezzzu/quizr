@@ -170,15 +170,17 @@ Breaking one of these is a bug, not a preference.
 The bot gained exactly one inbound route, for the per-player calendar feed
 (`docs/CALENDAR.md`). Everything else about it still dials outward.
 
-- **`GET`/`HEAD /cal/{token}.ics`, and nothing else.** Read-only, touches no Telegram API, and
-  not mapped at all unless `QUIZR_PUBLIC_URL` is set — so a local run and a deployment with no
-  domain behave exactly as they did before it existed.
-- **The token in the path is a credential**, and the only one: a calendar client cannot perform
-  interactive auth, so whoever holds the URL is the subscriber. It must never reach a log.
-  Two things keep it out and both are load-bearing — `Microsoft.AspNetCore` is filtered to
-  Warning in `Program.cs` (its request logging prints the full path at Information), and
-  `CalendarEndpoint` catches its own exceptions so none reaches the diagnostics middleware,
-  which would put `RequestPath` into a logging scope that `IncludeScopes` ships to Seq.
+- **`GET`/`HEAD /cal/feed.ics?t=<token>`, and nothing else.** Read-only, touches no Telegram
+  API, and not mapped at all unless `QUIZR_PUBLIC_URL` is set — so a local run and a deployment
+  with no domain behave exactly as they did before it existed.
+- **The token is a credential**, and the only one: a calendar client cannot perform interactive
+  auth, so whoever holds the URL is the subscriber. It must never reach a log, and **that is
+  why it is a query parameter rather than a path segment**. Every log record written during a
+  request carries `RequestPath` in its scope, and `IncludeScopes` ships scopes to Seq — so a
+  token in the path leaks the moment *anything* logs, including this endpoint's own error
+  handler. The scope does not carry the query string. `Microsoft.AspNetCore` is filtered to
+  Warning as well, since its request logging prints the full URL, query included.
+- **Never move it back into the path**, and think before logging the request URL anywhere.
 - **Every failure is a bare `404`** — malformed, unknown and revoked are deliberately
   indistinguishable. No `401`, no `403`: a challenge teaches a scanner the path is real, and no
   calendar client could answer one.

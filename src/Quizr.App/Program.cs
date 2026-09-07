@@ -1,9 +1,8 @@
 using System.Globalization;
-using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Timeouts;
 using Microsoft.AspNetCore.HttpOverrides;
-using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
@@ -162,37 +161,13 @@ builder.Services.AddScoped<CalendarEndpoint>();
 // keys are unreachable but would otherwise sit here for the life of the process.
 builder.Services.AddMemoryCache(options => options.SizeLimit = 64 * 1024 * 1024);
 
-// Two limits, chained. The per-token one stops a single misconfigured client outweighing all
-// real traffic; the per-IP one stops a scanner, whose requests never reach a real token at all.
-// GlobalLimiter rather than a named policy because chaining produces a PartitionedRateLimiter
-// that AddPolicy cannot take — and because the feed is the only endpoint this process serves,
-// so global and per-endpoint are the same set today.
-builder.Services.AddRateLimiter(options =>
-{
-    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    options.OnRejected = (context, _) =>
-    {
-        context.HttpContext.Response.Headers.RetryAfter = "60";
-        return ValueTask.CompletedTask;
-    };
+// The numbers, and the reasoning behind them, live with the feature rather than here.
+builder.Services.AddRateLimiter(CalendarRateLimits.Configure);
 
-    options.GlobalLimiter = PartitionedRateLimiter.CreateChained(
-        // The path *is* the token, which keeps this off route values and therefore
-        // independent of where the middleware sits relative to routing.
-        PartitionedRateLimiter.Create<HttpContext, string>(context =>
-            RateLimitPartition.GetFixedWindowLimiter(
-                context.Request.Path.Value ?? string.Empty,
-                _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1) }
-            )
-        ),
-        PartitionedRateLimiter.Create<HttpContext, string>(context =>
-            RateLimitPartition.GetFixedWindowLimiter(
-                context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-                _ => new FixedWindowRateLimiterOptions { PermitLimit = 60, Window = TimeSpan.FromMinutes(1) }
-            )
-        )
-    );
-});
+// Caps how long a feed request may take. Middleware rather than a linked CancellationToken
+// inside the handler: the timeout is then declared next to the route it applies to, and a
+// request that runs over answers 504 rather than the 500 a hand-rolled one produced.
+builder.Services.AddRequestTimeouts();
 
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IStrings, Strings>();
@@ -242,16 +217,22 @@ app.UseForwardedHeaders(forwardedHeaders);
 
 app.UseRateLimiter();
 
+// After UseRouting, which WebApplication inserts ahead of this, so the middleware can see the
+// per-endpoint policy WithRequestTimeout attaches below.
+app.UseRequestTimeouts();
+
 if (publicUrl is not null)
 {
     app.MapMethods(
-        CalendarUrls.Route,
-        // HEAD explicitly: several calendar clients probe with it before subscribing, and
-        // MapGet alone answers those 405.
-        ["GET", "HEAD"],
-        (HttpContext http, CalendarEndpoint endpoint, string token, CancellationToken ct) =>
-            endpoint.HandleAsync(http, token, ct)
-    );
+            CalendarUrls.Route,
+            // HEAD explicitly: several calendar clients probe with it before subscribing, and
+            // MapGet alone answers those 405.
+            ["GET", "HEAD"],
+            // The token binds from the query string, never the path — see CalendarUrls.Route.
+            (HttpContext http, CalendarEndpoint endpoint, string? t, CancellationToken ct) =>
+                endpoint.HandleAsync(http, t, ct)
+        )
+        .WithRequestTimeout(CalendarEndpoint.Timeout);
 }
 
 await app.RunAsync();
