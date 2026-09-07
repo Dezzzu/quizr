@@ -8,7 +8,7 @@ several quiz teams, and no staging environment.
 > Merging a pull request to `main` deploys it to the live bot within minutes. There is no
 > approval gate after the merge, no staging soak, and no "we'll ship it Tuesday".
 > `.github/workflows/build.yml` builds the image, pushes it to GHCR, and pokes Coolify, which
-> restarts the container. The full pipeline is in **[DEPLOY.md](DEPLOY.md)**.
+> restarts the container. The full pipeline is in **[DEPLOY.md](docs/DEPLOY.md)**.
 
 Everything below follows from that.
 
@@ -41,7 +41,7 @@ private chat you'd rather not share.
 ### For a feature
 
 Say what you were trying to do and what got in the way, not just the button you'd like added.
-The design decisions already taken are recorded in **[VISION.md](VISION.md)** — the decision
+The design decisions already taken are recorded in **[VISION.md](docs/VISION.md)** — the decision
 log at the bottom, plus the questions that were settled and how — so an idea that was
 considered and rejected usually has its reasoning written down.
 
@@ -78,9 +78,10 @@ Four files carry the decisions, and reading them saves re-deriving what was alre
 | File | What it holds |
 | --- | --- |
 | **[CLAUDE.md](CLAUDE.md)** | Vocabulary, the invariants, and the Telegram constraints. The shortest path to understanding why the code is shaped this way. |
-| **[PLAN.md](PLAN.md)** | The data model and the milestones. |
-| **[STYLE.md](STYLE.md)** | Error handling, interfaces, async, comments, tests — the conventions to match. |
-| **[STACK.md](STACK.md)** | The tools and versions, what is hand-rolled here, and what was rejected. |
+| **[PLAN.md](docs/PLAN.md)** | The data model and the milestones. |
+| **[STYLE.md](docs/STYLE.md)** | Error handling, interfaces, async, comments, tests — the conventions to match. |
+| **[STACK.md](docs/STACK.md)** | The tools and versions, what is hand-rolled here, and what was rejected. |
+| **[CALENDAR.md](docs/CALENDAR.md)** | The per-player calendar feed — design and implementation plan. |
 
 Two rules are worth repeating here because breaking either is a bug rather than a preference:
 

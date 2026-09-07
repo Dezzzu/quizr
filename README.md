@@ -27,16 +27,18 @@ and who has to wait for a seat — and rewrites its own messages whenever any of
 
 ## Documentation
 
-- **[PLAN.md](PLAN.md)** — the data model and the ordered implementation milestones.
-- **[VISION.md](VISION.md)** — the idea, how it works, the roadmap, and the decision log.
-- **[STACK.md](STACK.md)** — the tools and versions, what is built here rather than taken
+- **[PLAN.md](docs/PLAN.md)** — the data model and the ordered implementation milestones.
+- **[VISION.md](docs/VISION.md)** — the idea, how it works, the roadmap, and the decision log.
+- **[STACK.md](docs/STACK.md)** — the tools and versions, what is built here rather than taken
   from a library, and what was considered and rejected.
-- **[STYLE.md](STYLE.md)** — how code here is written: error handling, interfaces, async,
+- **[STYLE.md](docs/STYLE.md)** — how code here is written: error handling, interfaces, async,
   comments and tests.
 - **[CLAUDE.md](CLAUDE.md)** — working context for agent-assisted development: vocabulary,
   invariants, and the Telegram constraints worth designing around.
-- **[DEPLOY.md](DEPLOY.md)** — how the bot ships: the GitHub Actions pipeline and the Coolify
+- **[DEPLOY.md](docs/DEPLOY.md)** — how the bot ships: the GitHub Actions pipeline and the Coolify
   configuration it hands off to.
+- **[CALENDAR.md](docs/CALENDAR.md)** — the per-player `.ics` subscription feed: design,
+  and the implementation plan it is being built against.
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** — how to report a bug, ask for a feature, and open a
   pull request.
 
@@ -56,7 +58,7 @@ and merging is the owner's call rather than the contributor's.
 EF Core 10 + PostgreSQL 18 · SmartFormat.NET.
 
 Tested with TUnit, AwesomeAssertions, NSubstitute and Testcontainers.
-Full set, and what was rejected, in **[STACK.md](STACK.md)**.
+Full set, and what was rejected, in **[STACK.md](docs/STACK.md)**.
 
 Because the bot long-polls, nothing ever connects to it — no domain, no TLS, no open ports.
 It dials out to Telegram and talks to its database.

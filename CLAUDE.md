@@ -7,24 +7,31 @@ with a roster the bot owns.
 Read it before designing anything — most of what follows was decided deliberately and is not
 worth re-deriving.
 
-- **`PLAN.md`** — the data model and the ordered milestones. **Start here.**
-- **`STACK.md`** — the chosen tools and versions, what is built here rather than taken from a
-  library, and what was considered and rejected.
-- **`STYLE.md`** — how code here is written: error handling, interfaces, async, comments,
+**Everything except this file, `README.md` and `CONTRIBUTING.md` lives in `docs/`.** Code
+comments name a doc without its path — `see STACK.md` means `docs/STACK.md`.
+
+- **`docs/PLAN.md`** — the data model and the ordered milestones. **Start here.**
+- **`docs/STACK.md`** — the chosen tools and versions, what is built here rather than taken
+  from a library, and what was considered and rejected.
+- **`docs/STYLE.md`** — how code here is written: error handling, interfaces, async, comments,
   tests, and the conventions agents most often diverge on.
-- **`VISION.md`** — the product description, roadmap and decision log.
-- **`DEPLOY.md`** — how the bot ships: the GitHub Actions pipeline, and the Coolify
+- **`docs/VISION.md`** — the product description, roadmap and decision log.
+- **`docs/DEPLOY.md`** — how the bot ships: the GitHub Actions pipeline, and the Coolify
   configuration it hands off to.
+- **`docs/CALENDAR.md`** — the per-player `.ics` subscription feed: design and live
+  implementation plan.
 - **`CONTRIBUTING.md`** — the outward-facing version of the branch/PR rules below, plus what a
   useful bug report contains. Written for people, not agents.
 
 ## Start here
 
-Project layout and tooling are in place; **no domain code yet**. The product description and
-the stack are settled.
+M1–M9 are built: the domain, persistence, the Telegram plumbing, the signup loop, the Board,
+the scheduler, the captain flows and all three languages. **Once the EF entities exist they
+are the source of truth** — `docs/PLAN.md`'s field tables are history, kept for the reasoning
+rather than the schema.
 
-**`PLAN.md` has the data model and the milestone to start from.** Read this file and
-`STYLE.md` first, then work through `PLAN.md` in order.
+Read this file and `docs/STYLE.md` first. `docs/PLAN.md` says what was built and in what
+order; `docs/CALENDAR.md` is the work in progress.
 
 ## Commands
 
