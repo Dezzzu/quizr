@@ -1,5 +1,3 @@
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using Quizr.App.Localization;
 using Telegram.Bot;
 using Telegram.Bot.Polling;

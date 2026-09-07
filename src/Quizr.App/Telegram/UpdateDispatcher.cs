@@ -1,6 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Quizr.App.Data;
 using Quizr.App.Localization;
 using Quizr.App.Telemetry;

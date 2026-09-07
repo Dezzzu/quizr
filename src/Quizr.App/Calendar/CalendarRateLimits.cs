@@ -1,5 +1,4 @@
 using System.Threading.RateLimiting;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.RateLimiting;
 
 namespace Quizr.App.Calendar;

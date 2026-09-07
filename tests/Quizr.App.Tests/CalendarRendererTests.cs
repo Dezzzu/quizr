@@ -1,6 +1,5 @@
 using System.Text;
 using AwesomeAssertions;
-using Ical.Net.CalendarComponents;
 using Quizr.App.Calendar;
 using Quizr.App.Localization;
 using Quizr.Domain;

@@ -1,9 +1,7 @@
 using System.Text;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Timeouts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Logging;
 using Microsoft.Net.Http.Headers;
 using Quizr.App.Data;
 using Quizr.App.Localization;

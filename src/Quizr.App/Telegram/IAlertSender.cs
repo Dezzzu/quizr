@@ -1,5 +1,4 @@
 using System.Net;
-using Microsoft.Extensions.Logging;
 using Quizr.Domain;
 using Telegram.Bot;
 using Telegram.Bot.Requests;

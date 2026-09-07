@@ -3,7 +3,6 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using Quizr.App.Calendar;
 using Quizr.App.Data;
 using Quizr.App.Localization;
