@@ -1,3 +1,4 @@
+using Quizr.App.Health;
 using Quizr.App.Services;
 using Quizr.App.Telemetry;
 
@@ -12,18 +13,21 @@ public sealed class SchedulerHostedService : BackgroundService
     private static readonly TimeSpan TickInterval = TimeSpan.FromSeconds(30);
 
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly SchedulerHeartbeat _heartbeat;
     private readonly TimeProvider _clock;
     private readonly QuizrMetrics _metrics;
     private readonly ILogger<SchedulerHostedService> _logger;
 
     public SchedulerHostedService(
         IServiceScopeFactory scopeFactory,
+        SchedulerHeartbeat heartbeat,
         TimeProvider clock,
         QuizrMetrics metrics,
         ILogger<SchedulerHostedService> logger
     )
     {
         _scopeFactory = scopeFactory;
+        _heartbeat = heartbeat;
         _clock = clock;
         _metrics = metrics;
         _logger = logger;
@@ -51,6 +55,11 @@ public sealed class SchedulerHostedService : BackgroundService
                 // RunTickAsync so it means "a whole tick completed" — a tick that threw past
                 // the per-team handling leaves a gap, which is the point of a heartbeat.
                 _metrics.RecordSchedulerTick();
+
+                // Same moment and the same meaning as the counter above — a whole tick
+                // completed — but readable as a question rather than charted as a rate, which
+                // is what a readiness probe needs.
+                _heartbeat.Record(_clock.GetUtcNow());
             }
             catch (OperationCanceledException)
             {

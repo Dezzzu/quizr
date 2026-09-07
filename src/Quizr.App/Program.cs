@@ -1,4 +1,5 @@
 using System.Globalization;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -7,6 +8,7 @@ using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using Quizr.App.Calendar;
 using Quizr.App.Data;
+using Quizr.App.Health;
 using Quizr.App.Http;
 using Quizr.App.Localization;
 using Quizr.App.Scheduling;
@@ -164,6 +166,14 @@ builder.Services.AddRateLimiter(RateLimits.Configure);
 // request that runs over answers 504 rather than the 500 a hand-rolled one produced.
 builder.Services.AddRequestTimeouts();
 
+// Answered whatever else is configured: whether the bot is healthy is worth asking on a
+// deployment that serves no calendar feed at all.
+builder.Services.AddSingleton<SchedulerHeartbeat>();
+builder
+    .Services.AddHealthChecks()
+    .AddCheck<DatabaseHealthCheck>("database", tags: [HealthEndpoints.ReadyTag])
+    .AddCheck<SchedulerHealthCheck>("scheduler", tags: [HealthEndpoints.ReadyTag]);
+
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IStrings, Strings>();
 builder.Services.AddSingleton<IMessageEditDebouncer, MessageEditDebouncer>();
@@ -211,6 +221,21 @@ forwardedHeaders.KnownProxies.Clear();
 app.UseForwardedHeaders(forwardedHeaders);
 
 app.UseRateLimiter();
+
+// Bodies stay the bare status word: these are unauthenticated, and which component is unhappy
+// is nobody's business but ours — the reason is in the logs and in Seq.
+//
+// Liveness runs no checks at all (its predicate never matches) and opts out of rate limiting:
+// it does no work, and an endpoint that exists to be polled must never answer 429 to the thing
+// polling it. Readiness stays limited, because it touches the database and an unauthenticated
+// route that does should be bounded.
+app.MapHealthChecks(HealthEndpoints.Live, new HealthCheckOptions { Predicate = _ => false })
+    .DisableRateLimiting();
+
+app.MapHealthChecks(
+    HealthEndpoints.Ready,
+    new HealthCheckOptions { Predicate = registration => registration.Tags.Contains(HealthEndpoints.ReadyTag) }
+);
 
 // After UseRouting, which WebApplication inserts ahead of this, so the middleware can see the
 // per-endpoint policy WithRequestTimeout attaches below.

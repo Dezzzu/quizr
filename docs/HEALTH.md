@@ -153,11 +153,27 @@ Kept live. Ticked as completed; amended in the same commit when reality diverges
 
 ### Slice 2 — The endpoints
 
-- [ ] `SchedulerHeartbeat` singleton, written by `SchedulerHostedService`
-- [ ] `SchedulerHealthCheck` and a Postgres reachability check, registered with `AddHealthChecks`
-- [ ] `MapHealthChecks("/health/live")` and `("/health/ready")`, tag-filtered
-- [ ] Unit tests, including the standby case
-- [ ] Docs: this file, `CLAUDE.md`'s HTTP surface section
+- [x] `SchedulerHeartbeat` singleton, written by `SchedulerHostedService` at the same moment as
+      the metric, and for the same reason read differently
+- [x] `SchedulerHealthCheck` and `DatabaseHealthCheck`, registered with `AddHealthChecks` and
+      tagged `ready`
+- [x] `MapHealthChecks` for both routes; liveness runs no checks and opts out of rate limiting
+- [x] `SchedulerHealthCheckTests` — recent tick, stale tick, the exact boundary, and never
+      ticked. **The standby case moved to slice 3**: there is no lock yet, so no instance can be
+      legitimately idle, and a test asserting otherwise would be asserting nothing
+- [x] Docs: this file, `CLAUDE.md`'s HTTP surface section, and a note in `docs/DEPLOY.md` so it
+      does not describe a bot without health endpoints while one has them
+
+Verified against a running process, since what could break is the wiring:
+
+| Checked | Result |
+| --- | --- |
+| `/health/live`, `/health/ready` with Postgres up | `200 Healthy` both |
+| 120 rapid requests to `/health/live` | zero non-200s — the rate-limit exemption holds |
+| `/health/ready` under load | first `429` at the 60th, so it is bounded as intended |
+| **Postgres stopped** | `/health/live` still `200 Healthy`, `/health/ready` `503 Unhealthy` |
+
+That last row is the whole reason the two are separate questions rather than one.
 
 ### Slice 3 — The singleton guard
 

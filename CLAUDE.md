@@ -170,9 +170,15 @@ Breaking one of these is a bug, not a preference.
 The bot gained exactly one inbound route, for the per-player calendar feed
 (`docs/CALENDAR.md`). Everything else about it still dials outward.
 
-- **`GET`/`HEAD /api/cal/feed.ics?t=<token>`, and nothing else.** Read-only, touches no Telegram
-  API, and not mapped at all unless `QUIZR_PUBLIC_URL` is set — so a local run and a deployment
-  with no domain behave exactly as they did before it existed.
+- **`GET`/`HEAD /api/cal/feed.ics?t=<token>`** — the calendar feed. Read-only, touches no
+  Telegram API, and not mapped at all unless `QUIZR_PUBLIC_URL` is set, so a local run and a
+  deployment with no domain behave exactly as they did before it existed.
+- **`GET /health/live` and `GET /health/ready`** — always mapped, since whether the bot is
+  healthy is worth asking on a deployment serving no feed. Liveness runs no checks and is
+  exempt from rate limiting; readiness asks whether Postgres is reachable and the scheduler is
+  still ticking. Bodies are the bare status word: they are unauthenticated, so which component
+  is unhappy stays in the logs. See `docs/HEALTH.md`, and note that having them does **not**
+  mean Coolify may be pointed at one — see below.
 - **The token is a credential**, and the only one: a calendar client cannot perform interactive
   auth, so whoever holds the URL is the subscriber. It must never reach a log, and **that is
   why it is a query parameter rather than a path segment**. Every log record written during a

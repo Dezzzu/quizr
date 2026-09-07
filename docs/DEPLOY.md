@@ -238,7 +238,15 @@ even now that a port exists. The calendar endpoint answering proves Kestrel is u
 nothing about whether the bot is still polling Telegram, and the failure that matters is exactly
 that — the loop stopping while the process stays alive. A probe cannot see it.
 
-`quizr.scheduler.ticks` is the answer instead. The scheduler runs every 30 seconds with nobody
+`quizr.scheduler.ticks` is the answer instead, and the bot now also answers it as a question:
+**`GET /health/ready`** reports unhealthy when Postgres is unreachable or the scheduler has not
+completed a tick in three minutes, and **`GET /health/live`** reports only that the process
+answered. Point an off-box uptime monitor at `/health/ready` — that is the gap this section ends
+by naming, since Seq runs on the same VPS as the bot and cannot tell you the box is gone.
+
+**Their existence does not change the rule above.** Configuring Coolify's own health check is
+still what enables rolling updates, and a second container is still harmful rather than merely
+prevented. `docs/HEALTH.md` carries the change that would make it safe. The scheduler runs every 30 seconds with nobody
 asking it to, so the counter advancing is proof the process is doing work, and a **gap** in it
 is the alert: chart the series in Seq and create the alert from the chart, firing when the
 increase over five minutes reaches zero.
