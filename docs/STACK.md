@@ -201,7 +201,7 @@ the next tick simply asks again. A queue would require finding and cancelling sc
 jobs on every edit, which is pure bug surface.
 
 **On start, catch up**: send reminders that came due while the process was down and are still
-relevant, and finish games whose 4-hour window elapsed. Uptime is then not a correctness
+relevant, and finish games whose window elapsed (`game.EndsAt` — see invariant 8). Uptime is then not a correctness
 requirement.
 
 ## Don't reach for these

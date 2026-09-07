@@ -156,8 +156,8 @@ not a feature.
       last seat ▲  │ ▼ no reserve left
          taken  │  │
         ┌───────┴──┴───────────┐    start   ┌──────────────┐  Finish tapped  ┌──────────────┐
-        │ Open                 │───────────►│ In progress  │──── or 4 h ────►│ Finished     │
-        │ join or drop freely  │    time    │ 4-hour grace │                 │ counted as   │
+        │ Open                 │───────────►│ In progress  │──── or 3 h ────►│ Finished     │
+        │ join or drop freely  │    time    │ 3-hour grace │                 │ counted as   │
         └──────────┬───────────┘            │ still live   │                 │ played       │
                    │                        └──────────────┘                 └──────────────┘
     captain declines│
@@ -168,7 +168,7 @@ not a feature.
         └──────────────────────┘
 ```
 
-A game finishes itself four hours after kickoff and assumes everyone showed up, so the
+A game finishes itself three hours after kickoff and assumes everyone showed up, so the
 ordinary case needs no input at all. The captain's post-game screen exists only to mark
 someone absent, add a venue-assigned player, or decline the game entirely. A finished game
 keeps its roster editable by captains forever.
@@ -232,7 +232,7 @@ only ever taps one button in the group chat stays a first-class member of the te
 - Franchises with defaults and a per-weekday schedule; create a game by picking a date
 - Per-team timezone, set by the captain
 - Multiple teams, one per chat — in the data model from day one, UI later
-- Auto-finish four hours after kickoff, plus an explicit Finish button
+- Auto-finish three hours after kickoff, plus an explicit Finish button
 - Add venue-assigned players who were never registered
 - Decline a game the team chose not to play
 - Game tags (music, detective, …) — the interim way to find past games in chat history, as a
@@ -292,7 +292,7 @@ Recorded so they don't get re-argued.
 | Guests are unlimited and take seats | The team is trusted to be fair rather than rate-limited by software. |
 | Guests are anonymous unless named | Naming is optional friction — but a guest who outlives their inviter must be named, or they drop. |
 | Frequent guests get added to the chat | Guest records are per-game. Someone who keeps coming becomes a member. |
-| Games stay live for four hours after kickoff | Plus an explicit Finish button. Late arrivals and last-minute changes are normal. |
+| A game lasts three hours | Plus an explicit Finish button. Late arrivals and last-minute changes are normal, so a game stays live for the whole of it. One number rather than two: the same three hours decide when the scheduler auto-finishes a game and how much of an evening its calendar event books, so the two can't drift. It was four hours until the calendar feed needed a duration and found none to reuse. |
 | Rosters are never frozen for captains | Composition changes on the night; the archive should record what happened. |
 | No undo window on dropping out | Dropping removes you entirely; re-registering puts you at the back. Simple, and it lets an unsure person step aside without holding a seat. |
 | A freed seat is promoted automatically and held | The next person is notified and the seat waits. If they go quiet, the captain steps in — no timers. |

@@ -522,11 +522,11 @@ saying what changed and why.
 
 Standalone and mergeable on its own; everything after it depends on `game.EndsAt` existing.
 
-- [ ] `GameExtensions`: a private `Duration` of 3 hours, and a `game.EndsAt` extension property
-- [ ] `SchedulerService` reads `game.EndsAt`; `AutoFinishAfter` deleted
-- [ ] `GameExtensionsTests`, and the two `SchedulerServiceTests` cases renamed off "four hours"
-- [ ] Docs: `CLAUDE.md` invariant 8, `docs/VISION.md` lifecycle diagram, feature list and
-      decision table, this file
+- [x] `GameExtensions`: a private `Duration` of 3 hours, and a `game.EndsAt` extension property
+- [x] `SchedulerService` reads `game.EndsAt`; `AutoFinishAfter` deleted
+- [x] `GameExtensionsTests`, and the two `SchedulerServiceTests` cases renamed off "four hours"
+- [x] Docs: `CLAUDE.md` invariant 8, `docs/VISION.md` lifecycle diagram, feature list and
+      decision table, `docs/STACK.md`'s scheduler section, this file
 
 ### Slice 1 — Migration and model
 

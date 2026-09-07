@@ -100,8 +100,10 @@ Breaking one of these is a bug, not a preference.
    indefinitely. No timers. If they go quiet, a captain removes them by hand.
 7. **Nothing is ever deleted.** Cancellation is a state change. The audit trail is what makes
    queue disputes answerable.
-8. **A game auto-finishes 4 hours after its start time.** Captains can finish it early with an
-   explicit button. Until then it is live and players can still self-serve.
+8. **A game lasts 3 hours, and auto-finishes at the end of them.** One number, in
+   `GameExtensions`, behind `game.EndsAt` — the scheduler's auto-finish and the calendar feed's
+   event duration both read it, so they cannot drift apart. Captains can finish a game early
+   with an explicit button. Until it ends it is live and players can still self-serve.
 9. **A finished game counts as played unless declined.** The ordinary case requires zero
    input.
 10. **Finishing a game materialises participation.** Until then the roster is derived from
