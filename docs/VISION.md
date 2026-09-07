@@ -1,6 +1,7 @@
 # Quizr — idea, vision and plans
 
-Status: **product description settled, implementation not started.**
+Status: **the bot is built** — M1-M9, plus the per-player calendar feed. The mini app is
+phase 2 and not started.
 
 ---
 
@@ -194,16 +195,22 @@ keeps its roster editable by captains forever.
 
 Everything runs in the team chat. Announcement posts with buttons, the pinned Board, the
 queue, guests, reminders — with tagged games standing in for a browsable archive, findable
-through Telegram's own hashtag search. Because the bot long-polls, **nothing ever connects
-to it**: no domain, no TLS, no open ports. It dials out to Telegram and talks to its
-database, and that is the whole surface it needs.
+through Telegram's own hashtag search. Because the bot long-polls, **nothing has to connect to
+it for it to work**: it dials out to Telegram and talks to its database.
+
+The one exception, added late in phase 1 rather than waiting for the app, is the per-player
+calendar subscription — a single read-only URL a phone calendar fetches. That is what a
+calendar client *is*, so it cannot be anything but inbound, and it brought a domain and TLS
+with it. Nothing else about the bot changed, and the feed is off entirely until a public URL
+is configured.
 
 ### Phase 2 — the mini app
 
 A second view onto the same data, added once the bot has been used in anger. The captain's
 game-creation UI moves first, because that is where the friction is — even a short dialogue
 is clumsy compared to a form, and it's the most frequent organiser task. Then the browsable
-archive, the calendar, the phone-calendar subscription feed, personal history.
+archive, the calendar view, personal history. The phone-calendar subscription feed was on this
+list and has already shipped — it needed none of the app.
 
 ### Phase 3 — open the app up
 
@@ -242,6 +249,12 @@ only ever taps one button in the group chat stays a first-class member of the te
   chat or as a private message. Only people signed up to that game are reminded, and a
   separate switch decides whether reminders continue while you're on the reserve
 - Reserve promotion ping
+- **`/mycalendar`** — a private `.ics` subscription link, so the games you're signed up to
+  appear in Google or Apple Calendar and stay current. One link per person covering every team
+  they play for, replaceable and revocable, and the link is the only credential — so it is
+  handed over privately and never appears in a group. Reserve places show as tentative and
+  don't book the evening. The chat stays the channel for last-minute changes, because a
+  subscribed calendar refreshes every 8-24 hours on Google and hourly on Apple
 - **`/myschedule`** — your own upcoming games, with the venue and whether you're playing or
   on the reserve. In the team chat it answers for that team and only you can see it; in a DM
   it merges every team you play for into one date-ordered list, since a person in two teams
@@ -260,8 +273,8 @@ only ever taps one button in the group chat stays a first-class member of the te
 - Statistics, captains only at first, opened up once it's clear which numbers are corrosive
 - Captain's game-creation UI (first thing to build in the app)
 - Archive, browsable by everyone — hashtagged tags are the phase 1 stand-in
-- Calendar view — all games, or only mine
-- Phone-calendar subscription feed
+- Calendar view in the app — all games, or only mine. The *subscription feed* has shipped;
+  this is the browsable view of the same thing
 - Personal history for players
 
 **Parked** — not rejected, just not now.
@@ -304,6 +317,9 @@ Recorded so they don't get re-argued.
 | A franchise is a template, not a live reference | Venue, capacity, price and time are copied onto a game when it's created and stay editable there, so editing a franchise never rewrites past games — and a one-off game, tied to no franchise at all, is simply one where nothing was copied. |
 | Reminders are opt-in, per slot, per channel | Three slots, all off by default, each set independently to the group chat or a private message. Only people signed up to a game are reminded. |
 | The nudge is mandatory and lives in the group | It can't be opted out of, and it goes to the team chat rather than private messages on purpose: replies like "ten minutes away" then land where the people waiting can see them, with no bot in the middle. |
+| The calendar feed shipped in phase 1, not with the app | It needed none of the app — no initData validation, no JSON API, no frontend — only a database the bot already had. What it did cost is the property phase 1 opened with: the bot now has a domain, TLS and one public route. That was weighed rather than discovered. |
+| The calendar token lives in the query string, not the path | It is the whole credential, so it must never reach a log. Every log record written during a request carries `RequestPath` in its scope and those scopes are shipped to Seq, so a token in the path leaks the moment anything at all logs — which happened, to an unrelated database warning. The scope does not carry the query string. |
+| A game lasts three hours, and that one number does both jobs | It decides when the scheduler auto-finishes a game left alone *and* how much of an evening its calendar event books. It was four hours, and a duration for the feed would have been a second number arrived at separately — which is how two constants drift until they contradict each other somewhere a player can see. |
 | A franchise carries a per-weekday schedule | One map from day to start time replaces separate "default time" and "typical days" fields, so the two can't drift apart. Creating a game becomes: pick the franchise, pick a date. |
 | Playing vs reserve is derived, not stored | A signup is who, which game and when; the split falls out of the ordering. Two people tapping for the last seat at the same moment simply get two timestamps. The invariant becomes a property of the data instead of something the code maintains. |
 

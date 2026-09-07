@@ -13,8 +13,10 @@ configured once, by hand, in Coolify — this file is that list.
 ## The one thing that will bite you
 
 **Exactly one instance may run at a time.** The bot uses long polling: two containers holding
-the same token both call `getUpdates`, and Telegram answers one of them with `409 Conflict`
-forever. The scheduler would also double-fire — two reminders, two auto-finishes.
+the same token both call `getUpdates`, and Telegram answers one of them `409 Conflict` for as
+long as both are running. Worse than the conflict, the scheduler double-fires: reminders and
+reserve promotions are protected by `Notification`'s unique constraint on `(SignupId, Kind)`,
+but **auto-finish is not**, so an overlap can materialise a game's `Participation` rows twice.
 
 There is no replica count to set: Coolify runs one container per application and has no such
 setting. What could put two of them side by side is a *rolling update*, where Coolify starts the
@@ -23,12 +25,18 @@ replacement before stopping the original.
 **The lever is the health check — so leave it unconfigured.** Coolify's rolling updates
 [require](https://coolify.io/docs/knowledge-base/rolling-updates) "a valid health check
 configured and passing", because that is how it decides the new container is ready to take over.
-This bot has none and cannot meaningfully have one: nothing listens on a port (`STACK.md`), it
-long-polls. With no health check a rolling update cannot proceed, which is what leaves the
-deployment stopping the old container before starting the new one.
+With none configured a rolling update cannot proceed, which is what leaves the deployment
+stopping the old container before starting the new one.
 
-So: expose no port, configure no health check. Adding one to make the deployment look tidier is
-the change that would break the bot.
+**This is now easier to get wrong than it used to be.** The container did not listen on a port
+at all until the calendar feed arrived (`docs/CALENDAR.md`); there was nothing to point a health
+check at. There is now — port 8080, answering HTTP — so adding a health check has become the
+obvious tidy-up, and it is the one change that would break the bot. **Expose the port, configure
+no health check.**
+
+The rule can only change once a second container is *harmless* rather than merely prevented —
+a singleton guard, so a second instance waits instead of polling. That is deliberately not part
+of the calendar feature; see the "Not in this feature" table in `docs/CALENDAR.md`.
 
 Worth confirming once on your first redeploy rather than trusting it, since Coolify's docs state
 the requirement without spelling out the fallback:
@@ -59,9 +67,21 @@ A `409 Conflict` in the logs is the unambiguous symptom of two pollers sharing o
    skip the login entirely. The image holds no secrets — they all arrive as environment
    variables — so public is a reasonable choice.
 6. **Set the environment variables** (below).
-7. **Leave the health check empty and expose no port.** See above — this is what keeps two
-   containers from ever running at once.
+7. **Leave the health check empty.** See above — this is what keeps two containers from ever
+   running at once, and it matters more now that there is a port to aim one at.
 8. **Copy the deploy webhook URL** from the application's Webhooks tab.
+
+Only if the calendar feed is wanted — the bot runs perfectly well without it:
+
+9. **Set the port to 8080** on the application, which is what the image exposes and what
+   `ASPNETCORE_HTTP_PORTS` sets in the `Dockerfile`.
+10. **Attach a domain.** Coolify's proxy terminates TLS and forwards; nothing in the container
+    needs a certificate. `Program.cs` calls `UseForwardedHeaders` with the known-proxy lists
+    cleared, because that proxy's address on the Docker network is neither knowable from here
+    nor stable — and the container is never reachable except through it.
+11. **Set `QUIZR_PUBLIC_URL`** to that domain, with scheme and no trailing path. Until it is
+    set the endpoint is not mapped at all and `/mycalendar` says the feed is unavailable, so
+    steps 9-11 can be done later, or never.
 
 ## GitHub, once
 
@@ -89,12 +109,26 @@ in the repository, and never as GitHub secrets, since the pipeline neither needs
 | `QUIZR_BOT_TOKEN` | yes | From @BotFather. |
 | `QUIZR_DB` | yes | `Host=<postgres-service>;Port=5432;Database=quizr;Username=quizr;Password=…` |
 | `QUIZR_ALERT_CHAT_ID` | no | A chat the bot messages on an unhandled exception. Without it those are logged only. |
+| `QUIZR_PUBLIC_URL` | no | e.g. `https://quizr.example.com`. Turns the calendar feed on: the endpoint is mapped and `/mycalendar` hands out links. Unset, neither exists and no tokens are issued. |
+| `ASPNETCORE_HTTP_PORTS` | no | Defaults to `8080` from the `Dockerfile`. Only worth setting if Coolify needs a different port. |
 
 ## What happens on deploy
 
 Migrations run at startup — `Program.cs` calls `Database.MigrateAsync()` before the bot starts
 polling — so there is no migration step in the pipeline and no manual one either. A deploy that
 adds a migration applies it as the new container comes up.
+
+Confirm on the first deploy after the calendar feed, rather than trusting it:
+
+```bash
+docker ps --filter name=quizr                      # expect exactly one container
+docker logs <container> 2>&1 | grep -i conflict    # expect nothing
+curl -sI https://<domain>/cal/feed.ics             # expect 404 — no token, so nothing to serve
+```
+
+That last one answering `404` rather than timing out is the whole of "the domain reaches the
+container", and it leaks nothing: a request with no token cannot be told from one with a wrong
+token, by design.
 
 The bot re-registers its command menu and profile description on every startup
 (`CommandMenu`, `BotProfile`), so a copy change in the strings files needs nothing beyond a
@@ -103,8 +137,10 @@ deploy.
 ## Observability
 
 Logs and metrics both leave the process over OTLP, pushed to a **Seq** instance. One
-destination, one protocol, one set of variables — nothing is scraped, and nothing connects to
-the bot, which is the property `README.md` cares about: it dials out.
+destination, one protocol, one set of variables — nothing is scraped and nothing connects to the
+bot to collect it, which is the property that matters here: telemetry dials out, exactly like
+the bot itself. The calendar feed is the one thing anything connects *to*, and it is a separate
+concern from this: no metric or log leaves through it.
 
 **Seq is not part of this deployment.** It runs as its own standalone service, shared with
 other projects, reachable on the Coolify network as `http://seq`. Nothing in this repository
@@ -197,10 +233,10 @@ Everything in "The one thing that will bite you" above still holds: **configure 
 check on the bot application.** It is the lever that enables rolling updates, and a rolling
 update is what puts two pollers on one token.
 
-That leaves liveness to be answered some other way, and an HTTP probe was never the right
-answer for this process anyway — the bot has no inbound traffic, so "the port answers" would
-prove nothing about whether it is still polling. The failure that matters is the loop stopping
-while the process stays up, which a probe cannot see.
+That leaves liveness to be answered some other way, and an HTTP probe is still the wrong answer
+even now that a port exists. The calendar endpoint answering proves Kestrel is up; it says
+nothing about whether the bot is still polling Telegram, and the failure that matters is exactly
+that — the loop stopping while the process stays alive. A probe cannot see it.
 
 `quizr.scheduler.ticks` is the answer instead. The scheduler runs every 30 seconds with nobody
 asking it to, so the counter advancing is proof the process is doing work, and a **gap** in it

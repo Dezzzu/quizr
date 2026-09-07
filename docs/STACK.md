@@ -117,11 +117,11 @@ of bug that stays invisible until someone's queue position is wrong.
 
 ### What actually gets harder
 
-**The bot stops being outbound-only.** Today "nothing ever connects to it" buys no domain, no
-TLS, no open ports and effectively no attack surface. The mini app requires all of them —
-a domain, certificates, a reverse proxy, and a public endpoint that has to be correct about
-auth. That is a larger cost than any project reshuffle, and it should be weighed before
-starting rather than discovered during.
+**The bot has already stopped being outbound-only**, and it happened before the mini app: the
+calendar feed brought the domain, the TLS and the reverse proxy with it (`docs/CALENDAR.md`).
+So this cost is paid rather than pending. What the mini app still adds is a public surface that
+has to be correct about *auth* — the feed's answer is a single unguessable URL and nothing else,
+which does not generalise to a screen that can act on somebody's behalf.
 
 **Stay single-process.** Bot and web in one host keeps startup migrations and the in-process
 edit debouncer valid. Two processes breaks both — see the revisit table — and "just deploy the

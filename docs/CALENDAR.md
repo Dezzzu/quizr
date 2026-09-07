@@ -637,9 +637,16 @@ Standalone and mergeable on its own; everything after it depends on `game.EndsAt
 
 ### Slice 5 — Wiring, config, deployment
 
-- [ ] Dockerfile: `aspnet` runtime image, `ASPNETCORE_HTTP_PORTS`
-- [ ] `QUIZR_PUBLIC_URL` read in `Program.cs`, feature gated on it
-- [ ] `docs/DEPLOY.md`: port, domain, env vars, and the health-check warning — restated, not resolved
-- [ ] `README.md`: setup, and the "nothing ever connects to it" claim corrected
-- [ ] `VISION.md`: feature status moved out of **Later**, decision-log rows
-- [ ] Final pass over `PLAN.md` and this file
+- [x] Dockerfile: `aspnet` runtime image, `ASPNETCORE_HTTP_PORTS=8080`, `EXPOSE`
+- [x] `QUIZR_PUBLIC_URL` read in `Program.cs`, feature gated on it (landed with slice 3)
+- [x] `docs/DEPLOY.md`: port, domain, env vars, and the health-check warning — restated and
+      sharpened, not resolved
+- [x] `README.md`: setup, and the "nothing ever connects to it" claim corrected (landed with
+      slice 3, rather than leaving a false statement on `main` for two slices)
+- [x] `docs/VISION.md`: moved out of **Later** into the v1 list, phase 1 and 2 text corrected,
+      three decision-log rows
+- [x] Final pass over `docs/PLAN.md` and this file
+
+The image was built and run to check the three things only a container can answer: it carries
+`Microsoft.AspNetCore.App`, Kestrel binds `http://[::]:8080`, and it runs as the unprivileged
+`quizr` user with `tzdata` present.

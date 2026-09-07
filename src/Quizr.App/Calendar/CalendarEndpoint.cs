@@ -11,7 +11,7 @@ using Quizr.Domain;
 
 namespace Quizr.App.Calendar;
 
-// GET/HEAD /cal/{token}.ics — the only thing that has ever connected *to* this bot.
+// GET/HEAD /cal/feed.ics?t=<token> — the only thing that has ever connected *to* this bot.
 //
 // The shape of a request, in the order it gets cheaper to answer:
 //

@@ -333,6 +333,11 @@ alongside them.
 Built in slices, each ending green: a shared game duration; the migration and the version
 interceptor; ICS serialization; the endpoint; the bot commands; wiring and deployment.
 
+Done when: a player can run `/mycalendar`, paste the link into Google or Apple Calendar, and
+see the games they are signed up to — with the reserve marked and not booking the evening —
+kept current without anyone doing anything; the link can be replaced and turned off; and the
+feed is off entirely, with no tokens issued, until `QUIZR_PUBLIC_URL` is set.
+
 Governed by: invariants 1-3 and 8-11 (what the feed may say about a roster), `docs/CALENDAR.md`.
 
 ## Deliberately not in scope

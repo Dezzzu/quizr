@@ -3,7 +3,8 @@
 Telegram bot for pub quiz teams: game announcements with a real roster, a reserve queue,
 guests, and reminders — instead of counting message reactions.
 
-**Status:** the bot is built (M1–M9) and passing tests. The mini app is phase 2, not started.
+**Status:** the bot is built (M1–M9, plus per-player calendar feeds) and passing tests. The
+mini app is phase 2, not started.
 
 ## What it does
 

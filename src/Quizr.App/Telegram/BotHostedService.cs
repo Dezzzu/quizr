@@ -7,7 +7,8 @@ using Telegram.Bot.Types.Enums;
 
 namespace Quizr.App.Telegram;
 
-// Long polling — nothing ever connects to the bot (STACK.md). allowed_updates is set
+// Long polling — nothing connects to the bot to drive it (STACK.md); the calendar feed is the
+// one inbound route and has nothing to do with this. allowed_updates is set
 // explicitly: Telegram excludes ChatMember unless it's listed, and the failure is silent.
 public sealed class BotHostedService : BackgroundService
 {

@@ -1,8 +1,9 @@
 # syntax=docker/dockerfile:1
 
 # Multi-stage build: SDK image compiles and publishes, the smaller runtime image
-# actually ships. Long polling means nothing needs to listen on a port (STACK.md),
-# so this uses the plain runtime image, not aspnet.
+# actually ships. The aspnet image rather than the plain runtime one, because the
+# per-player calendar feed is served over HTTP (docs/CALENDAR.md) — the bot itself
+# still long-polls and connects outward for everything it does.
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
@@ -17,7 +18,7 @@ RUN dotnet restore src/Quizr.App/Quizr.App.csproj
 COPY src/ src/
 RUN dotnet publish src/Quizr.App/Quizr.App.csproj -c Release -o /app --no-restore
 
-FROM mcr.microsoft.com/dotnet/runtime:10.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 
 # CLAUDE.md: tzdata must be present in the image, and the image rebuilt
 # periodically — TimeZoneInfo reads the OS zone database, so a stale image
@@ -27,6 +28,12 @@ FROM mcr.microsoft.com/dotnet/runtime:10.0 AS runtime
 RUN apt-get update \
     && apt-get install -y --no-install-recommends tzdata \
     && rm -rf /var/lib/apt/lists/*
+
+# Set explicitly rather than inherited from the base image, so the port Coolify has to be
+# told about is written down in the same place as everything else about this container.
+# Above 1024, so the unprivileged user below can bind it.
+ENV ASPNETCORE_HTTP_PORTS=8080
+EXPOSE 8080
 
 WORKDIR /app
 COPY --from=build /app .

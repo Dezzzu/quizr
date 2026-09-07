@@ -62,10 +62,10 @@ builder.Logging.AddFilter("System.Net.Http.HttpClient", LogLevel.Warning);
 builder.Logging.AddFilter("Polly", LogLevel.Warning);
 
 // The calendar token is the credential and lives in the request path, so ASP.NET's own
-// "Request starting HTTP/1.1 GET /cal/<token>.ics" at Information would write it to stdout and
-// ship it to Seq on every fetch — the same leak the HttpClient filter above exists for, now
-// pointing inward. CalendarEndpoint catches its own exceptions for the other half of this: an
-// exception reaching the diagnostics middleware carries RequestPath in a logging scope.
+// "Request starting HTTP/1.1 GET /cal/feed.ics?t=<token>" at Information prints the whole URL,
+// query included, which would write the credential to stdout and ship it to Seq on every fetch
+// — the same leak the HttpClient filter above exists for, now pointing inward. The token being
+// in the query rather than the path is what handles the rest: see CalendarUrls.Route.
 builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
 
 var botToken =
@@ -114,14 +114,14 @@ builder.Services.AddSingleton<ITelegramBotClient>(sp =>
     return new TelegramBotClient(botToken, httpClient);
 });
 
-// Logs and metrics both leave over OTLP, which the process pushes — so the bot keeps the
-// property that nothing ever connects to it (README): no port to expose, no scrape target, and
-// nothing for Coolify to mistake for a health check it could hang a rolling update on.
-// DEPLOY.md explains why a second container holding the same token is the one failure that
-// never recovers.
+// Logs and metrics both leave over OTLP, which the process pushes: no scrape target, and
+// nothing for Coolify to mistake for a health check it could hang a rolling update on. There is
+// a port now, for the calendar feed — which makes that second point more important rather than
+// less. DEPLOY.md explains why two containers on one bot token is the failure worth this care.
 //
-// Still deliberately no tracing: an HttpClient span records the request URI in url.full, and
-// every Telegram call carries the bot token in its path. The metrics and logs the same
+// Still deliberately no tracing, and the calendar feed adds a second reason: an HttpClient span
+// records the request URI in url.full, every Telegram call carries the bot token in its path,
+// and an inbound span would record the feed's own URL — query string included. The metrics and logs the same
 // instrumentation emits are labelled with server.address, method and status code only, so they
 // carry no secret — the same leak Program.cs already filters out of the HTTP logs below.
 builder.Services.AddMetrics();
