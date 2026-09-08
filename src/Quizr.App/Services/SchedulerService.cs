@@ -171,7 +171,7 @@ public sealed class SchedulerService
     // reposting it here would fight that.
     private async Task VerifyOneAnnouncementAsync(Team team, List<Game> games, long tickNumber, CancellationToken ct)
     {
-        var live = games.Where(g => !g.IsFinished && !g.IsDeclined).ToList();
+        var live = games.Where(g => g is { IsFinished: false, IsDeclined: false }).ToList();
         if (live.Count == 0)
         {
             return;

@@ -20,6 +20,11 @@ public sealed class PostgresFixture : IAsyncInitializer, IAsyncDisposable
         await db.Database.MigrateAsync();
     }
 
+    // For anything that needs a connection of its own rather than a DbContext —
+    // BotInstanceLock holds one outside EF's pool, because a pooled connection handed back
+    // would take its advisory lock with it.
+    public string ConnectionString => _container.GetConnectionString();
+
     // The interceptor is on by default because it is on in production: a service test that
     // saved without it would be exercising a context this app never constructs. Pass a
     // FakeTimeProvider where a test asserts on Game.RevisedAt.

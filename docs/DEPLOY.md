@@ -10,43 +10,38 @@ push to main → build + tests (build job) → image → ghcr.io → webhook →
 `.github/workflows/build.yml` owns the left-hand side. Everything right of the webhook is
 configured once, by hand, in Coolify — this file is that list.
 
-## The one thing that will bite you
+## Only one instance ever does the work
 
-**Exactly one instance may run at a time.** The bot uses long polling: two containers holding
-the same token both call `getUpdates`, and Telegram answers one of them `409 Conflict` for as
-long as both are running. Worse than the conflict, the scheduler double-fires: reminders and
-reserve promotions are protected by `Notification`'s unique constraint on `(SignupId, Kind)`,
-but **auto-finish is not**, so an overlap can materialise a game's `Participation` rows twice.
+**Exactly one process may poll Telegram.** Two containers holding the same token both call
+`getUpdates`, and Telegram answers one of them `409 Conflict` for as long as both are running.
+Worse than the conflict, the scheduler double-fires: reminders and reserve promotions are
+protected by `Notification`'s unique constraint on `(SignupId, Kind)`, but **auto-finish is
+not**, so an overlap would materialise a game's `Participation` rows twice.
 
-There is no replica count to set: Coolify runs one container per application and has no such
-setting. What could put two of them side by side is a *rolling update*, where Coolify starts the
-replacement before stopping the original.
+**This is now enforced in the process rather than by deployment discipline.** `BotInstanceLock`
+takes a Postgres advisory lock at startup; whoever holds it polls Telegram and runs the
+scheduler, and whoever does not waits, serves health checks and does nothing. A second container
+is therefore *harmless* rather than merely prevented, which is what changed the rule below. See
+`docs/HEALTH.md`.
 
-**The lever is the health check — so leave it unconfigured.** Coolify's rolling updates
-[require](https://coolify.io/docs/knowledge-base/rolling-updates) "a valid health check
-configured and passing", because that is how it decides the new container is ready to take over.
-With none configured a rolling update cannot proceed, which is what leaves the deployment
-stopping the old container before starting the new one.
+This file used to say: configure no health check, because a passing one is what lets Coolify
+start the replacement before stopping the original. That was true and is now obsolete. **A
+health check is safe, and worth having** — the sequence it produces is: the new container starts,
+finds the lock held, stands by, reports ready, Coolify stops the old one, the lock is released,
+and the new one takes over within about five seconds. Nothing polls twice, and nothing is lost:
+Telegram queues updates while nobody is asking for them.
 
-**This is now easier to get wrong than it used to be.** The container did not listen on a port
-at all until the calendar feed arrived (`docs/CALENDAR.md`); there was nothing to point a health
-check at. There is now — port 8080, answering HTTP — so adding a health check has become the
-obvious tidy-up, and it is the one change that would break the bot. **Expose the port, configure
-no health check.**
-
-The rule can only change once a second container is *harmless* rather than merely prevented —
-a singleton guard, so a second instance waits instead of polling. That is deliberately not part
-of the calendar feature; see the "Not in this feature" table in `docs/CALENDAR.md`.
-
-Worth confirming once on your first redeploy rather than trusting it, since Coolify's docs state
-the requirement without spelling out the fallback:
+Still worth confirming on a redeploy rather than trusting it:
 
 ```bash
-docker ps --filter name=quizr                 # expect exactly one container
-docker logs <container> 2>&1 | grep -i conflict   # expect nothing
+docker ps --filter name=quizr                      # one container once the deploy settles
+docker logs <container> 2>&1 | grep -i conflict    # expect nothing, ever
+docker logs <container> 2>&1 | grep -i "leading"   # "This instance is leading"
 ```
 
-A `409 Conflict` in the logs is the unambiguous symptom of two pollers sharing one token.
+A `409 Conflict` would be the unambiguous symptom of two pollers sharing one token, and with the
+lock in place it should now be unreachable. If you ever see one, the lock is not doing its job
+and that is a bug rather than a deployment mistake.
 
 ## Coolify, once
 
@@ -67,21 +62,42 @@ A `409 Conflict` in the logs is the unambiguous symptom of two pollers sharing o
    skip the login entirely. The image holds no secrets — they all arrive as environment
    variables — so public is a reasonable choice.
 6. **Set the environment variables** (below).
-7. **Leave the health check empty.** See above — this is what keeps two containers from ever
-   running at once, and it matters more now that there is a port to aim one at.
-8. **Copy the deploy webhook URL** from the application's Webhooks tab.
+7. **Set the port to 8080**, which is what the image exposes and what `ASPNETCORE_HTTP_PORTS`
+   sets in the `Dockerfile`. Needed for the health check even if no domain is ever attached.
+8. **Configure the health check:**
+
+   | Field | Value |
+   | --- | --- |
+   | Path | `/health/ready` |
+   | Port | `8080` |
+   | Method | `GET` |
+   | Expected status | `200` |
+   | Interval | `30s` |
+   | Timeout | `5s` |
+   | Retries | `3` |
+   | Start period | `40s` |
+
+   `/health/ready` rather than `/health/live`, because it is the one that means something: it
+   reports unhealthy when Postgres is unreachable, or when the instance is leading and its
+   scheduler has stopped ticking. A standby reports healthy — it is ready to take over, which is
+   exactly what Coolify is asking. The start period covers startup migrations and the first
+   scheduler tick.
+
+   The image installs `curl` for this. The `aspnet` base ships neither `curl` nor `wget`, and a
+   health check runs *inside* the container, so without it the probe fails permanently and every
+   deploy hangs waiting for a container that can never report healthy.
+
+9. **Copy the deploy webhook URL** from the application's Webhooks tab.
 
 Only if the calendar feed is wanted — the bot runs perfectly well without it:
 
-9. **Set the port to 8080** on the application, which is what the image exposes and what
-   `ASPNETCORE_HTTP_PORTS` sets in the `Dockerfile`.
 10. **Attach a domain.** Coolify's proxy terminates TLS and forwards; nothing in the container
     needs a certificate. `Program.cs` calls `UseForwardedHeaders` with the known-proxy lists
     cleared, because that proxy's address on the Docker network is neither knowable from here
     nor stable — and the container is never reachable except through it.
 11. **Set `QUIZR_PUBLIC_URL`** to that domain, with scheme and no trailing path. Until it is
     set the endpoint is not mapped at all and `/mycalendar` says the feed is unavailable, so
-    steps 9-11 can be done later, or never.
+    steps 10-11 can be done later, or never.
 
 ## GitHub, once
 
@@ -227,18 +243,30 @@ interval is on the order of 10–15 million a year for this one bot. There is ro
 retention policy under Data → Storage with `series` as the deletion target before a third
 project arrives, not after.
 
-### The heartbeat, and why there is still no health check
+### The heartbeat, and the probe that asks the same question
 
-Everything in "The one thing that will bite you" above still holds: **configure no health
-check on the bot application.** It is the lever that enables rolling updates, and a rolling
-update is what puts two pollers on one token.
+The failure that matters is the scheduler loop stopping while the process stays alive. It has to
+be asked about specifically: the calendar endpoint answering only proves Kestrel is up, and
+`SchedulerHostedService` catches a failed tick and goes round again, so nothing crashes.
 
-That leaves liveness to be answered some other way, and an HTTP probe is still the wrong answer
-even now that a port exists. The calendar endpoint answering proves Kestrel is up; it says
-nothing about whether the bot is still polling Telegram, and the failure that matters is exactly
-that — the loop stopping while the process stays alive. A probe cannot see it.
+Two things watch for it now, and they are the same signal read differently.
 
-`quizr.scheduler.ticks` is the answer instead. The scheduler runs every 30 seconds with nobody
+`quizr.scheduler.ticks` is the metric: chart the series in Seq and alert when the increase over
+five minutes reaches zero. **`GET /health/ready`** is the question: unhealthy when Postgres is
+unreachable, or when this instance is leading and has not completed a tick in three minutes.
+**`GET /health/live`** reports only that the process answered, which is deliberately almost
+nothing — it exists so the two can fail separately, and stopping Postgres under a running bot
+demonstrates why: liveness stays `200`, readiness turns `503`.
+
+Coolify's own health check should point at `/health/ready` (see "Coolify, once"). An **off-box**
+uptime monitor should point at it too, through the domain if one is attached — that closes the
+gap the next section names, since Seq runs on the same VPS as the bot and cannot tell you the box
+is gone.
+
+Worth knowing: readiness reports healthy for an instance that holds no lock. A standby is ready —
+started, serving, and deliberately idle. Demanding scheduler ticks of it would mean it could
+never be declared ready, so Coolify would never stop the leader, so it could never start
+ticking. The scheduler runs every 30 seconds with nobody
 asking it to, so the counter advancing is proof the process is doing work, and a **gap** in it
 is the alert: chart the series in Seq and create the alert from the chart, firing when the
 increase over five minutes reaches zero.

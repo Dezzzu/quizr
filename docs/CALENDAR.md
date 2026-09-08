@@ -20,17 +20,17 @@ Three standing claims stop being true, and each is load-bearing somewhere:
 | Generic host, no web server in phase 1 | `STACK.md` | `WebApplication`, which `STACK.md` already predicted costs "a few lines" with hosted services carrying over unchanged. That prediction held. |
 | The phone-calendar feed is a phase 2 / **Later** item | `VISION.md` | Pulled forward. It needs none of the mini app — no initData validation, no JSON API, no frontend. |
 
-**The health check is the trap, and this feature does not touch it.** `DEPLOY.md` explains
-that Coolify rolling updates require a configured, passing health check, and that the bot
-deliberately has none — which is the only thing stopping two containers from running at once.
-Now that an HTTP port exists, adding one becomes the obvious tidy-up. **Do not.** Exposing the
-port is safe; configuring a health check is not.
+**The health check was the trap, and this feature deliberately did not touch it.** At the time
+of writing, Coolify rolling updates required a configured, passing health check, and the bot
+deliberately had none — the only thing stopping two containers from running at once. Adding a
+port made that easy to get wrong.
 
-What an overlap actually costs, checked against the code rather than `DEPLOY.md`'s wording:
-reminders and reserve promotions are already safe, because `Notification`'s unique constraint on
-`(SignupId, Kind)` rejects the duplicate; **auto-finish is not**, since `GameService.FinishAsync`
-has no such guard and would materialise `Participation` rows twice; and Telegram answers one
-poller `409` until the other exits, which clears on its own rather than lasting forever.
+That has since been resolved elsewhere: `docs/HEALTH.md` added a Postgres advisory lock, so a
+second container stands by instead of polling, and a health check is now configured. The cost an
+overlap used to carry is worth keeping on record, because it is what the lock exists to prevent:
+reminders and reserve promotions were already safe, since `Notification`'s unique constraint on
+`(SignupId, Kind)` rejects the duplicate; **auto-finish was not**, as `GameService.FinishAsync`
+has no such guard and would materialise `Participation` rows twice.
 
 ## Not in this feature
 
@@ -38,8 +38,7 @@ Named so they are not re-derived, and not re-litigated:
 
 | Kept out | Why |
 | --- | --- |
-| **Health-check endpoints** | Considered, and deliberately not here. They are worth having — `/health/ready` asserting that the scheduler has ticked recently is `quizr.scheduler.ticks` expressed as a probe, and pointed at an *external* monitor it closes the gap `DEPLOY.md` names as open, since Seq runs on the same VPS as the bot. But they are a deployment concern, not a calendar one, and they arrive tangled with the rule above. Their own PR. |
-| **A singleton guard** (a Postgres advisory lock, so a second container waits instead of polling) | The thing that would make Coolify's health check safe to turn on, and therefore the thing that has to land *before* `DEPLOY.md`'s central rule can flip. A deployment-policy change deserving its own review, not a paragraph inside a feature. |
+| **Health-check endpoints** and **a singleton guard** | Kept out of this feature and built next, in `docs/HEALTH.md` — a deployment concern rather than a calendar one, and a change to `DEPLOY.md`'s central rule deserved its own review rather than a paragraph inside a feature. Both now exist. |
 | **Team-level caching, background pre-rendering** | See §5. Revisit if a roster ever runs to hundreds. |
 | **Two-way sync, CalDAV write access, editing a game from a calendar client** | The feed is a projection. The bot's database stays the source of truth, and a calendar client is not a second front door onto it. |
 | **Email invitations — `METHOD:REQUEST`, iTIP, iMIP, RSVP over email** | Sign-up lives on the announcement's buttons. A second RSVP channel would need reconciling with the queue, and invariant 1 says queue order is `created_at` and nothing else. |

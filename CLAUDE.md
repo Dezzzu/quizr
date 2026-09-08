@@ -170,9 +170,15 @@ Breaking one of these is a bug, not a preference.
 The bot gained exactly one inbound route, for the per-player calendar feed
 (`docs/CALENDAR.md`). Everything else about it still dials outward.
 
-- **`GET`/`HEAD /api/cal/feed.ics?t=<token>`, and nothing else.** Read-only, touches no Telegram
-  API, and not mapped at all unless `QUIZR_PUBLIC_URL` is set — so a local run and a deployment
-  with no domain behave exactly as they did before it existed.
+- **`GET`/`HEAD /api/cal/feed.ics?t=<token>`** — the calendar feed. Read-only, touches no
+  Telegram API, and not mapped at all unless `QUIZR_PUBLIC_URL` is set, so a local run and a
+  deployment with no domain behave exactly as they did before it existed.
+- **`GET /health/live` and `GET /health/ready`** — always mapped, since whether the bot is
+  healthy is worth asking on a deployment serving no feed. Liveness runs no checks and is
+  exempt from rate limiting; readiness asks whether Postgres is reachable and the scheduler is
+  still ticking. Bodies are the bare status word: they are unauthenticated, so which component
+  is unhappy stays in the logs. See `docs/HEALTH.md`, and note that having them does **not**
+  mean Coolify may be pointed at one — see below.
 - **The token is a credential**, and the only one: a calendar client cannot perform interactive
   auth, so whoever holds the URL is the subscriber. It must never reach a log, and **that is
   why it is a query parameter rather than a path segment**. Every log record written during a
@@ -184,9 +190,11 @@ The bot gained exactly one inbound route, for the per-player calendar feed
 - **Every failure is a bare `404`** — malformed, unknown and revoked are deliberately
   indistinguishable. No `401`, no `403`: a challenge teaches a scanner the path is real, and no
   calendar client could answer one.
-- **Do not configure a Coolify health check**, even though there is now a port to point one at.
-  See `docs/DEPLOY.md`: a passing health check is what lets Coolify start a second container
-  before stopping the first, and two long-pollers on one bot token collide.
+- **A Coolify health check is configured, at `/health/ready`** — safe because `BotInstanceLock`
+  makes a second container harmless rather than merely prevented. It used to be forbidden; if
+  you find a comment saying so, it predates `docs/HEALTH.md`. What must stay true is the thing
+  underneath: exactly one process polls Telegram, enforced by the advisory lock rather than by
+  hoping two containers never overlap.
 
 ## Time
 
@@ -252,9 +260,12 @@ Native BCL types throughout.
   both conclude the same person moved up, and a crash mid-send can repeat the message on
   restart. One mechanism solves both: a notifications table keyed `(signup_id, kind)` with a
   unique constraint, written in the same transaction as the change that caused it. A
-  duplicate becomes a rejected insert rather than a second message. **There are no locks in
-  this system** — if you find yourself wanting one, the derived-state rule is being broken
-  somewhere.
+  duplicate becomes a rejected insert rather than a second message. **There are no locks over
+  domain state** — if you find yourself wanting one, the derived-state rule is being broken
+  somewhere. The one lock in the system is not over domain state at all: `BotInstanceLock`
+  takes a Postgres advisory lock to decide which container polls Telegram and runs the
+  scheduler, because "which process is in charge" is a question no amount of derived state can
+  answer. See `docs/HEALTH.md`.
 - **Record captain actions that affect someone else in `AuditEntry`, in the same transaction
   as the change** — a small, fixed set of actions (declining or finishing a game, granting or
   revoking captaincy, registering or dropping someone on their behalf, editing a finished

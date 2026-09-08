@@ -1,4 +1,5 @@
 using System.Globalization;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -7,6 +8,8 @@ using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using Quizr.App.Calendar;
 using Quizr.App.Data;
+using Quizr.App.Health;
+using Quizr.App.Http;
 using Quizr.App.Localization;
 using Quizr.App.Scheduling;
 using Quizr.App.Services;
@@ -154,13 +157,34 @@ builder.Services.AddScoped<CalendarEndpoint>();
 // keys are unreachable but would otherwise sit here for the life of the process.
 builder.Services.AddMemoryCache(options => options.SizeLimit = 64 * 1024 * 1024);
 
-// The numbers, and the reasoning behind them, live with the feature rather than here.
-builder.Services.AddRateLimiter(CalendarRateLimits.Configure);
+// The numbers, and the reasoning for splitting them between a global limiter and a
+// per-endpoint policy, live in RateLimits rather than here.
+builder.Services.AddRateLimiter(RateLimits.Configure);
 
 // Caps how long a feed request may take. Middleware rather than a linked CancellationToken
 // inside the handler: the timeout is then declared next to the route it applies to, and a
 // request that runs over answers 504 rather than the 500 a hand-rolled one produced.
 builder.Services.AddRequestTimeouts();
+
+// Answered whatever else is configured: whether the bot is healthy is worth asking on a
+// deployment that serves no calendar feed at all.
+builder.Services.AddSingleton<SchedulerHeartbeat>();
+
+// One object, two registrations: the hosted service that acquires and holds the lock is the
+// same instance the bot, the scheduler and the health check ask who is leading.
+builder.Services.AddSingleton<BotInstanceLock>(sp => new BotInstanceLock(
+    connectionString,
+    sp.GetRequiredService<IHostApplicationLifetime>(),
+    sp.GetRequiredService<ILogger<BotInstanceLock>>()
+));
+builder.Services.AddSingleton<IBotInstanceLock>(sp => sp.GetRequiredService<BotInstanceLock>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<BotInstanceLock>());
+
+builder
+    .Services.AddHealthChecks()
+    .AddCheck<DatabaseHealthCheck>("database", tags: [HealthEndpoints.ReadyTag])
+    .AddCheck<SchedulerHealthCheck>("scheduler", tags: [HealthEndpoints.ReadyTag])
+    .AddCheck<LeadershipHealthCheck>("leadership", tags: [HealthEndpoints.ReadyTag]);
 
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IStrings, Strings>();
@@ -210,6 +234,21 @@ app.UseForwardedHeaders(forwardedHeaders);
 
 app.UseRateLimiter();
 
+// Bodies stay the bare status word: these are unauthenticated, and which component is unhappy
+// is nobody's business but ours — the reason is in the logs and in Seq.
+//
+// Liveness runs no checks at all (its predicate never matches) and opts out of rate limiting:
+// it does no work, and an endpoint that exists to be polled must never answer 429 to the thing
+// polling it. Readiness stays limited, because it touches the database and an unauthenticated
+// route that does should be bounded.
+app.MapHealthChecks(HealthEndpoints.Live, new HealthCheckOptions { Predicate = _ => false })
+    .DisableRateLimiting();
+
+app.MapHealthChecks(
+    HealthEndpoints.Ready,
+    new HealthCheckOptions { Predicate = registration => registration.Tags.Contains(HealthEndpoints.ReadyTag) }
+);
+
 // After UseRouting, which WebApplication inserts ahead of this, so the middleware can see the
 // per-endpoint policy WithRequestTimeout attaches below.
 app.UseRequestTimeouts();
@@ -225,7 +264,10 @@ if (publicUrl is not null)
             (HttpContext http, CalendarEndpoint endpoint, string? t, CancellationToken ct) =>
                 endpoint.HandleAsync(http, t, ct)
         )
-        .WithRequestTimeout(CalendarEndpoint.Timeout);
+        .WithRequestTimeout(CalendarEndpoint.Timeout)
+        // The per-token limit is the feed's own; the per-address one is global and needs no
+        // opt-in. See RateLimits.
+        .RequireRateLimiting(RateLimits.CalendarFeedPolicy);
 }
 
 await app.RunAsync();

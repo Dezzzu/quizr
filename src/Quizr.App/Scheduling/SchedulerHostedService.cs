@@ -1,3 +1,4 @@
+using Quizr.App.Health;
 using Quizr.App.Services;
 using Quizr.App.Telemetry;
 
@@ -12,18 +13,24 @@ public sealed class SchedulerHostedService : BackgroundService
     private static readonly TimeSpan TickInterval = TimeSpan.FromSeconds(30);
 
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IBotInstanceLock _instanceLock;
+    private readonly SchedulerHeartbeat _heartbeat;
     private readonly TimeProvider _clock;
     private readonly QuizrMetrics _metrics;
     private readonly ILogger<SchedulerHostedService> _logger;
 
     public SchedulerHostedService(
         IServiceScopeFactory scopeFactory,
+        IBotInstanceLock instanceLock,
+        SchedulerHeartbeat heartbeat,
         TimeProvider clock,
         QuizrMetrics metrics,
         ILogger<SchedulerHostedService> logger
     )
     {
         _scopeFactory = scopeFactory;
+        _instanceLock = instanceLock;
+        _heartbeat = heartbeat;
         _clock = clock;
         _metrics = metrics;
         _logger = logger;
@@ -36,12 +43,24 @@ public sealed class SchedulerHostedService : BackgroundService
         // the process that outlives a single tick — the service itself is resolved fresh from a
         // new scope below. Resetting to zero on a deploy just means the cycle restarts, which
         // costs nothing.
+        // Reminders, auto-finish and pin maintenance all write, and auto-finish has no
+        // duplicate guard of its own — so a second instance must not tick at all.
+        await _instanceLock.WaitForLeadershipAsync(stoppingToken);
+
         var tickNumber = 0L;
 
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
+                // Re-checked every tick rather than only at the start: leadership is lost by
+                // the database session dying, and this is what stops the most damaging work in
+                // the seconds before the process notices and exits.
+                if (!_instanceLock.IsLeading)
+                {
+                    break;
+                }
+
                 using var scope = _scopeFactory.CreateScope();
                 await scope
                     .ServiceProvider.GetRequiredService<SchedulerService>()
@@ -51,6 +70,11 @@ public sealed class SchedulerHostedService : BackgroundService
                 // RunTickAsync so it means "a whole tick completed" — a tick that threw past
                 // the per-team handling leaves a gap, which is the point of a heartbeat.
                 _metrics.RecordSchedulerTick();
+
+                // Same moment and the same meaning as the counter above — a whole tick
+                // completed — but readable as a question rather than charted as a rate, which
+                // is what a readiness probe needs.
+                _heartbeat.Record(_clock.GetUtcNow());
             }
             catch (OperationCanceledException)
             {
