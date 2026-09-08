@@ -177,11 +177,32 @@ That last row is the whole reason the two are separate questions rather than one
 
 ### Slice 3 — The singleton guard
 
-- [ ] `BotInstanceLock`: acquire on start, hold, stop the application if the connection drops
-- [ ] `BotHostedService` and `SchedulerHostedService` wait on it before doing anything
-- [ ] Readiness reports the tick check only while leading
-- [ ] Integration tests for lead, stand down, and hand over
-- [ ] Docs: `docs/STACK.md`'s no-locks rule gains the distinction
+- [x] `BotInstanceLock`: acquires in the background, holds, stops the application if its session
+      drops. Acquisition must not block startup — a standby that blocked would never serve
+      `/health/ready`, never be declared ready, and so deadlock the very rolling update it exists
+      to make safe
+- [x] `BotHostedService` and `SchedulerHostedService` wait on it; the scheduler re-checks every
+      tick, which bounds the damage in the seconds between losing the lock and exiting
+- [x] Readiness reports the tick check only while leading, plus a `LeadershipHealthCheck` so a
+      standby is legible rather than merely silent
+- [x] `BotInstanceLockTests` against real Postgres — lead, stand by, hand over
+- [x] Docs: the no-locks rule in `CLAUDE.md` gains the distinction
+
+**The connection must not be pooled, and that is the whole feature.** An advisory lock belongs
+to its session, and a pooled connection handed back keeps that session alive: Npgsql defers the
+`DISCARD ALL` that would release the lock until the connection is next *used*, which on shutdown
+is never. The lock outlives the container that took it, and the replacement waits for an idle
+timeout rather than taking over. Nothing about the code looked wrong — the handover test failed,
+which is why it was written before the mechanism was trusted.
+
+Verified with two real processes against one database:
+
+| | |
+| --- | --- |
+| A starts | "This instance is leading", polls Telegram |
+| B starts | "Another instance is leading", **never calls Telegram at all** |
+| B's `/health/ready` | `200 Healthy` — a standby is ready, which is what lets a rolling update finish |
+| A stopped | B logs "This instance is leading" and starts polling, with nothing coordinating it |
 
 ### Slice 4 — Flip the rule
 

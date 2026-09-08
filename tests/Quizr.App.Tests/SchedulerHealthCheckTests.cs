@@ -77,9 +77,44 @@ public class SchedulerHealthCheckTests
         heartbeat.LastTickAt.Should().Be(Now.AddMinutes(5));
     }
 
-    private static Task<HealthCheckResult> CheckAsync(SchedulerHeartbeat heartbeat, TimeProvider clock) =>
-        new SchedulerHealthCheck(heartbeat, clock).CheckHealthAsync(
+    // The standby case, which is the one that would stall a rolling update if it regressed: an
+    // instance that holds no lock has no scheduler to check, has never ticked, and is entirely
+    // healthy. Demanding ticks of it would mean it could never be declared ready, so Coolify
+    // would never stop the leader, so it could never start ticking.
+    [Test]
+    public async Task AStandbyThatHasNeverTickedIsHealthy()
+    {
+        var result = await CheckAsync(new SchedulerHeartbeat(), new FakeTimeProvider(Now), leading: false);
+
+        result.Status.Should().Be(HealthStatus.Healthy);
+    }
+
+    // And the counterpart: standing by excuses a missing tick, it does not excuse a stalled one
+    // in an instance that is supposed to be doing the work.
+    [Test]
+    public async Task ALeaderWithAStaleTickIsStillUnhealthy()
+    {
+        var clock = new FakeTimeProvider(Now);
+        var heartbeat = new SchedulerHeartbeat();
+        heartbeat.Record(Now);
+
+        clock.Advance(SchedulerHealthCheck.Window + TimeSpan.FromSeconds(1));
+
+        (await CheckAsync(heartbeat, clock, leading: true)).Status.Should().Be(HealthStatus.Unhealthy);
+    }
+
+    private static Task<HealthCheckResult> CheckAsync(
+        SchedulerHeartbeat heartbeat,
+        TimeProvider clock,
+        bool leading = true
+    ) =>
+        new SchedulerHealthCheck(heartbeat, new StubInstanceLock(leading), clock).CheckHealthAsync(
             new HealthCheckContext(),
             TestContext.Current!.Execution.CancellationToken
         );
+
+    private sealed record StubInstanceLock(bool IsLeading) : IBotInstanceLock
+    {
+        public Task WaitForLeadershipAsync(CancellationToken ct) => Task.CompletedTask;
+    }
 }

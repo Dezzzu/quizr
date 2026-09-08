@@ -258,9 +258,12 @@ Native BCL types throughout.
   both conclude the same person moved up, and a crash mid-send can repeat the message on
   restart. One mechanism solves both: a notifications table keyed `(signup_id, kind)` with a
   unique constraint, written in the same transaction as the change that caused it. A
-  duplicate becomes a rejected insert rather than a second message. **There are no locks in
-  this system** — if you find yourself wanting one, the derived-state rule is being broken
-  somewhere.
+  duplicate becomes a rejected insert rather than a second message. **There are no locks over
+  domain state** — if you find yourself wanting one, the derived-state rule is being broken
+  somewhere. The one lock in the system is not over domain state at all: `BotInstanceLock`
+  takes a Postgres advisory lock to decide which container polls Telegram and runs the
+  scheduler, because "which process is in charge" is a question no amount of derived state can
+  answer. See `docs/HEALTH.md`.
 - **Record captain actions that affect someone else in `AuditEntry`, in the same transaction
   as the change** — a small, fixed set of actions (declining or finishing a game, granting or
   revoking captaincy, registering or dropping someone on their behalf, editing a finished

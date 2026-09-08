@@ -11,11 +11,13 @@ internal sealed class SchedulerHealthCheck : IHealthCheck
     public static readonly TimeSpan Window = TimeSpan.FromMinutes(3);
 
     private readonly SchedulerHeartbeat _heartbeat;
+    private readonly IBotInstanceLock _instanceLock;
     private readonly TimeProvider _clock;
 
-    public SchedulerHealthCheck(SchedulerHeartbeat heartbeat, TimeProvider clock)
+    public SchedulerHealthCheck(SchedulerHeartbeat heartbeat, IBotInstanceLock instanceLock, TimeProvider clock)
     {
         _heartbeat = heartbeat;
+        _instanceLock = instanceLock;
         _clock = clock;
     }
 
@@ -24,6 +26,14 @@ internal sealed class SchedulerHealthCheck : IHealthCheck
         CancellationToken cancellationToken = default
     )
     {
+        // A standby has no scheduler to check and is legitimately idle. Demanding ticks of it
+        // would be the deadlock this whole design exists to avoid: it could never become ready,
+        // so Coolify would never stop the leader, so it could never start ticking.
+        if (!_instanceLock.IsLeading)
+        {
+            return Task.FromResult(HealthCheckResult.Healthy("Standing by; the leader runs the scheduler."));
+        }
+
         if (_heartbeat.LastTickAt is not { } lastTick)
         {
             return Task.FromResult(HealthCheckResult.Unhealthy("The scheduler has not completed a tick yet."));

@@ -169,10 +169,22 @@ builder.Services.AddRequestTimeouts();
 // Answered whatever else is configured: whether the bot is healthy is worth asking on a
 // deployment that serves no calendar feed at all.
 builder.Services.AddSingleton<SchedulerHeartbeat>();
+
+// One object, two registrations: the hosted service that acquires and holds the lock is the
+// same instance the bot, the scheduler and the health check ask who is leading.
+builder.Services.AddSingleton<BotInstanceLock>(sp => new BotInstanceLock(
+    connectionString,
+    sp.GetRequiredService<IHostApplicationLifetime>(),
+    sp.GetRequiredService<ILogger<BotInstanceLock>>()
+));
+builder.Services.AddSingleton<IBotInstanceLock>(sp => sp.GetRequiredService<BotInstanceLock>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<BotInstanceLock>());
+
 builder
     .Services.AddHealthChecks()
     .AddCheck<DatabaseHealthCheck>("database", tags: [HealthEndpoints.ReadyTag])
-    .AddCheck<SchedulerHealthCheck>("scheduler", tags: [HealthEndpoints.ReadyTag]);
+    .AddCheck<SchedulerHealthCheck>("scheduler", tags: [HealthEndpoints.ReadyTag])
+    .AddCheck<LeadershipHealthCheck>("leadership", tags: [HealthEndpoints.ReadyTag]);
 
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IStrings, Strings>();

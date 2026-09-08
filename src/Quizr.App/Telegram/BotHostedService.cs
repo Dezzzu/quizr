@@ -1,3 +1,4 @@
+using Quizr.App.Health;
 using Quizr.App.Localization;
 using Telegram.Bot;
 using Telegram.Bot.Polling;
@@ -16,18 +17,21 @@ public sealed class BotHostedService : BackgroundService
     };
 
     private readonly ITelegramBotClient _bot;
+    private readonly IBotInstanceLock _instanceLock;
     private readonly UpdateDispatcher _dispatcher;
     private readonly IStrings _strings;
     private readonly ILogger<BotHostedService> _logger;
 
     public BotHostedService(
         ITelegramBotClient bot,
+        IBotInstanceLock instanceLock,
         UpdateDispatcher dispatcher,
         IStrings strings,
         ILogger<BotHostedService> logger
     )
     {
         _bot = bot;
+        _instanceLock = instanceLock;
         _dispatcher = dispatcher;
         _strings = strings;
         _logger = logger;
@@ -35,6 +39,10 @@ public sealed class BotHostedService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // Nothing here may touch Telegram until this process is the one in charge — two
+        // pollers on one token collide, and getMe is already a call.
+        await _instanceLock.WaitForLeadershipAsync(stoppingToken);
+
         var me = await _bot.GetMe(stoppingToken);
         _logger.LogInformation("Quizr started as @{Username}", me.Username);
 
