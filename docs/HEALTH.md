@@ -206,5 +206,20 @@ Verified with two real processes against one database:
 
 ### Slice 4 — Flip the rule
 
-- [ ] `docs/DEPLOY.md`: health check now permitted, with the Coolify values and what to verify
-- [ ] `CLAUDE.md` and `docs/CALENDAR.md`: the "never configure a health check" warnings updated
+- [x] `docs/DEPLOY.md`: "The one thing that will bite you" becomes "Only one instance ever does
+      the work" — the constraint is unchanged, what enforces it is not. Coolify's health check
+      values, and the heartbeat section rewritten around the probe rather than around its absence
+- [x] `CLAUDE.md` and `docs/CALENDAR.md`: the "never configure a health check" warnings replaced,
+      each pointing at what superseded it rather than being quietly deleted
+- [x] **`curl` added to the image**, which nearly went unnoticed — see below
+
+**The image had no HTTP client, and that would have broken every deploy.** A container health
+check runs *inside* the container, and `mcr.microsoft.com/dotnet/aspnet:10.0` ships neither
+`curl` nor `wget`. Configuring the check as documented would have produced a container that could
+never report healthy, and with rolling updates now enabled a deploy waits for exactly that — so
+every deploy would have hung, on the change whose entire purpose was to make deploys safer.
+Checked by running the probe inside the built image rather than by assuming: `curl` reaches
+`http://localhost:8080/health/live` and gets `200`.
+
+`bash` is already in the base image, so adding `curl` gives an attacker who reached code
+execution nothing they did not already have.

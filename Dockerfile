@@ -20,13 +20,20 @@ RUN dotnet publish src/Quizr.App/Quizr.App.csproj -c Release -o /app --no-restor
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 
-# CLAUDE.md: tzdata must be present in the image, and the image rebuilt
-# periodically — TimeZoneInfo reads the OS zone database, so a stale image
-# produces wrong offsets after a country changes its DST rules, silently, with
-# no error. Installed explicitly here rather than trusted to the base image, so
-# a future base-image change can't drop it unnoticed.
+# tzdata: CLAUDE.md requires it, and the image rebuilt periodically — TimeZoneInfo
+# reads the OS zone database, so a stale image produces wrong offsets after a
+# country changes its DST rules, silently, with no error.
+#
+# curl: the container health check runs *inside* the container, and the aspnet
+# image ships neither curl nor wget. Without it a health check configured in
+# Coolify fails permanently, which with rolling updates enabled means deploys
+# that never complete — see docs/DEPLOY.md. bash is already present, so an
+# attacker who could use curl could already open a socket without it.
+#
+# Both installed explicitly rather than trusted to the base image, so a future
+# base-image change can't drop either unnoticed.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends tzdata \
+    && apt-get install -y --no-install-recommends tzdata curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Set explicitly rather than inherited from the base image, so the port Coolify has to be

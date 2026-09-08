@@ -190,9 +190,11 @@ The bot gained exactly one inbound route, for the per-player calendar feed
 - **Every failure is a bare `404`** — malformed, unknown and revoked are deliberately
   indistinguishable. No `401`, no `403`: a challenge teaches a scanner the path is real, and no
   calendar client could answer one.
-- **Do not configure a Coolify health check**, even though there is now a port to point one at.
-  See `docs/DEPLOY.md`: a passing health check is what lets Coolify start a second container
-  before stopping the first, and two long-pollers on one bot token collide.
+- **A Coolify health check is configured, at `/health/ready`** — safe because `BotInstanceLock`
+  makes a second container harmless rather than merely prevented. It used to be forbidden; if
+  you find a comment saying so, it predates `docs/HEALTH.md`. What must stay true is the thing
+  underneath: exactly one process polls Telegram, enforced by the advisory lock rather than by
+  hoping two containers never overlap.
 
 ## Time
 
