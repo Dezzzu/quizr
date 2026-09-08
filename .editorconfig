@@ -69,6 +69,13 @@ dotnet_diagnostic.CS8600.severity = warning
 dotnet_diagnostic.CS8602.severity = warning
 dotnet_diagnostic.CS8618.severity = warning
 
+# csharpier writes a trailing comma in multi-line lists and none in single-line ones. Rider
+# defaults to the opposite and flags the formatter's own output, so it is told what csharpier
+# does — the same reasoning as the note at the top of this file: csharpier owns layout, and
+# the IDE should not be arguing with it.
+resharper_csharp_trailing_comma_in_multiline_lists = true
+resharper_csharp_trailing_comma_in_singleline_lists = false
+
 # Naming.
 #
 # Order matters: the first rule whose symbols match a declaration wins, so the two narrow

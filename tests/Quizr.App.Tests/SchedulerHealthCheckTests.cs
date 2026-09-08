@@ -1,6 +1,7 @@
 using AwesomeAssertions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Time.Testing;
+using NSubstitute;
 using Quizr.App.Health;
 
 namespace Quizr.App.Tests;
@@ -108,13 +109,18 @@ public class SchedulerHealthCheckTests
         TimeProvider clock,
         bool leading = true
     ) =>
-        new SchedulerHealthCheck(heartbeat, new StubInstanceLock(leading), clock).CheckHealthAsync(
+        new SchedulerHealthCheck(heartbeat, InstanceLock(leading), clock).CheckHealthAsync(
             new HealthCheckContext(),
             TestContext.Current!.Execution.CancellationToken
         );
 
-    private sealed record StubInstanceLock(bool IsLeading) : IBotInstanceLock
+    // Substituted rather than hand-written: leadership is a boundary, which is exactly what
+    // STYLE.md says to fake, and NSubstitute is what this repository fakes boundaries with.
+    private static IBotInstanceLock InstanceLock(bool leading)
     {
-        public Task WaitForLeadershipAsync(CancellationToken ct) => Task.CompletedTask;
+        var instanceLock = Substitute.For<IBotInstanceLock>();
+        instanceLock.IsLeading.Returns(leading);
+
+        return instanceLock;
     }
 }
