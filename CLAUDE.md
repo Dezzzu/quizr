@@ -234,6 +234,15 @@ Native BCL types throughout.
   English.
 - **Never concatenate user-visible text.** One template per sentence, with placeholders, or
   Russian word order will break in ways English never reveals.
+- **A button label must fit its row, and lead with what tells it apart.** Telegram divides a
+  row's width evenly between its buttons and clips the tail with `…`, so a label sharing a row
+  has about half the room a full-width one does — budget roughly 16 and 26 characters,
+  counting an emoji as two. Two labels in the same keyboard have to differ *before* the clip:
+  `Управление игроками` and `Управление гостями` both arrive as `Управление…`, and
+  `🏁 Завершить сейчас` arrives as `🏁 Завершить`, which reads like the close button under it.
+  Anything interpolated — a name, a current setting — goes last, since it is the part no
+  budget can cover. `StringsTests` enforces the widths against a hand-maintained list of which
+  buttons share a row; a button moved to a row of its own has to leave that list.
 - **Test key parity** — every key present in every locale file.
 - **Snapshot-test plural templates** at 1, 2, 5, 21 and 111. SmartFormat's plural forms are
   positional, so a wrong form order is otherwise undetectable — this is the check that
