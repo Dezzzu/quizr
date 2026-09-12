@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 using AwesomeAssertions;
 using Quizr.App.Localization;
@@ -110,6 +111,143 @@ public partial class StringsTests
 
     [GeneratedRegex(@"\{([A-Za-z_][A-Za-z0-9_]*)")]
     private static partial Regex PlaceholderPattern();
+
+    // Telegram clips an inline button's label at the width of the row it sits in, and a row
+    // divides its width evenly between its buttons — so a label's budget belongs to the row,
+    // not to the label. Players reported the two ways that bites: "👥 Управление гостями" and
+    // "👤 Управление игроками" both arriving as "Управление…", and "🏁 Завершить сейчас"
+    // arriving as "🏁 Завершить", which reads like the close button under it. Hence two rules,
+    // one enforced here and one that can only be read: a label must fit its row, and two
+    // labels in the same keyboard must differ before the clip, not after it.
+    //
+    // The widths are generous on purpose. This catches a translation that runs away, not a
+    // label two characters over what one particular phone shows.
+    private const int HalfRowWidth = 16;
+    private const int FullRowWidth = 26;
+
+    // Every button that shares its row with another one, by the keyboard it belongs to:
+    // AnnouncementRenderer.RenderKeyboard and .RenderManagePanel, the guest-keep prompt and
+    // the drop/decline confirmations in UpdateRouter, RenderEditGameFieldPicker,
+    // GameConfirmRenderer, FranchiseRenderer.RenderFieldPicker, the Nudge picker, the calendar
+    // view, and SkipButton.KeyboardWithCancel. Hand-maintained: moving a button to a row of
+    // its own means deleting it from here, and the compiler can't say so.
+    private static readonly HashSet<string> PairedButtons =
+    [
+        "Announcement.JoinButton",
+        "Announcement.DropButton",
+        "Announcement.GuestButton",
+        "Announcement.MyGuestsButton",
+        "Announcement.NudgeButton",
+        "Announcement.ManageButton",
+        "Announcement.ManagePlayersButton",
+        "Announcement.ManageGuestsButton",
+        "Announcement.FinishButton",
+        "Announcement.DeclineButton",
+        "Guest.KeepButton",
+        "Guest.RemoveButton",
+        "Decline.ConfirmYes",
+        "Decline.ConfirmNo",
+        "Drop.ConfirmYes",
+        "Drop.ConfirmNo",
+        "EditGame.EditTitleButton",
+        "EditGame.EditVenueButton",
+        "EditGame.EditCapacityButton",
+        "EditGame.EditPriceButton",
+        "EditGame.EditNotesButton",
+        "EditGame.EditStartTimeButton",
+        "NewGame.EditVenueButton",
+        "NewGame.EditCapacityButton",
+        "NewGame.EditPriceButton",
+        "NewGame.EditNotesButton",
+        "NewGame.ConfirmButton",
+        "Franchise.EditNameButton",
+        "Franchise.EditVenueButton",
+        "Franchise.EditCapacityButton",
+        "Franchise.EditPriceButton",
+        "Nudge.SendButton",
+        "Calendar.ReplaceButton",
+        "Calendar.TurnOffButton",
+        "Common.CancelButton",
+        "Common.SkipButton",
+    ];
+
+    // The keys that label a button without saying so in their name.
+    private static readonly HashSet<string> UnnamedButtons =
+    [
+        "Decline.ConfirmYes",
+        "Decline.ConfirmNo",
+        "Drop.ConfirmYes",
+        "Drop.ConfirmNo",
+        "Roster.TogglePlayedOn",
+        "Roster.TogglePlayedOff",
+        "Reminders.ReserveOn",
+        "Reminders.ReserveOff",
+    ];
+
+    [Test]
+    public void EveryButtonLabelFitsTheRowItIsRenderedOn()
+    {
+        foreach (var (locale, templates) in Strings.LoadAll())
+        {
+            foreach (var (key, template) in templates.Where(t => IsButton(t.Key)))
+            {
+                var shared = PairedButtons.Contains(key);
+
+                Width(template)
+                    .Should()
+                    .BeLessThanOrEqualTo(
+                        shared ? HalfRowWidth : FullRowWidth,
+                        $"'{key}' in '{locale}.json' is rendered on a {(shared ? "shared" : "full-width")} row"
+                    );
+            }
+        }
+    }
+
+    // The reminder rows carry their current setting in a placeholder, so the label on its own
+    // says nothing about whether the row fits — the longest channel name decides. This is the
+    // check that caught Russian's "Утром в день игры: в личных сообщениях", where what got
+    // clipped was the setting the row exists to show.
+    [Test]
+    public void AReminderRowFitsWithTheLongestChannelItCanShow()
+    {
+        string[] channels = ["Reminders.ChannelOff", "Reminders.ChannelGroup", "Reminders.ChannelDm"];
+        string[] rows = ["Reminders.EveningBeforeButton", "Reminders.MorningOfButton", "Reminders.BeforeStartButton"];
+
+        foreach (var (locale, templates) in Strings.LoadAll())
+        {
+            var longest = channels.Select(key => templates[key]).MaxBy(Width)!;
+
+            foreach (var row in rows)
+            {
+                Width(_strings.For(locale).Text(row, new { Channel = longest }))
+                    .Should()
+                    .BeLessThanOrEqualTo(FullRowWidth, $"'{row}' in '{locale}.json' can read '{longest}'");
+            }
+        }
+    }
+
+    private static bool IsButton(string key) =>
+        key.EndsWith("Button", StringComparison.Ordinal) || UnnamedButtons.Contains(key);
+
+    // An emoji occupies roughly two of the characters a label is otherwise made of, in both
+    // alphabets these locales use. Placeholders are left out: a label can't budget for a name
+    // somebody chose, which is exactly why the fixed part has to come first.
+    private static int Width(string template)
+    {
+        var fixedPart = PlaceholderBlockPattern().Replace(template, string.Empty);
+        var width = 0;
+        var elements = StringInfo.GetTextElementEnumerator(fixedPart);
+
+        while (elements.MoveNext())
+        {
+            width += char.ConvertToUtf32((string)elements.Current, 0) >= 0x2000 ? 2 : 1;
+        }
+
+        return width;
+    }
+
+    [GeneratedRegex(@"\{[^{}]*\}")]
+    private static partial Regex PlaceholderBlockPattern();
 
     [Test]
     public void TheBotProfileTextFitsTelegramsLimitsInEveryLocale()
