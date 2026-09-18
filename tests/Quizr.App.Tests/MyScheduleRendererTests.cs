@@ -147,6 +147,33 @@ public class MyScheduleRendererTests
         text.Should().Contain("Kviz, pliz! · Halloween special");
     }
 
+    [Test]
+    public void SameDayNoticeLeadsWithAWarningAndListsTheGamesLikeTheSchedule()
+    {
+        var entry = Entry(Team(1), Game("Quiz Night", venue: "The Pub"), playing: false, position: 2);
+
+        var text = MyScheduleRenderer.RenderSameDayNotice([entry], new TeamId(1), Strings);
+
+        text.Should().StartWith("⚠️ <b>You're also signed up that day</b>");
+        text.Should().Contain("Quiz Night");
+        text.Should().Contain("📍 The Pub");
+        text.Should().Contain("⏳ Reserve #2");
+    }
+
+    // Read in the joining team's own chat, so its games need no team name — but a game from
+    // another team is the clash this chat's Board could never have shown, and says so.
+    [Test]
+    public void SameDayNoticeMarksOnlyTheGamesFromAnotherChat()
+    {
+        var here = Entry(Team(1, "Berlin Quizzers"), Game("Quiz Night"), playing: true);
+        var elsewhere = Entry(Team(2, "Moscow Nerds"), Game("Trivia Evening"), playing: true);
+
+        var text = MyScheduleRenderer.RenderSameDayNotice([here, elsewhere], new TeamId(1), Strings);
+
+        text.Should().NotContain("Berlin Quizzers");
+        text.Should().Contain("Trivia Evening · Moscow Nerds (another chat)");
+    }
+
     private static Team Team(long id, string name = "Test team", long chatId = -1001234567890) =>
         new()
         {

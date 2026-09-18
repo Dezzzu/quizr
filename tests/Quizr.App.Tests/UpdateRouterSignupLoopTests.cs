@@ -877,6 +877,60 @@ public class UpdateRouterSignupLoopTests
         (await db.Signups.AsNoTracking().CountAsync(s => s.GameId == game.Id && s.PlayerId == null, ct)).Should().Be(2);
     }
 
+    // Joining is never refused for a clash — but the second seat that evening earns a private
+    // heads-up naming the first, since the Board shows the games and not who holds seats in
+    // both. The first join, with nothing else that day, says nothing beyond its toast.
+    [Test]
+    public async Task JoiningASecondGameTheSameEveningPrivatelyListsTheFirst()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var first = await SeedGameAsync(db, chatId: 7065, capacity: 5, ct);
+        var second = await SeedSameDayGameAsync(db, first, "Late show", ct);
+        var (router, bot, _) = CreateRouter(db);
+
+        await router.RouteAsync(
+            CallbackUpdate(7065, 7065, "Alice", CallbackData.Format(CallbackData.Join, first.Id), 1),
+            ct
+        );
+        bot.EphemeralTexts(7065).Should().BeEmpty();
+
+        await router.RouteAsync(
+            CallbackUpdate(7065, 7065, "Alice", CallbackData.Format(CallbackData.Join, second.Id), 2),
+            ct
+        );
+
+        var notice = bot.EphemeralTexts().Should().ContainSingle().Subject;
+        notice.ReceiverUserId.Should().Be(7065);
+        notice.Text.Should().Contain("also signed up that day");
+        notice.Text.Should().Contain("Quiz Night");
+        notice.Text.Should().NotContain("Late show");
+        (await db.Signups.AsNoTracking().CountAsync(s => s.GameId == second.Id && s.CancelledAt == null, ct))
+            .Should()
+            .Be(1);
+    }
+
+    [Test]
+    public async Task JoiningWithAGameOnAnotherDaySaysNothingExtra()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var first = await SeedGameAsync(db, chatId: 7066, capacity: 5, ct);
+        var nextWeek = await SeedSameDayGameAsync(db, first, "Next week", ct, daysLater: 7);
+        var (router, bot, _) = CreateRouter(db);
+
+        await router.RouteAsync(
+            CallbackUpdate(7066, 7066, "Alice", CallbackData.Format(CallbackData.Join, first.Id), 1),
+            ct
+        );
+        await router.RouteAsync(
+            CallbackUpdate(7066, 7066, "Alice", CallbackData.Format(CallbackData.Join, nextWeek.Id), 2),
+            ct
+        );
+
+        bot.EphemeralTexts(7066).Should().BeEmpty();
+    }
+
     private static (UpdateRouter Router, ITelegramBotClient Bot, FakeTimeProvider Clock) CreateRouter(QuizrDb db)
     {
         var bot = TelegramBotClientTestHelper.Create();
@@ -979,6 +1033,35 @@ public class UpdateRouterSignupLoopTests
             AnnouncementMessageId = new TelegramMessageId(1),
             CreatedAt = DateTimeOffset.UtcNow,
             CreatedByPlayerId = creator.Id,
+        };
+        db.Games.Add(game);
+        await db.SaveChangesAsync(ct);
+
+        return game;
+    }
+
+    // A second game in the same team at the very same time (or that many days on), so a test
+    // can hold seats in two games of one evening. The same instant rather than an hour later:
+    // the sibling starts at "now plus a day", and an hour added to that crosses local midnight
+    // whenever the suite happens to run late in the evening.
+    private static async Task<Game> SeedSameDayGameAsync(
+        QuizrDb db,
+        Game sibling,
+        string title,
+        CancellationToken ct,
+        int daysLater = 0
+    )
+    {
+        var game = new Game
+        {
+            TeamId = sibling.TeamId,
+            Title = title,
+            Venue = "The Other Pub",
+            StartsAt = sibling.StartsAt.AddDays(daysLater),
+            Capacity = sibling.Capacity,
+            AnnouncementMessageId = new TelegramMessageId(2),
+            CreatedAt = DateTimeOffset.UtcNow,
+            CreatedByPlayerId = sibling.CreatedByPlayerId,
         };
         db.Games.Add(game);
         await db.SaveChangesAsync(ct);

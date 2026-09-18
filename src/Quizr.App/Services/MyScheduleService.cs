@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Quizr.App.Data;
+using Quizr.App.Time;
 using Quizr.Domain;
 using Quizr.Domain.Entities;
 
@@ -75,6 +76,32 @@ public sealed class MyScheduleService
         var teamsById = teams.ToDictionary(t => t.Id);
 
         return games.Select(game => ToEntry(game, teamsById[game.TeamId], playerId)).ToList();
+    }
+
+    // The other games this person already holds a seat in on the day of the one they just
+    // joined — across every team, since a second team's Friday is invisible from this chat and
+    // that is exactly the clash nobody would otherwise notice. The joined game itself is left
+    // out: the caller has just told them about it.
+    //
+    // Same-day is judged on each game's own team clock (TeamTime.LocalDate), not on one shared
+    // zone: that is the date each announcement shows, and quiz nights start in the evening, so
+    // the two readings only ever disagree for a team whose games straddle midnight.
+    //
+    // Sits on the whole schedule rather than a narrower query on purpose: the rows are the
+    // same handful /myschedule loads, and the filter is one line over them.
+    public async Task<IReadOnlyList<MyScheduleEntry>> LoadSameDayAsync(
+        PlayerId playerId,
+        Game joined,
+        Team joinedTeam,
+        CancellationToken ct
+    )
+    {
+        var date = TeamTime.LocalDate(joined.StartsAt, joinedTeam.TimeZoneId!);
+        var schedule = await LoadAsync(playerId, await LoadTeamsAsync(playerId, ct), ct);
+
+        return schedule
+            .Where(e => e.Game.Id != joined.Id && TeamTime.LocalDate(e.Game.StartsAt, e.Team.TimeZoneId!) == date)
+            .ToList();
     }
 
     private static MyScheduleEntry ToEntry(Game game, Team team, PlayerId playerId)

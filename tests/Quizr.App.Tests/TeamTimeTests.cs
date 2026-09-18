@@ -47,6 +47,17 @@ public class TeamTimeTests
         berlin.ToUniversalTime().Should().Be(newYork.ToUniversalTime());
     }
 
+    // The date a late-evening game falls on is the team's, not UTC's: 23:30 in Berlin is
+    // still Friday there even though the instant itself is already Saturday in UTC terms.
+    [Test]
+    public void LocalDateIsTheTeamsCalendarDateNotUtcs()
+    {
+        var instant = new DateTimeOffset(2026, 7, 17, 21, 30, 0, TimeSpan.Zero);
+
+        TeamTime.LocalDate(instant, "Europe/Berlin").Should().Be(new DateOnly(2026, 7, 17));
+        TeamTime.LocalDate(instant, "Asia/Tokyo").Should().Be(new DateOnly(2026, 7, 18));
+    }
+
     [Test]
     public void ConvertsALocalWinterDateAndTimeToTheMatchingUtcInstant()
     {

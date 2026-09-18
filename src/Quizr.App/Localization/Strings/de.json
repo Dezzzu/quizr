@@ -107,11 +107,13 @@
   "MySchedule.NoTeams": "Ich kenne dich noch aus keinem Quizteam. Füge mich zum Gruppenchat deines Teams hinzu und melde dich dort für ein Spiel an.",
   "MySchedule.Entry": "{When:ddd, dd MMM, HH\\:mm} — {Title}",
   "MySchedule.EntryWithTeam": "{When:ddd, dd MMM, HH\\:mm} — {Title} · {Team}",
+  "MySchedule.EntryInOtherChat": "{When:ddd, dd MMM, HH\\:mm} — {Title} · {Team} (anderer Chat)",
   "MySchedule.Venue": "📍 {Venue}",
   "MySchedule.StatusPlaying": "✅ Du spielst",
   "MySchedule.StatusPlayingWithGuests": "✅ Du spielst · +{Guests} {Guests:plural:Gast|Gäste}",
   "MySchedule.StatusReserve": "⏳ Warteliste #{Position}",
   "MySchedule.StatusReserveWithGuests": "⏳ Warteliste #{Position} · +{Guests} {Guests:plural:Gast|Gäste}",
+  "MySchedule.SameDayHeader": "⚠️ <b>Du bist an diesem Tag schon angemeldet</b>",
 
   "Promotion.Message": "🎉 {Who} ist in die Startaufstellung nachgerückt!",
 

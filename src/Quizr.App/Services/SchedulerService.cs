@@ -202,7 +202,7 @@ public sealed class SchedulerService
 
     private async Task SendDueRemindersAsync(Team team, Game game, DateTimeOffset now, CancellationToken ct)
     {
-        var gameLocalDate = DateOnly.FromDateTime(TeamTime.ConvertToLocal(game.StartsAt, team.TimeZoneId!).Date);
+        var gameLocalDate = TeamTime.LocalDate(game.StartsAt, team.TimeZoneId!);
 
         await ProcessReminderKindAsync(
             team,

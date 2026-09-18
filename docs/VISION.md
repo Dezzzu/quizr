@@ -259,6 +259,10 @@ only ever taps one button in the group chat stays a first-class member of the te
   on the reserve. In the team chat it answers for that team and only you can see it; in a DM
   it merges every team you play for into one date-ordered list, since a person in two teams
   still only has one Friday evening. The team calendars themselves stay separate
+- **Same-day heads-up** — joining a game when you already hold a seat in another one that
+  evening still goes through, but you alone get a private note listing the other games, in the
+  `/myschedule` format, with any game from another team's chat marked as such — the one clash
+  this chat's Board can never show
 - **Nudge** — anyone signed up can ping the players who haven't arrived yet, in the team
   chat, so the replies land where everyone waiting can see them. Mandatory rather than
   opt-in, with a per-game cooldown
@@ -321,6 +325,7 @@ Recorded so they don't get re-argued.
 | The calendar token lives in the query string, not the path | It is the whole credential, so it must never reach a log. Every log record written during a request carries `RequestPath` in its scope and those scopes are shipped to Seq, so a token in the path leaks the moment anything at all logs — which happened, to an unrelated database warning. The scope does not carry the query string. |
 | A game lasts three hours, and that one number does both jobs | It decides when the scheduler auto-finishes a game left alone *and* how much of an evening its calendar event books. It was four hours, and a duration for the feed would have been a second number arrived at separately — which is how two constants drift until they contradict each other somewhere a player can see. |
 | A franchise carries a per-weekday schedule | One map from day to start time replaces separate "default time" and "typical days" fields, so the two can't drift apart. Creating a game becomes: pick the franchise, pick a date. |
+| A same-day clash warns, never refuses | Two games one evening may be the plan — a 16:00 and a 19:00, or a seat held in a second team as a fallback. The bot knows which seats you hold across teams and the Board doesn't, so it says so privately and leaves the decision where it belongs. Judged on the calendar date each game's own team shows, not on start times overlapping, because "same evening" is what a person asks themselves. |
 | Playing vs reserve is derived, not stored | A signup is who, which game and when; the split falls out of the ordering. Two people tapping for the last seat at the same moment simply get two timestamps. The invariant becomes a property of the data instead of something the code maintains. |
 
 ## Questions that were open, and how they were settled

@@ -11,6 +11,12 @@ internal static class TeamTime
     public static TimeSpan GetUtcOffset(DateTimeOffset instant, string timeZoneId) =>
         TimeZoneInfo.FindSystemTimeZoneById(timeZoneId).GetUtcOffset(instant);
 
+    // The calendar date a game falls on as its own team reads it — the date its announcement
+    // and Board line already say. Two games a person holds seats in are "the same day" when
+    // these agree, which is a question about two evenings rather than two instants.
+    public static DateOnly LocalDate(DateTimeOffset instant, string timeZoneId) =>
+        DateOnly.FromDateTime(ConvertToLocal(instant, timeZoneId).DateTime);
+
     // The other direction: a local date and time in the team's zone (a reminder slot, a
     // picked game date) to the instant it actually is. Ambiguous or nonexistent times around
     // a DST transition resolve to whatever TimeZoneInfo's own rules pick — not worth a bespoke
