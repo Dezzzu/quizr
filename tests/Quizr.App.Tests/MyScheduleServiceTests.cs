@@ -191,7 +191,96 @@ public class MyScheduleServiceTests
         teams.Should().BeEmpty();
     }
 
+    // The heads-up on joining: the other games already held that evening, minus the one just
+    // joined — the caller has just said "you're in" about that one.
+    [Test]
+    public async Task SameDayListsTheOtherGamesThatEveningAndNotTheOneJustJoined()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 8511, ct);
+        var player = await SeedPlayerAsync(db, ct);
+        await SeedMembershipAsync(db, team, player, ct);
+        var joined = await SeedGameAsync(db, team, "Joined", At(2026, 10, 9, 19, 0), ct);
+        var earlier = await SeedGameAsync(db, team, "Earlier that day", At(2026, 10, 9, 16, 0), ct);
+        var nextDay = await SeedGameAsync(db, team, "Next day", At(2026, 10, 10, 19, 0), ct);
+        await SeedSignupAsync(db, joined, player, ct);
+        await SeedSignupAsync(db, earlier, player, ct);
+        await SeedSignupAsync(db, nextDay, player, ct);
+
+        var sameDay = await new MyScheduleService(db).LoadSameDayAsync(player.Id, joined, team, ct);
+
+        sameDay.Should().ContainSingle().Which.Game.Title.Should().Be("Earlier that day");
+    }
+
+    [Test]
+    public async Task SameDayIsEmptyWhenNothingElseIsHeldThatEvening()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 8512, ct);
+        var player = await SeedPlayerAsync(db, ct);
+        await SeedMembershipAsync(db, team, player, ct);
+        var joined = await SeedGameAsync(db, team, "Joined", At(2026, 10, 9, 19, 0), ct);
+        await SeedSignupAsync(db, joined, player, ct);
+
+        var sameDay = await new MyScheduleService(db).LoadSameDayAsync(player.Id, joined, team, ct);
+
+        sameDay.Should().BeEmpty();
+    }
+
+    // The clash worth warning about is the one this chat's Board cannot show: a seat held in a
+    // different team the same evening.
+    [Test]
+    public async Task SameDayCrossesIntoThePersonsOtherTeams()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var here = await SeedTeamAsync(db, chatId: 8513, ct, name: "Here");
+        var elsewhere = await SeedTeamAsync(db, chatId: 8514, ct, name: "Elsewhere");
+        var player = await SeedPlayerAsync(db, ct);
+        await SeedMembershipAsync(db, here, player, ct);
+        await SeedMembershipAsync(db, elsewhere, player, ct);
+        var joined = await SeedGameAsync(db, here, "Joined", At(2026, 10, 9, 19, 0), ct);
+        var other = await SeedGameAsync(db, elsewhere, "Elsewhere game", At(2026, 10, 9, 20, 0), ct);
+        await SeedSignupAsync(db, joined, player, ct);
+        await SeedSignupAsync(db, other, player, ct);
+
+        var sameDay = await new MyScheduleService(db).LoadSameDayAsync(player.Id, joined, here, ct);
+
+        var entry = sameDay.Should().ContainSingle().Subject;
+        entry.Game.Title.Should().Be("Elsewhere game");
+        entry.Team.Name.Should().Be("Elsewhere");
+    }
+
+    // Each game is dated by its own team's clock — the date its own announcement shows — not by
+    // the joining team's. A Tokyo team's early-Saturday game is a Saturday game to them, even
+    // though the instant is still Friday evening in Berlin.
+    [Test]
+    public async Task SameDayDatesEachGameOnItsOwnTeamsClock()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var berlin = await SeedTeamAsync(db, chatId: 8515, ct, name: "Berlin");
+        var tokyo = await SeedTeamAsync(db, chatId: 8516, ct, name: "Tokyo", timeZoneId: "Asia/Tokyo");
+        var player = await SeedPlayerAsync(db, ct);
+        await SeedMembershipAsync(db, berlin, player, ct);
+        await SeedMembershipAsync(db, tokyo, player, ct);
+        // Friday 22:00 in Berlin, and Saturday 05:00 in Tokyo.
+        var joined = await SeedGameAsync(db, berlin, "Berlin Friday", At(2026, 10, 9, 20, 0), ct);
+        var other = await SeedGameAsync(db, tokyo, "Tokyo Saturday", At(2026, 10, 9, 20, 0), ct);
+        await SeedSignupAsync(db, joined, player, ct);
+        await SeedSignupAsync(db, other, player, ct);
+
+        var sameDay = await new MyScheduleService(db).LoadSameDayAsync(player.Id, joined, berlin, ct);
+
+        sameDay.Should().BeEmpty();
+    }
+
     private static DateTimeOffset Days(int offset) => DateTimeOffset.UtcNow.AddDays(offset);
+
+    private static DateTimeOffset At(int year, int month, int day, int hour, int minute) =>
+        new(year, month, day, hour, minute, 0, TimeSpan.Zero);
 
     private static long _idSequence = 9_500_000;
 
@@ -201,14 +290,15 @@ public class MyScheduleServiceTests
         QuizrDb db,
         long chatId,
         CancellationToken ct,
-        string name = "Test team"
+        string name = "Test team",
+        string timeZoneId = "Europe/Berlin"
     )
     {
         var team = new Team
         {
             ChatId = new TelegramChatId(chatId),
             Name = name,
-            TimeZoneId = "Europe/Berlin",
+            TimeZoneId = timeZoneId,
             Locale = "en",
             CreatedAt = DateTimeOffset.UtcNow,
         };

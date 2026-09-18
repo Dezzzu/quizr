@@ -1878,6 +1878,22 @@ public sealed class UpdateRouter
             scope.Strings.Text("Announcement.Joined"),
             cancellationToken: ct
         );
+
+        // A heads-up, not a refusal: the seat is theirs either way, and two games one evening
+        // may be exactly the plan. Only the person who tapped sees it — the team's own Board
+        // already shows this chat's games, and another team's are none of this chat's business.
+        var sameDay = await _mySchedule.LoadSameDayAsync(scope.Player.Id, game, scope.Team, ct);
+        if (sameDay.Count > 0)
+        {
+            await _sender.SendEphemeralAsync(
+                scope.ChatId,
+                scope.Actor.TelegramUserId,
+                MyScheduleRenderer.RenderSameDayNotice(sameDay, scope.Team.Id, scope.Strings),
+                null,
+                callbackQuery.Id,
+                ct
+            );
+        }
     }
 
     private async Task HandleBringGuestAsync(
@@ -2334,7 +2350,7 @@ public sealed class UpdateRouter
     )
     {
         var strings = scope.Strings;
-        var today = DateOnly.FromDateTime(TeamTime.ConvertToLocal(_clock.GetUtcNow(), scope.Team.TimeZoneId!).Date);
+        var today = TeamTime.LocalDate(_clock.GetUtcNow(), scope.Team.TimeZoneId!);
         var candidateDates = GameService.NextCandidateDates(today, franchise.Schedule, 8);
         var title = await _games.PreviewFranchiseTitleAsync(franchise, ct);
 

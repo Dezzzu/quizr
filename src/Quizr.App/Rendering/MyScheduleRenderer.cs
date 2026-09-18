@@ -29,8 +29,51 @@ internal static class MyScheduleRenderer
         // entries rather than passed in, so the three call paths can't disagree about it.
         var spansTeams = upcomingByStart.Select(e => e.Team.Id).Distinct().Count() > 1;
 
-        foreach (var (game, team, franchiseName, placement, guestCount) in upcomingByStart)
+        AppendEntries(
+            text,
+            upcomingByStart,
+            _ => spansTeams ? "MySchedule.EntryWithTeam" : "MySchedule.Entry",
+            strings
+        );
+
+        return text.ToString().TrimEnd();
+    }
+
+    // The same lines under a different heading: the other games somebody already holds a seat
+    // in on the day of the one they just joined. Read in the joining team's chat, so its own
+    // games need no team name — and a game from any other team is flagged as belonging to
+    // another chat, because that is the one this chat's Board cannot have warned them about.
+    // Rendered only when there is something to list; an empty day is the caller's silence.
+    public static string RenderSameDayNotice(
+        IReadOnlyList<MyScheduleEntry> sameDayByStart,
+        TeamId homeTeamId,
+        IStringsFor strings
+    )
+    {
+        var text = new StringBuilder();
+        text.Append(strings.Text("MySchedule.SameDayHeader")).Append("\n\n");
+
+        AppendEntries(
+            text,
+            sameDayByStart,
+            e => e.Team.Id == homeTeamId ? "MySchedule.Entry" : "MySchedule.EntryInOtherChat",
+            strings
+        );
+
+        return text.ToString().TrimEnd();
+    }
+
+    private static void AppendEntries(
+        StringBuilder text,
+        IReadOnlyList<MyScheduleEntry> entries,
+        Func<MyScheduleEntry, string> entryKey,
+        IStringsFor strings
+    )
+    {
+        foreach (var entry in entries)
         {
+            var (game, team, franchiseName, placement, guestCount) = entry;
+
             // Each team's own zone, not one shared clock: this is the time that team's own
             // announcement and Board already said, and there is no per-person timezone to
             // convert to instead. Ordering is by the stored instant, so a cross-timezone
@@ -40,17 +83,15 @@ internal static class MyScheduleRenderer
             var titleHtml = AnnouncementLink.Wrap(label, team.ChatId, game.AnnouncementMessageId);
 
             text.Append(
-                    spansTeams
-                        ? strings.Text(
-                            "MySchedule.EntryWithTeam",
-                            new
-                            {
-                                When = local,
-                                Title = titleHtml,
-                                Team = WebUtility.HtmlEncode(team.Name),
-                            }
-                        )
-                        : strings.Text("MySchedule.Entry", new { When = local, Title = titleHtml })
+                    strings.Text(
+                        entryKey(entry),
+                        new
+                        {
+                            When = local,
+                            Title = titleHtml,
+                            Team = WebUtility.HtmlEncode(team.Name),
+                        }
+                    )
                 )
                 .Append('\n')
                 .Append(strings.Text("MySchedule.Venue", new { Venue = WebUtility.HtmlEncode(game.Venue) }))
@@ -58,8 +99,6 @@ internal static class MyScheduleRenderer
                 .Append(StatusLine(placement, guestCount, strings))
                 .Append("\n\n");
         }
-
-        return text.ToString().TrimEnd();
     }
 
     // Four whole templates rather than a status with a "+n guests" fragment appended: user-
