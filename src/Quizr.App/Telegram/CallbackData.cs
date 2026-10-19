@@ -61,12 +61,13 @@ internal static class CallbackData
     public const char TogglePlayerSignup = 'k'; // carries PlayerId
     public const char ToggleCaptain = 'n'; // carries PlayerId
 
-    // Decline (with confirm, like Drop/ConfirmDrop/Stay) and the no-confirm Finish button —
-    // carry a GameId.
+    // Decline (with confirm, like Drop/ConfirmDrop/Stay), the no-confirm Finish button, and
+    // Reopen, which undoes either — carry a GameId.
     public const char DeclineGame = 'A';
     public const char ConfirmDecline = 'B';
     public const char CancelDecline = 'C';
     public const char FinishGame = 'E';
+    public const char ReopenGame = 'O';
 
     // The calendar feed's own settings view (/mycalendar) — dummy ids throughout, since a
     // person only ever acts on their own subscription and the callback carries no target.

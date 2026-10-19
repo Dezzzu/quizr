@@ -61,6 +61,7 @@
   "Announcement.EditGameButton": "✏️ Spiel bearbeiten",
   "Announcement.FinishButton": "🏁 Beenden",
   "Announcement.DeclineButton": "🚫 Absagen",
+  "Announcement.ReopenButton": "🔄 Wieder öffnen",
   "Announcement.Joined": "Du bist dabei!",
   "Announcement.GuestAdded": "Gast hinzugefügt!",
   "Announcement.Finished": "🏁 <b>Beendet</b>",
@@ -72,13 +73,17 @@
   "Drop.Cancelled": "Du bist raus. Dein Platz wurde freigegeben.",
   "Drop.StillIn": "Okay, du bist weiterhin dabei!",
 
-  "Decline.ConfirmPrompt": "{Title} absagen? Das kann nicht rückgängig gemacht werden — das Spiel wird als abgesagt markiert und die Anmeldung geschlossen.",
+  "Decline.ConfirmPrompt": "{Title} absagen? Das Spiel wird als abgesagt markiert und die Anmeldung geschlossen. Ein Captain kann es über „Verwalten“ wieder öffnen, solange seine Zeit nicht vorbei ist.",
   "Decline.ConfirmYes": "Ja, absagen",
   "Decline.ConfirmNo": "Nein, behalten",
   "Decline.Declined": "🚫 Abgesagt.",
   "Decline.Cancelled": "Okay, so belassen.",
 
   "Finish.Finished": "🏁 Beendet.",
+
+  "Reopen.Reopened": "🔄 Wieder geöffnet.",
+  "Reopen.AlreadyLive": "Dieses Spiel ist bereits offen.",
+  "Reopen.GameOver": "Die Zeit dieses Spiels ist vorbei — es kann nicht wieder geöffnet werden.",
 
   "Guest.NamePrompt": "Möchtest du deinem Gast einen Namen geben? Antworte damit, oder schreibe \"skip\", um ihn anonym zu lassen.",
   "Guest.SkipButton": "Überspringen",

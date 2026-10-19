@@ -249,6 +249,27 @@ public class UpdateRouterM9Tests
     }
 
     [Test]
+    public async Task ReopenButtonUndoesADeclineAndRecordsAnAuditEntry()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 8031, capacity: 5, ct);
+        var captain = await SeedCaptainAsync(db, game.TeamId, telegramUserId: 80311, ct);
+        game.DeclinedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(ct);
+        var (router, _) = CreateRouter(db);
+
+        await router.RouteAsync(CallbackUpdate(8031, 80311, CallbackData.Format(CallbackData.ReopenGame, game.Id)), ct);
+
+        (await db.Games.AsNoTracking().SingleAsync(g => g.Id == game.Id, ct)).DeclinedAt.Should().BeNull();
+        var entry = await db.AuditEntries.SingleAsync(
+            e => e.GameId == game.Id && e.Action == AuditActions.GameReopened,
+            ct
+        );
+        entry.ActorPlayerId.Should().Be(captain.Id);
+    }
+
+    [Test]
     public async Task FinishButtonMaterializesParticipationAndRecordsAnAuditEntry()
     {
         var ct = TestContext.Current!.Execution.CancellationToken;

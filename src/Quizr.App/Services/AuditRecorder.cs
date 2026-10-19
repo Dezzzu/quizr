@@ -40,6 +40,7 @@ internal static class AuditActions
 {
     public const string GameDeclined = "GameDeclined";
     public const string GameFinished = "GameFinished";
+    public const string GameReopened = "GameReopened";
     public const string PlayerRegisteredOnBehalf = "PlayerRegisteredOnBehalf";
     public const string PlayerDroppedOnBehalf = "PlayerDroppedOnBehalf";
     public const string CaptainGranted = "CaptainGranted";

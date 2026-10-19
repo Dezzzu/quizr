@@ -36,6 +36,14 @@ public abstract record BusinessError
     // row to.
     public sealed record GameNotFinished : BusinessError;
 
+    // Reopening undoes a finish or a decline, and a game that is neither has nothing to undo —
+    // a stale Reopen button after somebody else already pressed it.
+    public sealed record GameAlreadyLive : BusinessError;
+
+    // The game's time, plus the three hours it lasts, has passed: there is nothing live left to
+    // reopen into, and the scheduler would only finish it again on its next tick.
+    public sealed record GameOver : BusinessError;
+
     // The (TeamId, Name) unique index only covers live franchises (ArchivedAt IS NULL) — an
     // archived franchise's name is free to reuse. This is what a name collision with a live
     // one becomes instead of an unhandled unique-constraint exception.

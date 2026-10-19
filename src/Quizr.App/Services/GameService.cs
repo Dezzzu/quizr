@@ -102,14 +102,26 @@ public interface IGameService
     // load or the write the handler was making anyway.
     Task<Result<Unit>> EnsureCanManageAsync(Team team, Actor actor, CancellationToken ct);
 
-    // Invariant 13's GameDeclined. No un-decline flow exists, so the call site is still
-    // expected to put a confirm step in front of it.
+    // Invariant 13's GameDeclined. ReopenAsync can undo it while the game's time hasn't
+    // passed, but the call site still puts a confirm step in front: sign-ups close the moment
+    // this lands, and the whole team sees it.
     Task<Result<Unit>> DeclineAsync(Game game, Team team, Actor actor, CancellationToken ct);
 
     // Shared by the scheduler's auto-finish and the manual Finish button (invariant 8) — one
     // materialization path, not two. A null actor means the system did it, which is also the
     // one case that skips the captain check: the scheduler has nobody to check.
     Task<Result<Unit>> FinishAsync(Game game, Team team, Actor? actor, CancellationToken ct);
+
+    // Undoes a finish or a decline, putting the game back exactly where it was: the signups
+    // were never touched by either, so the roster comes back as it stood, and the
+    // participation rows a finish wrote are removed so the next finish materialises afresh.
+    // That removal is the one deliberate exception to invariant 7 — those rows were derived
+    // from signups that still exist, and keeping a mistaken finish's output around would mean
+    // every reader of participation filtering it out forever. Refused with GameOver once
+    // game.EndsAt has passed — the scheduler would only finish it again on its next tick, with
+    // nobody to credit — which is also what keeps this to finishes a person made by hand: the
+    // scheduler never finishes early.
+    Task<Result<Unit>> ReopenAsync(Game game, Team team, Actor actor, CancellationToken ct);
 }
 
 // Whether this member currently has a live signup for the game — the "Manage players" view's
@@ -528,6 +540,48 @@ public sealed class GameService : IGameService
         game.FinishedAt = now;
 
         AuditRecorder.Record(_db, game.TeamId, game.Id, actor?.PlayerId, AuditActions.GameFinished, new { }, _clock);
+
+        await _db.SaveChangesAsync(ct);
+
+        return new Unit();
+    }
+
+    public async Task<Result<Unit>> ReopenAsync(Game game, Team team, Actor actor, CancellationToken ct)
+    {
+        var allowed = await _guard.RequireCaptainAsync(team, actor, ct);
+        if (!allowed.IsSuccess)
+        {
+            return allowed.Error;
+        }
+
+        if (!game.IsFinished && !game.IsDeclined)
+        {
+            return new BusinessError.GameAlreadyLive();
+        }
+
+        var now = _clock.GetUtcNow();
+        if (now >= game.EndsAt)
+        {
+            return new BusinessError.GameOver();
+        }
+
+        // Removed through the change tracker rather than ExecuteDelete, so it lands in the same
+        // save as the state change and the audit row.
+        var participations = await _db.Participations.Where(p => p.GameId == game.Id).ToListAsync(ct);
+        _db.Participations.RemoveRange(participations);
+
+        AuditRecorder.Record(
+            _db,
+            game.TeamId,
+            game.Id,
+            actor.PlayerId,
+            AuditActions.GameReopened,
+            new { game.FinishedAt, game.DeclinedAt },
+            _clock
+        );
+
+        game.FinishedAt = null;
+        game.DeclinedAt = null;
 
         await _db.SaveChangesAsync(ct);
 

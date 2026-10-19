@@ -116,12 +116,21 @@ Breaking one of these is a bug, not a preference.
     signups become immutable history. That split is what lets a captain record "Лена played
     instead of Костя" without falsifying a timestamp, and it stops a later capacity change
     silently rewriting what already happened.
+    **A finish or a decline made by hand can be reopened until the game's time has passed**
+    — `now < game.EndsAt`, the same three hours. Past that the scheduler would only finish it
+    again, with nobody to credit, so there is nothing live to reopen into; and since the
+    scheduler never finishes early, this is by construction only ever undoing a captain's
+    tap. Reopening restores the signups untouched (neither finish nor decline alters them)
+    and **deletes the participation rows the finish wrote** — the one deliberate exception
+    to invariant 7, because those rows are a materialisation of signups that still exist,
+    and the next finish writes them afresh. The reopen itself is audited.
 12. **Only the Board is pinned.** The bot verifies the pin and restores it silently, reposting
     from the database if the message is gone.
 13. **Captain actions that change another player's state are recorded in `AuditEntry`** —
-    registering or dropping someone on their behalf, declining or finishing a game, granting
-    or revoking captaincy, editing a finished game's participation (played, or adding a
-    venue-assigned player), adding a team guest or removing any guest on someone's behalf.
+    registering or dropping someone on their behalf, declining, finishing or reopening a
+    game, granting or revoking captaincy, editing a finished game's participation (played, or
+    adding a venue-assigned player), adding a team guest or removing any guest on someone's
+    behalf.
     `ActorPlayerId` is the captain; null means the system did it (the scheduler's auto-finish).
     Ordinary self-service already carries its own actor via a signup's own fields; this is for
     the actions that don't.
