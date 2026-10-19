@@ -4,6 +4,8 @@ using Quizr.App.Rendering;
 using Quizr.App.Telegram;
 using Quizr.Domain;
 using Quizr.Domain.Entities;
+using Quizr.Domain.Extensions;
+using Telegram.Bot.Types.ReplyMarkups;
 
 namespace Quizr.App.Tests;
 
@@ -11,6 +13,9 @@ public class AnnouncementRendererTests
 {
     private static readonly GameId GameId = new(1);
     private static readonly IStringsFor Strings = new Strings().For("en");
+
+    // Before every test game's EndsAt: GameWithCapacity starts tomorrow.
+    private static readonly DateTimeOffset Now = DateTimeOffset.UtcNow;
 
     [Test]
     public void ListsPlayersInQueueOrderUnderThePlayingHeader()
@@ -206,7 +211,7 @@ public class AnnouncementRendererTests
     [Test]
     public void TheManagePanelHoldsTheCaptainActionsForALiveGame()
     {
-        var keyboard = AnnouncementRenderer.RenderManagePanel(GameWithCapacity(5), Strings);
+        var keyboard = AnnouncementRenderer.RenderManagePanel(GameWithCapacity(5), Now, Strings);
 
         var verbs = keyboard.InlineKeyboard.SelectMany(row => row).Select(b => b.CallbackData![0]).ToList();
 
@@ -276,7 +281,7 @@ public class AnnouncementRendererTests
         var game = GameWithCapacity(5);
 
         var button = AnnouncementRenderer
-            .RenderManagePanel(game, Strings)
+            .RenderManagePanel(game, Now, Strings)
             .InlineKeyboard.SelectMany(row => row)
             .Single(b => b.CallbackData![0] == CallbackData.PickGameToEdit);
 
@@ -292,7 +297,7 @@ public class AnnouncementRendererTests
         game.FinishedAt = DateTimeOffset.UtcNow;
 
         var announcement = AnnouncementRenderer.RenderKeyboard(game, Strings);
-        var panel = AnnouncementRenderer.RenderManagePanel(game, Strings);
+        var panel = AnnouncementRenderer.RenderManagePanel(game, Now, Strings);
 
         announcement
             .InlineKeyboard.SelectMany(row => row)
@@ -306,6 +311,56 @@ public class AnnouncementRendererTests
             .Contain(CallbackData.ManageRoster)
             .And.NotContain(CallbackData.PickGameToEdit);
     }
+
+    // A declined game used to keep no buttons at all. Now it keeps the same single door a
+    // finished one does, because reopening has to be reachable from somewhere, and behind it
+    // there is only Reopen — no roster, since declining never materialised one.
+    [Test]
+    public void ADeclinedGameOffersOnlyReopenBehindTheManageDoor()
+    {
+        var game = GameWithCapacity(5);
+        game.DeclinedAt = DateTimeOffset.UtcNow;
+
+        var announcement = AnnouncementRenderer.RenderKeyboard(game, Strings);
+        var panel = AnnouncementRenderer.RenderManagePanel(game, Now, Strings);
+
+        announcement
+            .InlineKeyboard.SelectMany(row => row)
+            .Select(b => b.CallbackData![0])
+            .Should()
+            .Equal(CallbackData.Manage);
+        panel
+            .InlineKeyboard.SelectMany(row => row)
+            .Select(b => b.CallbackData![0])
+            .Should()
+            .Contain(CallbackData.ReopenGame)
+            .And.NotContain([CallbackData.ManageRoster, CallbackData.FinishGame, CallbackData.DeclineGame]);
+    }
+
+    [Test]
+    public void AFinishedGameCanBeReopenedUntilItsTimeHasPassed()
+    {
+        var game = GameWithCapacity(5);
+        game.FinishedAt = DateTimeOffset.UtcNow;
+
+        Verbs(AnnouncementRenderer.RenderManagePanel(game, game.EndsAt.AddMinutes(-1), Strings))
+            .Should()
+            .Contain(CallbackData.ReopenGame);
+        Verbs(AnnouncementRenderer.RenderManagePanel(game, game.EndsAt, Strings))
+            .Should()
+            .NotContain(CallbackData.ReopenGame);
+    }
+
+    [Test]
+    public void ALiveGameHasNothingToReopen()
+    {
+        Verbs(AnnouncementRenderer.RenderManagePanel(GameWithCapacity(5), Now, Strings))
+            .Should()
+            .NotContain(CallbackData.ReopenGame);
+    }
+
+    private static List<char> Verbs(InlineKeyboardMarkup keyboard) =>
+        keyboard.InlineKeyboard.SelectMany(row => row).Select(b => b.CallbackData![0]).ToList();
 
     private static Player Player(long id, string displayName) =>
         new()

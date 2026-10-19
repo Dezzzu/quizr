@@ -61,6 +61,7 @@
   "Announcement.EditGameButton": "✏️ Изменить игру",
   "Announcement.FinishButton": "🏁 Завершить",
   "Announcement.DeclineButton": "🚫 Отменить",
+  "Announcement.ReopenButton": "🔄 Возобновить",
   "Announcement.Joined": "Вы записаны!",
   "Announcement.GuestAdded": "Гость добавлен!",
   "Announcement.Finished": "🏁 <b>Завершено</b>",
@@ -72,13 +73,17 @@
   "Drop.Cancelled": "Вы вышли. Ваше место освобождено.",
   "Drop.StillIn": "Хорошо, вы всё ещё участвуете!",
 
-  "Decline.ConfirmPrompt": "Отменить игру {Title}? Это необратимо — игра будет помечена как отменённая, а запись закроется.",
+  "Decline.ConfirmPrompt": "Отменить игру {Title}? Игра будет помечена как отменённая, а запись закроется. Капитан может возобновить её через «Управление», пока время игры не прошло.",
   "Decline.ConfirmYes": "Да, отменить",
   "Decline.ConfirmNo": "Нет, оставить",
   "Decline.Declined": "🚫 Отменено.",
   "Decline.Cancelled": "Хорошо, оставлено как есть.",
 
   "Finish.Finished": "🏁 Завершено.",
+
+  "Reopen.Reopened": "🔄 Возобновлено.",
+  "Reopen.AlreadyLive": "Эта игра уже открыта.",
+  "Reopen.GameOver": "Время этой игры уже прошло — возобновить её нельзя.",
 
   "Guest.NamePrompt": "Хотите указать имя гостя? Ответьте им, или напишите \"skip\", чтобы оставить гостя анонимным.",
   "Guest.SkipButton": "Пропустить",

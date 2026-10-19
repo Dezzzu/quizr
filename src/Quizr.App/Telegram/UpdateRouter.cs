@@ -1707,6 +1707,7 @@ public sealed class UpdateRouter
             case CallbackData.ConfirmDecline:
             case CallbackData.CancelDecline:
             case CallbackData.FinishGame:
+            case CallbackData.ReopenGame:
                 await HandleGameCallbackAsync(verb, callbackQuery, ct);
                 break;
 
@@ -1854,6 +1855,10 @@ public sealed class UpdateRouter
 
             case CallbackData.FinishGame:
                 await HandleFinishButtonAsync(game, scope, callbackQuery, ct);
+                break;
+
+            case CallbackData.ReopenGame:
+                await HandleReopenButtonAsync(game, scope, callbackQuery, ct);
                 break;
         }
     }
@@ -2931,7 +2936,7 @@ public sealed class UpdateRouter
             scope.ChatId,
             scope.Actor.TelegramUserId,
             scope.Strings.Text("Manage.Header", new { Title = WebUtility.HtmlEncode(game.Title) }),
-            AnnouncementRenderer.RenderManagePanel(game, scope.Strings),
+            AnnouncementRenderer.RenderManagePanel(game, _clock.GetUtcNow(), scope.Strings),
             callbackQuery.Id,
             ct
         );
@@ -3367,6 +3372,28 @@ public sealed class UpdateRouter
         await _board.RefreshAsync(scope.Team, ct);
 
         await _bot.AnswerCallbackQuery(callbackQuery.Id, scope.Strings.Text("Finish.Finished"), cancellationToken: ct);
+    }
+
+    // No confirm, like Finish: it puts the game back as it was, and Finish or Decline are
+    // right there to undo it in turn.
+    private async Task HandleReopenButtonAsync(
+        Game game,
+        CallbackScope scope,
+        CallbackQuery callbackQuery,
+        CancellationToken ct
+    )
+    {
+        var result = await _games.ReopenAsync(game, scope.Team, scope.Actor, ct);
+        if (!result.IsSuccess)
+        {
+            await AnswerAlertAsync(callbackQuery, scope.Strings.Text(ErrorKey(result.Error)), ct);
+            return;
+        }
+
+        await _announcements.RefreshAsync(game, scope.Team, ct);
+        await _board.RefreshAsync(scope.Team, ct);
+
+        await _bot.AnswerCallbackQuery(callbackQuery.Id, scope.Strings.Text("Reopen.Reopened"), cancellationToken: ct);
     }
 
     // --- Act on behalf of a player ("Manage players", design decision #2 of M9) ---
@@ -4250,6 +4277,8 @@ public sealed class UpdateRouter
             BusinessError.NotCaptain => "NewGame.NotCaptain",
             BusinessError.NudgeOnCooldown => "Nudge.OnCooldown",
             BusinessError.GameNotFinished => "Roster.GameNotFinished",
+            BusinessError.GameAlreadyLive => "Reopen.AlreadyLive",
+            BusinessError.GameOver => "Reopen.GameOver",
             BusinessError.FranchiseNameTaken => "Franchise.NameTaken",
             _ => "Error.Generic",
         };

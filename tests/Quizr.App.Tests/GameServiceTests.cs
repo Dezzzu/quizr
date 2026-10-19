@@ -5,6 +5,7 @@ using Quizr.App.Data;
 using Quizr.App.Services;
 using Quizr.Domain;
 using Quizr.Domain.Entities;
+using Quizr.Domain.Extensions;
 
 namespace Quizr.App.Tests;
 
@@ -351,6 +352,123 @@ public class GameServiceTests
         entry.Action.Should().Be(AuditActions.GameFinished);
         entry.ActorPlayerId.Should().Be(captain.PlayerId);
     }
+
+    [Test]
+    public async Task ReopenAsyncUndoesADeclineAndRecordsAnAuditEntry()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 6113, ct);
+        var captain = await TestCaptain.SeedAsync(db, team, telegramUserId: 6113, ct);
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 9, 12, 10, 0, 0, TimeSpan.Zero));
+        var gameService = new GameService(db, captain.Guard, clock);
+        var game = await CreateGameAsync(gameService, team, captain, capacity: 10, ct);
+        await gameService.DeclineAsync(game, team, captain.Actor, ct);
+
+        var result = await gameService.ReopenAsync(game, team, captain.Actor, ct);
+
+        result.IsSuccess.Should().BeTrue();
+        game.DeclinedAt.Should().BeNull();
+        var entry = await db.AuditEntries.SingleAsync(
+            e => e.GameId == game.Id && e.Action == AuditActions.GameReopened,
+            ct
+        );
+        entry.ActorPlayerId.Should().Be(captain.PlayerId);
+    }
+
+    // A mistaken finish leaves no trace in participation: its rows go, and the real finish
+    // writes its own batch from the signups as they stand then — so a player who joined in
+    // between is counted, and nobody is counted twice.
+    [Test]
+    public async Task ReopenAsyncRemovesTheParticipationRowsAndTheNextFinishWritesAFreshBatch()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 6114, ct);
+        var captain = await TestCaptain.SeedAsync(db, team, telegramUserId: 6114, ct);
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 9, 12, 10, 0, 0, TimeSpan.Zero));
+        var gameService = new GameService(db, captain.Guard, clock);
+        var game = await CreateGameAsync(gameService, team, captain, capacity: 10, ct);
+        var signups = new SignupService(db, captain.Guard, clock);
+        var early = await SeedPlayerAsync(db, telegramUserId: 61141, ct);
+        var late = await SeedPlayerAsync(db, telegramUserId: 61142, ct);
+        await signups.JoinAsync(game, early.Id, ct);
+        await gameService.FinishAsync(game, team, captain.Actor, ct);
+
+        var reopened = await gameService.ReopenAsync(game, team, captain.Actor, ct);
+        reopened.IsSuccess.Should().BeTrue();
+        game.FinishedAt.Should().BeNull();
+        (await db.Participations.AsNoTracking().AnyAsync(p => p.GameId == game.Id, ct)).Should().BeFalse();
+
+        clock.Advance(TimeSpan.FromMinutes(1));
+        await signups.JoinAsync(game, late.Id, ct);
+        await gameService.FinishAsync(game, team, captain.Actor, ct);
+
+        var rows = await db.Participations.AsNoTracking().Where(p => p.GameId == game.Id).ToListAsync(ct);
+        rows.Select(p => p.PlayerId).Should().BeEquivalentTo([early.Id, late.Id]);
+    }
+
+    [Test]
+    public async Task ReopenAsyncRefusesOnceTheGamesTimeHasPassed()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 6115, ct);
+        var captain = await TestCaptain.SeedAsync(db, team, telegramUserId: 6115, ct);
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 9, 12, 10, 0, 0, TimeSpan.Zero));
+        var gameService = new GameService(db, captain.Guard, clock);
+        var game = await CreateGameAsync(gameService, team, captain, capacity: 10, ct);
+        await gameService.DeclineAsync(game, team, captain.Actor, ct);
+
+        // 19:00 Berlin plus the three hours a game lasts — the moment the scheduler would
+        // have finished it, and the moment reopening stops making sense.
+        clock.SetUtcNow(game.EndsAt);
+        var result = await gameService.ReopenAsync(game, team, captain.Actor, ct);
+
+        result.IsSuccess.Should().BeFalse();
+        result.Error.Should().BeOfType<BusinessError.GameOver>();
+        game.DeclinedAt.Should().NotBeNull();
+        (await db.AuditEntries.AnyAsync(e => e.GameId == game.Id && e.Action == AuditActions.GameReopened, ct))
+            .Should()
+            .BeFalse();
+    }
+
+    [Test]
+    public async Task ReopenAsyncRefusesAGameThatIsAlreadyLive()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 6116, ct);
+        var captain = await TestCaptain.SeedAsync(db, team, telegramUserId: 6116, ct);
+        var gameService = new GameService(db, captain.Guard, new FakeTimeProvider());
+        var game = await CreateGameAsync(gameService, team, captain, capacity: 10, ct);
+
+        var result = await gameService.ReopenAsync(game, team, captain.Actor, ct);
+
+        result.IsSuccess.Should().BeFalse();
+        result.Error.Should().BeOfType<BusinessError.GameAlreadyLive>();
+    }
+
+    private static async Task<Game> CreateGameAsync(
+        GameService gameService,
+        Team team,
+        TestCaptain captain,
+        int capacity,
+        CancellationToken ct
+    ) =>
+        (
+            await gameService.CreateOneOffAsync(
+                team,
+                captain.Actor,
+                "Quiz",
+                "The Pub",
+                new DateOnly(2026, 9, 12),
+                new TimeOnly(19, 0),
+                capacity,
+                null,
+                ct
+            )
+        ).Value;
 
     [Test]
     public async Task SetTagsAsyncReplacesTheTagList()

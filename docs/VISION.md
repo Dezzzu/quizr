@@ -174,6 +174,10 @@ ordinary case needs no input at all. The captain's post-game screen exists only 
 someone absent, add a venue-assigned player, or decline the game entirely. A finished game
 keeps its roster editable by captains forever.
 
+A Finish or Decline tapped by mistake is undone with *Reopen*, behind the same Manage button,
+for as long as the game's three hours are still running. After that the auto-finish would
+only land again on the next tick, so the option disappears.
+
 ---
 
 ## How the six problems are answered
@@ -311,6 +315,7 @@ Recorded so they don't get re-argued.
 | Frequent guests get added to the chat | Guest records are per-game. Someone who keeps coming becomes a member. |
 | A game lasts three hours | Plus an explicit Finish button. Late arrivals and last-minute changes are normal, so a game stays live for the whole of it. One number rather than two: the same three hours decide when the scheduler auto-finishes a game and how much of an evening its calendar event books, so the two can't drift. It was four hours until the calendar feed needed a duration and found none to reuse. |
 | Rosters are never frozen for captains | Composition changes on the night; the archive should record what happened. |
+| A manual finish or decline can be reopened, until the game is over | Both are one tap on a panel every captain sees, and a wrong tap closes sign-ups for the whole team. Undo is cheap because neither touches the signups — the roster simply comes back, and the participation rows a mistaken finish wrote are removed so the real finish writes them afresh. The cut-off is the same three hours the auto-finish runs on: past them the scheduler would just finish the game again, and there is nothing live to go back to. |
 | No undo window on dropping out | Dropping removes you entirely; re-registering puts you at the back. Simple, and it lets an unsure person step aside without holding a seat. |
 | A freed seat is promoted automatically and held | The next person is notified and the seat waits. If they go quiet, the captain steps in — no timers. |
 | Archive open to everyone, statistics captain-only | Anyone can page back through old games. Aggregate numbers stay private until it's clear which are corrosive. |

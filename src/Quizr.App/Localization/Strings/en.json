@@ -61,6 +61,7 @@
   "Announcement.EditGameButton": "✏️ Edit game",
   "Announcement.FinishButton": "🏁 Finish now",
   "Announcement.DeclineButton": "🚫 Decline",
+  "Announcement.ReopenButton": "🔄 Reopen",
   "Announcement.Joined": "You're in!",
   "Announcement.GuestAdded": "Guest added!",
   "Announcement.Finished": "🏁 <b>Finished</b>",
@@ -72,13 +73,17 @@
   "Drop.Cancelled": "You're out. Your spot has been given up.",
   "Drop.StillIn": "Okay, you're still in!",
 
-  "Decline.ConfirmPrompt": "Decline {Title}? This can't be undone — the game will be marked declined and sign-ups will close.",
+  "Decline.ConfirmPrompt": "Decline {Title}? The game will be marked declined and sign-ups will close. A captain can reopen it from Manage until its time has passed.",
   "Decline.ConfirmYes": "Yes, decline",
   "Decline.ConfirmNo": "No, keep it",
   "Decline.Declined": "🚫 Declined.",
   "Decline.Cancelled": "Okay, kept as is.",
 
   "Finish.Finished": "🏁 Finished.",
+
+  "Reopen.Reopened": "🔄 Reopened.",
+  "Reopen.AlreadyLive": "This game is already open.",
+  "Reopen.GameOver": "That game's time has passed, so it can't be reopened.",
 
   "Guest.NamePrompt": "Want to give your guest a name? Reply with it, or skip to keep them anonymous.",
   "Guest.SkipButton": "Skip",

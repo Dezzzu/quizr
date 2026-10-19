@@ -87,18 +87,14 @@ internal static class AnnouncementRenderer
     // on a late player can chase them, and GameService's own cooldown is what stops it being
     // used as a bludgeon.
     //
-    // A declined game keeps no buttons at all — there's no roster left to act on, but it stays
+    // A finished or declined game keeps only that door: there's no roster for the team to act
+    // on, but a captain can still edit a finished roster or reopen either, and the post stays
     // visible for the record (invariant 7).
     public static InlineKeyboardMarkup RenderKeyboard(Game game, IStringsFor strings)
     {
         var gameId = game.Id;
 
-        if (game.IsDeclined)
-        {
-            return new InlineKeyboardMarkup(new List<IEnumerable<InlineKeyboardButton>>());
-        }
-
-        if (game.IsFinished)
+        if (game.IsFinished || game.IsDeclined)
         {
             return new([
                 [ManageButton(gameId, strings)],
@@ -143,8 +139,11 @@ internal static class AnnouncementRenderer
         );
 
     // What opens behind that door, private to the captain who tapped it. A finished game has
-    // only its roster left to edit (invariant 11); a live one has everything else.
-    public static InlineKeyboardMarkup RenderManagePanel(Game game, IStringsFor strings)
+    // its roster left to edit (invariant 11); a live one has everything else. Finished or
+    // declined, it can be reopened until its time has passed — the clock is passed in rather
+    // than read here, same as every other comparison against now (GameExtensions). The panel
+    // is drawn fresh on every tap, so unlike the announcement it can afford to depend on it.
+    public static InlineKeyboardMarkup RenderManagePanel(Game game, DateTimeOffset now, IStringsFor strings)
     {
         var gameId = game.Id;
         var rows = new List<IEnumerable<InlineKeyboardButton>>();
@@ -157,6 +156,21 @@ internal static class AnnouncementRenderer
                     CallbackData.Format(CallbackData.ManageRoster, gameId)
                 ),
             ]);
+        }
+
+        if (game.IsFinished || game.IsDeclined)
+        {
+            // Hidden rather than refused once the game is over, but GameService.ReopenAsync
+            // refuses too: the panel can sit open across that moment.
+            if (now < game.EndsAt)
+            {
+                rows.Add([
+                    InlineKeyboardButton.WithCallbackData(
+                        strings.Text("Announcement.ReopenButton"),
+                        CallbackData.Format(CallbackData.ReopenGame, gameId)
+                    ),
+                ]);
+            }
         }
         else
         {
