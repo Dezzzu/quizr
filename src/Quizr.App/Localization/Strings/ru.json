@@ -128,6 +128,9 @@
   "Reminder.MorningOf.Dm": "⏰ Напоминание: <b>{Title}</b> уже сегодня, в {When:HH\\:mm}!",
   "Reminder.BeforeStart.Group": "⏰ Напоминание для {Mentions}: <b>{Title}</b> скоро начнётся, в {When:HH\\:mm}!",
   "Reminder.BeforeStart.Dm": "⏰ Напоминание: <b>{Title}</b> скоро начнётся, в {When:HH\\:mm}!",
+  "RegistrationReminder.Dm": "📝 На <b>{Title}</b> ({When:ddd, dd MMM, HH\\:mm}, {Venue}) записалось достаточно игроков. Команда уже зарегистрирована на игру? Нажмите кнопку, когда это будет сделано.",
+  "RegistrationReminder.DoneButton": "✅ Команда записана",
+  "RegistrationReminder.Done": "✅ Принято: команда зарегистрирована на <b>{Title}</b>.",
 
   "Signup.AlreadySignedUp": "Вы уже записаны на эту игру.",
   "Signup.NotSignedUp": "У вас нет места в этой игре.",

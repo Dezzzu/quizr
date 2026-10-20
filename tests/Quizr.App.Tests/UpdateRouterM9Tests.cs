@@ -289,6 +289,65 @@ public class UpdateRouterM9Tests
     }
 
     [Test]
+    public async Task TeamRegisteredButtonInACaptainsDmStampsTheGameAndRewritesTheMessage()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 8040, capacity: 5, ct);
+        await SeedCaptainAsync(db, game.TeamId, telegramUserId: 80401, ct);
+        var (router, bot) = CreateRouter(db);
+
+        // A DM's chat id is the person's own user id, not the team's chat.
+        await router.RouteAsync(
+            CallbackUpdate(80401, 80401, CallbackData.Format(CallbackData.TeamRegistered, game.Id)),
+            ct
+        );
+
+        (await db.Games.AsNoTracking().SingleAsync(g => g.Id == game.Id, ct)).TeamRegisteredAt.Should().NotBeNull();
+        bot.EditedTexts(80401)
+            .Should()
+            .ContainSingle(t => t != null && t.Contains("registered", StringComparison.Ordinal));
+    }
+
+    [Test]
+    public async Task TeamRegisteredButtonRefusesSomeoneWhoIsNotACaptain()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 8041, capacity: 5, ct);
+        await SeedMemberAsync(db, game.TeamId, telegramUserId: 80411, ct);
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(
+            CallbackUpdate(80411, 80411, CallbackData.Format(CallbackData.TeamRegistered, game.Id)),
+            ct
+        );
+
+        (await db.Games.AsNoTracking().SingleAsync(g => g.Id == game.Id, ct)).TeamRegisteredAt.Should().BeNull();
+        bot.AnsweredCallbackAlerts()
+            .Should()
+            .ContainSingle(a => a != null && a.Contains("captain", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Test]
+    public async Task TeamRegisteredButtonTappedTwiceByTwoCaptainsKeepsTheFirstTimestamp()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 8042, capacity: 5, ct);
+        await SeedCaptainAsync(db, game.TeamId, telegramUserId: 80421, ct);
+        await SeedCaptainAsync(db, game.TeamId, telegramUserId: 80422, ct);
+        var (router, _) = CreateRouter(db);
+        var data = CallbackData.Format(CallbackData.TeamRegistered, game.Id);
+
+        await router.RouteAsync(CallbackUpdate(80421, 80421, data), ct);
+        var first = (await db.Games.AsNoTracking().SingleAsync(g => g.Id == game.Id, ct)).TeamRegisteredAt;
+        await router.RouteAsync(CallbackUpdate(80422, 80422, data), ct);
+
+        (await db.Games.AsNoTracking().SingleAsync(g => g.Id == game.Id, ct)).TeamRegisteredAt.Should().Be(first);
+    }
+
+    [Test]
     public async Task ManageCaptainsGrantsAndThenRevokesCaptaincyWithAnAuditTrail()
     {
         var ct = TestContext.Current!.Execution.CancellationToken;

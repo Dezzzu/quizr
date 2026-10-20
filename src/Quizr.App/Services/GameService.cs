@@ -122,6 +122,12 @@ public interface IGameService
     // nobody to credit — which is also what keeps this to finishes a person made by hand: the
     // scheduler never finishes early.
     Task<Result<Unit>> ReopenAsync(Game game, Team team, Actor actor, CancellationToken ct);
+
+    // A captain's word that the team is registered for the game at the venue, which stops the
+    // registration reminder. Idempotent — several captains each hold the same DM, and the
+    // second tap is not a failure. Not audited: invariant 13 is for actions that change another
+    // player's state, and this changes nobody's.
+    Task<Result<Unit>> MarkTeamRegisteredAsync(Game game, Team team, Actor actor, CancellationToken ct);
 }
 
 // Whether this member currently has a live signup for the game — the "Manage players" view's
@@ -584,6 +590,33 @@ public sealed class GameService : IGameService
         game.DeclinedAt = null;
 
         await _db.SaveChangesAsync(ct);
+
+        return new Unit();
+    }
+
+    public async Task<Result<Unit>> MarkTeamRegisteredAsync(Game game, Team team, Actor actor, CancellationToken ct)
+    {
+        var allowed = await _guard.RequireCaptainAsync(team, actor, ct);
+        if (!allowed.IsSuccess)
+        {
+            return allowed.Error;
+        }
+
+        if (game.IsFinished)
+        {
+            return new BusinessError.GameAlreadyFinished();
+        }
+
+        if (game.IsDeclined)
+        {
+            return new BusinessError.RegistrationClosed();
+        }
+
+        if (game.TeamRegisteredAt is null)
+        {
+            game.TeamRegisteredAt = _clock.GetUtcNow();
+            await _db.SaveChangesAsync(ct);
+        }
 
         return new Unit();
     }

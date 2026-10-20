@@ -196,6 +196,9 @@ namespace Quizr.App.Data.Migrations
                     b.Property<decimal?>("Price")
                         .HasColumnType("numeric");
 
+                    b.Property<DateTimeOffset?>("RegistrationReminderSentAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTimeOffset>("RevisedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -211,6 +214,9 @@ namespace Quizr.App.Data.Migrations
 
                     b.Property<long>("TeamId")
                         .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset?>("TeamRegisteredAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Title")
                         .IsRequired()

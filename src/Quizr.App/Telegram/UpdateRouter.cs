@@ -1708,6 +1708,7 @@ public sealed class UpdateRouter
             case CallbackData.CancelDecline:
             case CallbackData.FinishGame:
             case CallbackData.ReopenGame:
+            case CallbackData.TeamRegistered:
                 await HandleGameCallbackAsync(verb, callbackQuery, ct);
                 break;
 
@@ -1859,6 +1860,10 @@ public sealed class UpdateRouter
 
             case CallbackData.ReopenGame:
                 await HandleReopenButtonAsync(game, scope, callbackQuery, ct);
+                break;
+
+            case CallbackData.TeamRegistered:
+                await HandleTeamRegisteredButtonAsync(game, scope, callbackQuery, ct);
                 break;
         }
     }
@@ -3394,6 +3399,35 @@ public sealed class UpdateRouter
         await _board.RefreshAsync(scope.Team, ct);
 
         await _bot.AnswerCallbackQuery(callbackQuery.Id, scope.Strings.Text("Reopen.Reopened"), cancellationToken: ct);
+    }
+
+    // Tapped in a captain's DM, not in the team chat, so the message to rewrite is the one the
+    // callback carries rather than anything under scope.ChatId, and the wording is the
+    // captain's own language rather than the team's.
+    private async Task HandleTeamRegisteredButtonAsync(
+        Game game,
+        CallbackScope scope,
+        CallbackQuery callbackQuery,
+        CancellationToken ct
+    )
+    {
+        var strings = _strings.For(scope.Player.Locale ?? scope.Team.Locale);
+
+        var result = await _games.MarkTeamRegisteredAsync(game, scope.Team, scope.Actor, ct);
+        if (!result.IsSuccess)
+        {
+            await AnswerAlertAsync(callbackQuery, strings.Text(ErrorKey(result.Error)), ct);
+            return;
+        }
+
+        await _sender.TryEditImmediatelyAsync(
+            new TelegramChatId(callbackQuery.Message!.Chat.Id),
+            new TelegramMessageId(callbackQuery.Message.MessageId),
+            strings.Text("RegistrationReminder.Done", new { Title = WebUtility.HtmlEncode(game.Title) }),
+            null,
+            ct
+        );
+        await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
     // --- Act on behalf of a player ("Manage players", design decision #2 of M9) ---

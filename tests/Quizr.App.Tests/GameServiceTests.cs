@@ -568,6 +568,69 @@ public class GameServiceTests
         return team;
     }
 
+    [Test]
+    public async Task MarkTeamRegisteredAsyncStampsTheGameAndIsIdempotent()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 6180, ct);
+        var captain = await TestCaptain.SeedAsync(db, team, telegramUserId: 6180, ct);
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 9, 10, 10, 0, 0, TimeSpan.Zero));
+        var gameService = new GameService(db, captain.Guard, clock);
+        var game = await CreateGameAsync(gameService, team, captain, capacity: 10, ct);
+
+        var first = await gameService.MarkTeamRegisteredAsync(game, team, captain.Actor, ct);
+        clock.Advance(TimeSpan.FromHours(1));
+        var second = await gameService.MarkTeamRegisteredAsync(game, team, captain.Actor, ct);
+
+        first.IsSuccess.Should().BeTrue();
+        second.IsSuccess.Should().BeTrue();
+        var stored = await db.Games.AsNoTracking().SingleAsync(g => g.Id == game.Id, ct);
+        stored.TeamRegisteredAt.Should().Be(new DateTimeOffset(2026, 9, 10, 10, 0, 0, TimeSpan.Zero));
+    }
+
+    [Test]
+    public async Task MarkTeamRegisteredAsyncRefusesSomeoneWhoIsNotACaptain()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 6181, ct);
+        var captain = await TestCaptain.SeedAsync(db, team, telegramUserId: 6181, ct);
+        var gameService = new GameService(db, captain.Guard, new FakeTimeProvider());
+        var game = await CreateGameAsync(gameService, team, captain, capacity: 10, ct);
+        var outsider = await SeedMemberAsync(db, team.Id, telegramUserId: 61811, ct);
+
+        var result = await gameService.MarkTeamRegisteredAsync(
+            game,
+            team,
+            new Actor(outsider.Id, new TelegramUserId(61811)),
+            ct
+        );
+
+        result.Error.Should().BeOfType<BusinessError.NotCaptain>();
+        (await db.Games.AsNoTracking().SingleAsync(g => g.Id == game.Id, ct)).TeamRegisteredAt.Should().BeNull();
+    }
+
+    [Test]
+    public async Task MarkTeamRegisteredAsyncRefusesAFinishedOrDeclinedGame()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 6182, ct);
+        var captain = await TestCaptain.SeedAsync(db, team, telegramUserId: 6182, ct);
+        var gameService = new GameService(db, captain.Guard, new FakeTimeProvider());
+        var finished = await CreateGameAsync(gameService, team, captain, capacity: 10, ct);
+        var declined = await CreateGameAsync(gameService, team, captain, capacity: 10, ct);
+        await gameService.FinishAsync(finished, team, captain.Actor, ct);
+        await gameService.DeclineAsync(declined, team, captain.Actor, ct);
+
+        var onFinished = await gameService.MarkTeamRegisteredAsync(finished, team, captain.Actor, ct);
+        var onDeclined = await gameService.MarkTeamRegisteredAsync(declined, team, captain.Actor, ct);
+
+        onFinished.Error.Should().BeOfType<BusinessError.GameAlreadyFinished>();
+        onDeclined.Error.Should().BeOfType<BusinessError.RegistrationClosed>();
+    }
+
     // Editing a live game is captain-only, and the check belongs to the operation rather than
     // to whichever screen reached it (STYLE.md) — a stale keyboard, or phase 2's HTTP endpoint,
     // must hit the same refusal the update router does.

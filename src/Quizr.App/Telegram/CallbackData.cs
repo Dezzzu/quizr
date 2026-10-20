@@ -69,6 +69,10 @@ internal static class CallbackData
     public const char FinishGame = 'E';
     public const char ReopenGame = 'O';
 
+    // The button on the registration-reminder DM — carries a GameId. It lives in a private
+    // chat with a captain, not under the announcement, so it is not part of the Manage view.
+    public const char TeamRegistered = 'T';
+
     // The calendar feed's own settings view (/mycalendar) — dummy ids throughout, since a
     // person only ever acts on their own subscription and the callback carries no target.
     // Both destructive actions confirm first, the same shape as Drop and Decline: replacing a

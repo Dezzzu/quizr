@@ -128,6 +128,9 @@
   "Reminder.MorningOf.Dm": "⏰ Reminder: <b>{Title}</b> is today at {When:HH\\:mm}!",
   "Reminder.BeforeStart.Group": "⏰ Reminder for {Mentions}: <b>{Title}</b> starts soon, at {When:HH\\:mm}!",
   "Reminder.BeforeStart.Dm": "⏰ Reminder: <b>{Title}</b> starts soon, at {When:HH\\:mm}!",
+  "RegistrationReminder.Dm": "📝 Enough players have signed up for <b>{Title}</b> ({When:ddd, dd MMM, HH\\:mm}, {Venue}). Has the team been registered for it yet? Tap the button once it's done.",
+  "RegistrationReminder.DoneButton": "✅ Team is registered",
+  "RegistrationReminder.Done": "✅ Noted: the team is registered for <b>{Title}</b>.",
 
   "Signup.AlreadySignedUp": "You're already signed up for this game.",
   "Signup.NotSignedUp": "You don't have a spot in this game.",

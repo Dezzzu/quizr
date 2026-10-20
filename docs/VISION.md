@@ -267,6 +267,12 @@ only ever taps one button in the group chat stays a first-class member of the te
   evening still goes through, but you alone get a private note listing the other games, in the
   `/myschedule` format, with any game from another team's chat marked as such — the one clash
   this chat's Board can never show
+- **Registration reminder** — when a game's roster reaches four (guests count, since they take
+  seats), every captain who has started the bot gets one private message asking them to register
+  the team at the venue, with a button to say it's done. Captains are the explicit grants plus the
+  chat's admins. Sent once per game, never after kickoff, and not at all once any captain has
+  tapped the button. A captain who has never started the bot can't be messaged and is skipped —
+  the group chat is deliberately not used as a fallback
 - **Nudge** — anyone signed up can ping the players who haven't arrived yet, in the team
   chat, so the replies land where everyone waiting can see them. Mandatory rather than
   opt-in, with a per-game cooldown
