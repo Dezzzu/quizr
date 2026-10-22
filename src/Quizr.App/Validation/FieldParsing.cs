@@ -116,6 +116,31 @@ internal static class FieldParsing
         return true;
     }
 
+    // "skip", or an empty reply, puts the threshold back on the team-wide default rather than
+    // clearing it to nothing — there is no such thing as a game with no threshold, only one
+    // that doesn't override it.
+    public static bool TryParseOptionalThreshold(string? input, out int? value, out string? errorKey)
+    {
+        var trimmed = input?.Trim();
+        if (IsBlankOrSkip(trimmed))
+        {
+            value = null;
+            errorKey = null;
+            return true;
+        }
+
+        if (!int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) || parsed <= 0)
+        {
+            value = null;
+            errorKey = "Validation.ThresholdInvalid";
+            return false;
+        }
+
+        value = parsed;
+        errorKey = null;
+        return true;
+    }
+
     // "skip", or an empty reply, means no default capacity — the franchise doesn't have a
     // fixed one, so every game created from it must set its own as an override.
     public static bool TryParseOptionalCapacity(string? input, out int? value, out string? errorKey)

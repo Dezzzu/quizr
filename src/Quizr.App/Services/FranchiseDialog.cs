@@ -27,4 +27,5 @@ internal sealed record EditFranchiseDialogData(FranchiseId FranchiseId, int? Fie
     public const int Capacity = 2;
     public const int Price = 3;
     public const int Schedule = 4;
+    public const int RegistrationThreshold = 5;
 }

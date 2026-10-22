@@ -14,6 +14,7 @@ using Telegram.Bot;
 using Telegram.Bot.Exceptions;
 using Telegram.Bot.Requests;
 using Telegram.Bot.Types;
+using Telegram.Bot.Types.ReplyMarkups;
 using Game = Quizr.Domain.Entities.Game;
 
 namespace Quizr.App.Tests;
@@ -533,6 +534,450 @@ public class SchedulerServiceTests
         return game;
     }
 
+    [Test]
+    public async Task TheFourthSignupMakesTheScheduleAskACaptainToRegisterTheTeam()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
+        var team = await SeedTeamAsync(db, chatId: 9040, ct);
+        var game = await SeedGameAsync(db, team, startsAt, capacity: 18, ct);
+        var captain = await SeedCaptainAsync(db, team, 904001, ct);
+        await SeedMemberSignupsAsync(db, game, startsAt, firstTelegramUserId: 904010, count: 4, ct);
+        var (scheduler, bot) = CreateScheduler(db, startsAt.AddDays(-2));
+
+        await scheduler.RunTickAsync(ct);
+
+        var dm = DmsTo(bot, captain).Should().ContainSingle().Subject;
+        dm.Text.Should().Contain("Quiz Night").And.Contain("registered");
+        var button = ((InlineKeyboardMarkup)dm.ReplyMarkup!).InlineKeyboard.Single().Single();
+        button.CallbackData.Should().Be(CallbackData.Format(CallbackData.TeamRegistered, game.Id));
+        (await db.Games.AsNoTracking().SingleAsync(g => g.Id == game.Id, ct))
+            .RegistrationReminderSentAt.Should()
+            .NotBeNull();
+    }
+
+    [Test]
+    public async Task ThreeSignupsAskNobodyToRegister()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
+        var team = await SeedTeamAsync(db, chatId: 9041, ct);
+        var game = await SeedGameAsync(db, team, startsAt, capacity: 18, ct);
+        var captain = await SeedCaptainAsync(db, team, 904101, ct);
+        await SeedMemberSignupsAsync(db, game, startsAt, firstTelegramUserId: 904110, count: 3, ct);
+        var (scheduler, bot) = CreateScheduler(db, startsAt.AddDays(-2));
+
+        await scheduler.RunTickAsync(ct);
+
+        DmsTo(bot, captain).Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task GuestsCountTowardsTheFour()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
+        var team = await SeedTeamAsync(db, chatId: 9042, ct);
+        var game = await SeedGameAsync(db, team, startsAt, capacity: 18, ct);
+        var captain = await SeedCaptainAsync(db, team, 904201, ct);
+        var inviters = await SeedMemberSignupsAsync(db, game, startsAt, firstTelegramUserId: 904210, count: 2, ct);
+        db.Signups.AddRange(
+            new Signup
+            {
+                GameId = game.Id,
+                InvitedByPlayerId = inviters[0].Id,
+                CreatedAt = startsAt.AddDays(-2),
+            },
+            new Signup
+            {
+                GameId = game.Id,
+                GuestName = "Nina",
+                CreatedAt = startsAt.AddDays(-2).AddMinutes(1),
+            }
+        );
+        await db.SaveChangesAsync(ct);
+        var (scheduler, bot) = CreateScheduler(db, startsAt.AddDays(-2));
+
+        await scheduler.RunTickAsync(ct);
+
+        DmsTo(bot, captain).Should().ContainSingle();
+    }
+
+    [Test]
+    public async Task ASignupThatWasCancelledDoesNotCountTowardsTheFour()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
+        var team = await SeedTeamAsync(db, chatId: 9043, ct);
+        var game = await SeedGameAsync(db, team, startsAt, capacity: 18, ct);
+        var captain = await SeedCaptainAsync(db, team, 904301, ct);
+        await SeedMemberSignupsAsync(db, game, startsAt, firstTelegramUserId: 904310, count: 4, ct);
+        var dropped = await db.Signups.FirstAsync(s => s.GameId == game.Id, ct);
+        dropped.CancelledAt = startsAt.AddDays(-2);
+        await db.SaveChangesAsync(ct);
+        var (scheduler, bot) = CreateScheduler(db, startsAt.AddDays(-2));
+
+        await scheduler.RunTickAsync(ct);
+
+        DmsTo(bot, captain).Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task TheCaptainIsAskedOncePerGameNotOncePerTick()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
+        var team = await SeedTeamAsync(db, chatId: 9044, ct);
+        var game = await SeedGameAsync(db, team, startsAt, capacity: 18, ct);
+        var captain = await SeedCaptainAsync(db, team, 904401, ct);
+        await SeedMemberSignupsAsync(db, game, startsAt, firstTelegramUserId: 904410, count: 5, ct);
+        var (scheduler, bot) = CreateScheduler(db, startsAt.AddDays(-2));
+
+        await scheduler.RunTickAsync(ct);
+        await scheduler.RunTickAsync(ct);
+
+        DmsTo(bot, captain).Should().ContainSingle();
+    }
+
+    [Test]
+    public async Task ACaptainWhoSaidTheTeamIsRegisteredIsNotAsked()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
+        var team = await SeedTeamAsync(db, chatId: 9045, ct);
+        var game = await SeedGameAsync(db, team, startsAt, capacity: 18, ct);
+        game.TeamRegisteredAt = startsAt.AddDays(-3);
+        await db.SaveChangesAsync(ct);
+        var captain = await SeedCaptainAsync(db, team, 904501, ct);
+        await SeedMemberSignupsAsync(db, game, startsAt, firstTelegramUserId: 904510, count: 4, ct);
+        var (scheduler, bot) = CreateScheduler(db, startsAt.AddDays(-2));
+
+        await scheduler.RunTickAsync(ct);
+
+        DmsTo(bot, captain).Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task EveryCaptainIsAskedAndAMemberWhoIsNotOneIsNot()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
+        var team = await SeedTeamAsync(db, chatId: 9046, ct);
+        var game = await SeedGameAsync(db, team, startsAt, capacity: 18, ct);
+        var first = await SeedCaptainAsync(db, team, 904601, ct);
+        var second = await SeedCaptainAsync(db, team, 904602, ct);
+        var members = await SeedMemberSignupsAsync(db, game, startsAt, firstTelegramUserId: 904610, count: 4, ct);
+        var (scheduler, bot) = CreateScheduler(db, startsAt.AddDays(-2));
+
+        await scheduler.RunTickAsync(ct);
+
+        DmsTo(bot, first).Should().ContainSingle();
+        DmsTo(bot, second).Should().ContainSingle();
+        DmsTo(bot, members[0]).Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task AChatAdminWithNoExplicitGrantIsAskedIfTheyOptedIn()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
+        var team = await SeedTeamAsync(db, chatId: 9047, ct);
+        var game = await SeedGameAsync(db, team, startsAt, capacity: 18, ct);
+        var admin = await SeedCaptainAsync(db, team, 904701, ct, isCaptain: false);
+        await SeedMemberSignupsAsync(db, game, startsAt, firstTelegramUserId: 904710, count: 4, ct);
+        var (scheduler, bot) = CreateScheduler(db, startsAt.AddDays(-2));
+        bot.SendRequest(Arg.Any<GetChatMemberRequest>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+                call.Arg<GetChatMemberRequest>().UserId == admin.TelegramUserId.Value
+                    ? new ChatMemberAdministrator
+                    {
+                        User = new User { Id = admin.TelegramUserId.Value, FirstName = "A" },
+                    }
+                    : new ChatMemberMember
+                    {
+                        User = new User { Id = 0, FirstName = "" },
+                    }
+            );
+
+        await scheduler.RunTickAsync(ct);
+
+        DmsTo(bot, admin).Should().ContainSingle();
+    }
+
+    [Test]
+    public async Task SomeoneWhoOptedInAndIsNoLongerACaptainIsNotAsked()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
+        var team = await SeedTeamAsync(db, chatId: 9051, ct);
+        var game = await SeedGameAsync(db, team, startsAt, capacity: 18, ct);
+        var demoted = await SeedCaptainAsync(db, team, 905101, ct, isCaptain: false);
+        await SeedMemberSignupsAsync(db, game, startsAt, firstTelegramUserId: 905110, count: 4, ct);
+        var (scheduler, bot) = CreateScheduler(db, startsAt.AddDays(-2));
+
+        await scheduler.RunTickAsync(ct);
+
+        DmsTo(bot, demoted).Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task NobodyIsAskedUntilTheyOptIn()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
+        var team = await SeedTeamAsync(db, chatId: 9052, ct);
+        var game = await SeedGameAsync(db, team, startsAt, capacity: 18, ct);
+        var captain = await SeedCaptainAsync(db, team, 905201, ct, registrationReminder: ReminderChannel.Off);
+        await SeedMemberSignupsAsync(db, game, startsAt, firstTelegramUserId: 905210, count: 4, ct);
+        var (scheduler, bot) = CreateScheduler(db, startsAt.AddDays(-2));
+
+        await scheduler.RunTickAsync(ct);
+
+        DmsTo(bot, captain).Should().BeEmpty();
+        // Nobody to ask means the once-only claim was not spent.
+        (await db.Games.AsNoTracking().SingleAsync(g => g.Id == game.Id, ct))
+            .RegistrationReminderSentAt.Should()
+            .BeNull();
+    }
+
+    [Test]
+    public async Task ACaptainWhoOptsInLaterIsStillAskedAboutAGameThatIsAlreadyFull()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
+        var team = await SeedTeamAsync(db, chatId: 9053, ct);
+        var game = await SeedGameAsync(db, team, startsAt, capacity: 18, ct);
+        var captain = await SeedCaptainAsync(db, team, 905301, ct, registrationReminder: ReminderChannel.Off);
+        await SeedMemberSignupsAsync(db, game, startsAt, firstTelegramUserId: 905310, count: 4, ct);
+        var (scheduler, bot) = CreateScheduler(db, startsAt.AddDays(-2));
+        await scheduler.RunTickAsync(ct);
+
+        var membership = await db.Memberships.SingleAsync(m => m.PlayerId == captain.Id, ct);
+        membership.RegistrationReminder = ReminderChannel.Dm;
+        await db.SaveChangesAsync(ct);
+        await scheduler.RunTickAsync(ct);
+
+        DmsTo(bot, captain).Should().ContainSingle();
+    }
+
+    [Test]
+    public async Task TheDmNamesTheTeamSoACaptainOfSeveralCanTellThemApart()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
+        var team = await SeedTeamAsync(db, chatId: 9054, ct);
+        team.Name = "Brainy Badgers";
+        await db.SaveChangesAsync(ct);
+        var game = await SeedGameAsync(db, team, startsAt, capacity: 18, ct);
+        var captain = await SeedCaptainAsync(db, team, 905401, ct);
+        await SeedMemberSignupsAsync(db, game, startsAt, firstTelegramUserId: 905410, count: 4, ct);
+        var (scheduler, bot) = CreateScheduler(db, startsAt.AddDays(-2));
+
+        await scheduler.RunTickAsync(ct);
+
+        DmsTo(bot, captain).Single().Text.Should().Contain("Brainy Badgers");
+    }
+
+    [Test]
+    public async Task TheGroupChannelPostsOneMessageInTheTeamChatTaggingEveryoneWhoChoseIt()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
+        var team = await SeedTeamAsync(db, chatId: 9055, ct);
+        var game = await SeedGameAsync(db, team, startsAt, capacity: 18, ct);
+        game.AnnouncementMessageId = new TelegramMessageId(77);
+        await db.SaveChangesAsync(ct);
+        var first = await SeedCaptainAsync(db, team, 905501, ct, registrationReminder: ReminderChannel.Group);
+        var second = await SeedCaptainAsync(db, team, 905502, ct, registrationReminder: ReminderChannel.Group);
+        var privateOne = await SeedCaptainAsync(db, team, 905503, ct, registrationReminder: ReminderChannel.Dm);
+        await SeedMemberSignupsAsync(db, game, startsAt, firstTelegramUserId: 905510, count: 4, ct);
+        var (scheduler, bot) = CreateScheduler(db, startsAt.AddDays(-2));
+
+        await scheduler.RunTickAsync(ct);
+
+        var posts = bot.SentReplies(9055).Where(r => r.Text.Contains("registered", StringComparison.Ordinal)).ToList();
+        var post = posts.Should().ContainSingle().Subject;
+        post.Text.Should().Contain("Player905501").And.Contain("Player905502").And.NotContain("Player905503");
+        post.ReplyToMessageId.Should().Be(77);
+        DmsTo(bot, first).Should().BeEmpty();
+        DmsTo(bot, second).Should().BeEmpty();
+        DmsTo(bot, privateOne).Should().ContainSingle();
+    }
+
+    [Test]
+    public async Task AFailedGroupPostGivesTheClaimBackSoTheNextTickTriesAgain()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
+        var team = await SeedTeamAsync(db, chatId: 9056, ct);
+        var game = await SeedGameAsync(db, team, startsAt, capacity: 18, ct);
+        await SeedCaptainAsync(db, team, 905601, ct, registrationReminder: ReminderChannel.Group);
+        await SeedMemberSignupsAsync(db, game, startsAt, firstTelegramUserId: 905610, count: 4, ct);
+        var (scheduler, bot) = CreateScheduler(db, startsAt.AddDays(-2));
+        bot.SendRequest(Arg.Is<SendMessageRequest>(r => r.ChatId.Identifier == 9056), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new ApiRequestException("Bad Request: chat not found", 400));
+
+        await scheduler.RunTickAsync(ct);
+
+        (await db.Games.AsNoTracking().SingleAsync(g => g.Id == game.Id, ct))
+            .RegistrationReminderSentAt.Should()
+            .BeNull();
+    }
+
+    [Test]
+    public async Task AGamesOwnThresholdDecidesWhenItIsDue()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
+        var team = await SeedTeamAsync(db, chatId: 9057, ct);
+        var game = await SeedGameAsync(db, team, startsAt, capacity: 18, ct);
+        game.RegistrationThreshold = 6;
+        await db.SaveChangesAsync(ct);
+        var captain = await SeedCaptainAsync(db, team, 905701, ct);
+        var members = await SeedMemberSignupsAsync(db, game, startsAt, firstTelegramUserId: 905710, count: 5, ct);
+        var (scheduler, bot) = CreateScheduler(db, startsAt.AddDays(-2));
+
+        await scheduler.RunTickAsync(ct);
+        DmsTo(bot, captain).Should().BeEmpty();
+
+        var sixth = await SeedPlayerAsync(db, 905720, ct);
+        await SeedSignupAsync(db, game, sixth, startsAt.AddDays(-3).AddMinutes(10), ct);
+        await scheduler.RunTickAsync(ct);
+
+        members.Should().HaveCount(5);
+        DmsTo(bot, captain).Should().ContainSingle();
+    }
+
+    [Test]
+    public async Task ACaptainWhoNeverStartedTheBotIsSkippedAndTheOthersAreStillAsked()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
+        var team = await SeedTeamAsync(db, chatId: 9048, ct);
+        var game = await SeedGameAsync(db, team, startsAt, capacity: 18, ct);
+        var silent = await SeedCaptainAsync(db, team, 904801, ct, dmEnabled: false);
+        var reachable = await SeedCaptainAsync(db, team, 904802, ct);
+        await SeedMemberSignupsAsync(db, game, startsAt, firstTelegramUserId: 904810, count: 4, ct);
+        var (scheduler, bot) = CreateScheduler(db, startsAt.AddDays(-2));
+
+        await scheduler.RunTickAsync(ct);
+
+        DmsTo(bot, silent).Should().BeEmpty();
+        DmsTo(bot, reachable).Should().ContainSingle();
+    }
+
+    [Test]
+    public async Task ACaptainWhoBlockedTheBotLosesTheFlagAndDoesNotStopTheOthers()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
+        var team = await SeedTeamAsync(db, chatId: 9049, ct);
+        var game = await SeedGameAsync(db, team, startsAt, capacity: 18, ct);
+        var blocked = await SeedCaptainAsync(db, team, 904901, ct);
+        var reachable = await SeedCaptainAsync(db, team, 904902, ct);
+        await SeedMemberSignupsAsync(db, game, startsAt, firstTelegramUserId: 904910, count: 4, ct);
+        var (scheduler, bot) = CreateScheduler(db, startsAt.AddDays(-2));
+        bot.SendRequest(Arg.Is<SendMessageRequest>(r => r.ChatId.Identifier == 904901), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new ApiRequestException("Forbidden: bot was blocked by the user", 403));
+
+        await scheduler.RunTickAsync(ct);
+
+        (await db.Players.AsNoTracking().SingleAsync(p => p.Id == blocked.Id, ct)).DmEnabled.Should().BeFalse();
+        DmsTo(bot, reachable).Should().ContainSingle();
+    }
+
+    [Test]
+    public async Task AGameThatHasAlreadyStartedIsNotAskedAbout()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var startsAt = new DateTimeOffset(2026, 3, 6, 19, 0, 0, TimeSpan.Zero);
+        var team = await SeedTeamAsync(db, chatId: 9050, ct);
+        var game = await SeedGameAsync(db, team, startsAt, capacity: 18, ct);
+        var captain = await SeedCaptainAsync(db, team, 905001, ct);
+        await SeedMemberSignupsAsync(db, game, startsAt, firstTelegramUserId: 905010, count: 4, ct);
+        var (scheduler, bot) = CreateScheduler(db, startsAt.AddMinutes(30));
+
+        await scheduler.RunTickAsync(ct);
+
+        DmsTo(bot, captain).Should().BeEmpty();
+    }
+
+    private static List<SendMessageRequest> DmsTo(ITelegramBotClient bot, Player player) =>
+        bot.ReceivedCalls()
+            .Select(call => call.GetArguments()[0])
+            .OfType<SendMessageRequest>()
+            .Where(r =>
+                r.EphemeralMessageParameters is null
+                && r.ChatId.Identifier == player.TelegramUserId.Value
+                && r.Text.Contains("registered", StringComparison.Ordinal)
+            )
+            .ToList();
+
+    // Opted in by default, because the reminder is opt-in and most of these tests are about what
+    // happens to someone who asked for it.
+    private static async Task<Player> SeedCaptainAsync(
+        QuizrDb db,
+        Team team,
+        long telegramUserId,
+        CancellationToken ct,
+        bool dmEnabled = true,
+        ReminderChannel registrationReminder = ReminderChannel.Dm,
+        bool isCaptain = true
+    )
+    {
+        var captain = await SeedPlayerAsync(db, telegramUserId, ct, dmEnabled);
+        db.Memberships.Add(
+            new Membership
+            {
+                TeamId = team.Id,
+                PlayerId = captain.Id,
+                IsCaptain = isCaptain,
+                RegistrationReminder = registrationReminder,
+                JoinedAt = DateTimeOffset.UtcNow,
+            }
+        );
+        await db.SaveChangesAsync(ct);
+        return captain;
+    }
+
+    private static async Task<List<Player>> SeedMemberSignupsAsync(
+        QuizrDb db,
+        Game game,
+        DateTimeOffset startsAt,
+        long firstTelegramUserId,
+        int count,
+        CancellationToken ct
+    )
+    {
+        var players = new List<Player>();
+        for (var i = 0; i < count; i++)
+        {
+            var player = await SeedPlayerAsync(db, firstTelegramUserId + i, ct);
+            await SeedSignupAsync(db, game, player, startsAt.AddDays(-3).AddMinutes(i), ct);
+            players.Add(player);
+        }
+
+        return players;
+    }
+
     private static (SchedulerService Scheduler, ITelegramBotClient Bot) CreateScheduler(QuizrDb db, DateTimeOffset now)
     {
         var bot = TelegramBotClientTestHelper.Create();
@@ -553,6 +998,14 @@ public class SchedulerServiceTests
         var games = new GameService(db, new TeamGuard(db, bot), clock);
         var announcements = new AnnouncementService(db, sender, strings);
         var board = new BoardService(db, sender, bot, strings, NullLogger<BoardService>.Instance);
+        var registrationReminders = new RegistrationReminderService(
+            db,
+            sender,
+            new TeamGuard(db, bot),
+            strings,
+            new PlayerBootstrapService(db, clock),
+            NullLogger<RegistrationReminderService>.Instance
+        );
 
         var scheduler = new SchedulerService(
             db,
@@ -561,6 +1014,7 @@ public class SchedulerServiceTests
             games,
             announcements,
             board,
+            registrationReminders,
             clock,
             TestMeterFactory.Metrics(),
             NullLogger<SchedulerService>.Instance

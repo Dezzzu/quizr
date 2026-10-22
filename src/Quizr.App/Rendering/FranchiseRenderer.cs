@@ -4,6 +4,7 @@ using Quizr.App.Localization;
 using Quizr.App.Services;
 using Quizr.App.Telegram;
 using Quizr.App.Validation;
+using Quizr.Domain;
 using Quizr.Domain.Entities;
 using Telegram.Bot.Types.ReplyMarkups;
 
@@ -54,6 +55,15 @@ internal static class FranchiseRenderer
             )
             .Append('\n');
         text.Append(
+                franchise.DefaultRegistrationThreshold is { } threshold
+                    ? strings.Text("Franchise.RegistrationThreshold", new { Threshold = threshold })
+                    : strings.Text(
+                        "Franchise.NoRegistrationThreshold",
+                        new { Default = RegistrationReminder.DefaultThreshold }
+                    )
+            )
+            .Append('\n');
+        text.Append(
             strings.Text("Franchise.Schedule", new { Schedule = FormatSchedule(franchise.Schedule, strings.Locale) })
         );
 
@@ -95,6 +105,10 @@ internal static class FranchiseRenderer
                 InlineKeyboardButton.WithCallbackData(
                     strings.Text("Franchise.EditScheduleButton"),
                     CallbackData.Format(CallbackData.EditField, EditFranchiseDialogData.Schedule)
+                ),
+                InlineKeyboardButton.WithCallbackData(
+                    strings.Text("Franchise.EditRegistrationThresholdButton"),
+                    CallbackData.Format(CallbackData.EditField, EditFranchiseDialogData.RegistrationThreshold)
                 ),
             ],
             [

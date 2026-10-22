@@ -40,6 +40,15 @@ public interface IFranchiseService
 
     Task<Result<Unit>> SetPriceAsync(Franchise franchise, Team team, Actor actor, decimal? price, CancellationToken ct);
 
+    // Null means the team-wide default (RegistrationReminder.DefaultThreshold).
+    Task<Result<Unit>> SetRegistrationThresholdAsync(
+        Franchise franchise,
+        Team team,
+        Actor actor,
+        int? threshold,
+        CancellationToken ct
+    );
+
     Task<Result<Unit>> SetScheduleAsync(
         Franchise franchise,
         Team team,
@@ -193,6 +202,14 @@ public sealed class FranchiseService : IFranchiseService
         decimal? price,
         CancellationToken ct
     ) => ApplyAsync(team, actor, () => franchise.DefaultPrice = price, ct);
+
+    public Task<Result<Unit>> SetRegistrationThresholdAsync(
+        Franchise franchise,
+        Team team,
+        Actor actor,
+        int? threshold,
+        CancellationToken ct
+    ) => ApplyAsync(team, actor, () => franchise.DefaultRegistrationThreshold = threshold, ct);
 
     public Task<Result<Unit>> SetScheduleAsync(
         Franchise franchise,

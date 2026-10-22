@@ -284,6 +284,12 @@ Native BCL types throughout.
   takes a Postgres advisory lock to decide which container polls Telegram and runs the
   scheduler, because "which process is in charge" is a question no amount of derived state can
   answer. See `docs/HEALTH.md`.
+- **A notification that belongs to a game rather than a signup is claimed on the game row.**
+  The registration reminder is about the game, so there is no `signup_id` to key a notifications
+  row on. `RegistrationReminderService` takes a conditional `UPDATE ... WHERE
+  RegistrationReminderSentAt IS NULL` before sending — of two racing ticks one updates a row and
+  the other none — and gives the claim back if the group post fails. It is still not a lock over
+  domain state: nothing waits on it.
 - **Record captain actions that affect someone else in `AuditEntry`, in the same transaction
   as the change** — a small, fixed set of actions (declining or finishing a game, granting or
   revoking captaincy, registering or dropping someone on their behalf, editing a finished

@@ -43,6 +43,19 @@ public sealed class Game
     // Cooldown for nudges, not deduplication.
     public DateTimeOffset? LastNudgedAt { get; set; }
 
+    // A captain's word that the team is registered for this quiz at the venue. The bot cannot
+    // see that happen, so it only records the claim — and it stops asking once it exists.
+    public DateTimeOffset? TeamRegisteredAt { get; set; }
+
+    // Deduplication, not a cooldown: set once, by the atomic claim in
+    // RegistrationReminderService, so the captains are asked at most once per game.
+    public DateTimeOffset? RegistrationReminderSentAt { get; set; }
+
+    // How many live signups make the registration reminder due. Null means the default
+    // (RegistrationReminder.DefaultThreshold). Copied from the franchise at creation like every
+    // other default, and editable in /editgame only — it is not shown on the announcement.
+    public int? RegistrationThreshold { get; set; }
+
     // The calendar event's SEQUENCE and DTSTAMP. Maintained by CalendarVersionInterceptor:
     // RevisedAt starts equal to CreatedAt, and a change to any field the feed renders bumps
     // both. Separate from a subscriber's own CalendarVersion because these describe the

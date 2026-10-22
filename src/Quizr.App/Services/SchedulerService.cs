@@ -28,6 +28,7 @@ public sealed class SchedulerService
     private readonly IGameService _games;
     private readonly AnnouncementService _announcements;
     private readonly BoardService _board;
+    private readonly RegistrationReminderService _registrationReminders;
     private readonly TimeProvider _clock;
     private readonly QuizrMetrics _metrics;
     private readonly ILogger<SchedulerService> _logger;
@@ -39,6 +40,7 @@ public sealed class SchedulerService
         IGameService games,
         AnnouncementService announcements,
         BoardService board,
+        RegistrationReminderService registrationReminders,
         TimeProvider clock,
         QuizrMetrics metrics,
         ILogger<SchedulerService> logger
@@ -50,6 +52,7 @@ public sealed class SchedulerService
         _games = games;
         _announcements = announcements;
         _board = board;
+        _registrationReminders = registrationReminders;
         _clock = clock;
         _metrics = metrics;
         _logger = logger;
@@ -142,6 +145,7 @@ public sealed class SchedulerService
                 else
                 {
                     await SendDueRemindersAsync(team, game, now, ct);
+                    await _registrationReminders.SendIfDueAsync(team, game, now, ct);
                 }
             }
             catch (Exception ex)

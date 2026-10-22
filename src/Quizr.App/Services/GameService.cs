@@ -79,6 +79,15 @@ public interface IGameService
 
     Task<Result<Unit>> SetStartTimeAsync(Game game, Team team, Actor actor, TimeOnly time, CancellationToken ct);
 
+    // Null puts the game back on RegistrationReminder.DefaultThreshold.
+    Task<Result<Unit>> SetRegistrationThresholdAsync(
+        Game game,
+        Team team,
+        Actor actor,
+        int? threshold,
+        CancellationToken ct
+    );
+
     // Nudge's target list — CLAUDE.md/VISION.md: "ping the players who haven't arrived yet,"
     // meaning people who signed up and are late, not people who never signed up at all.
     // Guests are excluded: a guest signup has no PlayerId, so there's nobody to @mention.
@@ -122,6 +131,18 @@ public interface IGameService
     // nobody to credit — which is also what keeps this to finishes a person made by hand: the
     // scheduler never finishes early.
     Task<Result<Unit>> ReopenAsync(Game game, Team team, Actor actor, CancellationToken ct);
+
+    // A captain's word that the team is registered for the game at the venue, which stops the
+    // registration reminder. Idempotent — several captains each hold the same DM, and the
+    // second tap is not a failure. Not audited: invariant 13 is for actions that change another
+    // player's state, and this changes nobody's.
+    Task<Result<Unit>> MarkTeamRegisteredAsync(Game game, Team team, Actor actor, CancellationToken ct);
+
+    // Takes the claim back, for a registration marked by mistake. It does not make the
+    // reminder fire again: that is sent once per game, and a captain undoing their own tap
+    // knows the team isn't registered. A game nobody was ever asked about is unaffected — it
+    // simply goes on waiting for its threshold.
+    Task<Result<Unit>> ClearTeamRegisteredAsync(Game game, Team team, Actor actor, CancellationToken ct);
 }
 
 // Whether this member currently has a live signup for the game — the "Manage players" view's
@@ -264,6 +285,7 @@ public sealed class GameService : IGameService
             Price = price,
             Notes = notes,
             Tags = tags,
+            RegistrationThreshold = franchise.DefaultRegistrationThreshold,
             CreatedAt = _clock.GetUtcNow(),
             CreatedByPlayerId = actor.PlayerId,
         };
@@ -369,6 +391,14 @@ public sealed class GameService : IGameService
         List<string> tags,
         CancellationToken ct
     ) => ApplyAsync(team, actor, () => game.Tags = tags, ct);
+
+    public Task<Result<Unit>> SetRegistrationThresholdAsync(
+        Game game,
+        Team team,
+        Actor actor,
+        int? threshold,
+        CancellationToken ct
+    ) => ApplyAsync(team, actor, () => game.RegistrationThreshold = threshold, ct);
 
     public async Task<Result<Unit>> SetStartTimeAsync(
         Game game,
@@ -584,6 +614,60 @@ public sealed class GameService : IGameService
         game.DeclinedAt = null;
 
         await _db.SaveChangesAsync(ct);
+
+        return new Unit();
+    }
+
+    public async Task<Result<Unit>> MarkTeamRegisteredAsync(Game game, Team team, Actor actor, CancellationToken ct)
+    {
+        var allowed = await _guard.RequireCaptainAsync(team, actor, ct);
+        if (!allowed.IsSuccess)
+        {
+            return allowed.Error;
+        }
+
+        if (game.IsFinished)
+        {
+            return new BusinessError.GameAlreadyFinished();
+        }
+
+        if (game.IsDeclined)
+        {
+            return new BusinessError.RegistrationClosed();
+        }
+
+        if (game.TeamRegisteredAt is null)
+        {
+            game.TeamRegisteredAt = _clock.GetUtcNow();
+            await _db.SaveChangesAsync(ct);
+        }
+
+        return new Unit();
+    }
+
+    public async Task<Result<Unit>> ClearTeamRegisteredAsync(Game game, Team team, Actor actor, CancellationToken ct)
+    {
+        var allowed = await _guard.RequireCaptainAsync(team, actor, ct);
+        if (!allowed.IsSuccess)
+        {
+            return allowed.Error;
+        }
+
+        if (game.IsFinished)
+        {
+            return new BusinessError.GameAlreadyFinished();
+        }
+
+        if (game.IsDeclined)
+        {
+            return new BusinessError.RegistrationClosed();
+        }
+
+        if (game.TeamRegisteredAt is not null)
+        {
+            game.TeamRegisteredAt = null;
+            await _db.SaveChangesAsync(ct);
+        }
 
         return new Unit();
     }

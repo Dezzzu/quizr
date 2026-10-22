@@ -20,7 +20,12 @@ and who has to wait for a seat — and rewrites its own messages whenever any of
   in the queue.
 - **A pinned Board** listing every upcoming game in date order, kept pinned and kept current
   by the bot.
-- **Reminders** that fire themselves.
+- **Reminders** that fire themselves — opt-in per person, in the group chat or by DM
+  (`/myreminders`).
+- **A nudge to register the team.** Captains who opt in under `/myreminders` are told, in the
+  team chat or by DM, once enough players have signed up (four by default, adjustable per
+  franchise or per game while editing) so the team gets registered at the venue. A captain
+  confirms with one tap and can mark or unmark it by hand from a game's Manage panel.
 - **Tags as hashtags**, the interim way to find past games via Telegram's own in-chat search,
   until a browsable archive lands with the mini app.
 - **A calendar subscription** — `/mycalendar` gives each player a private `.ics` link, so the

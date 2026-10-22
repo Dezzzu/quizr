@@ -194,6 +194,19 @@ internal static class AnnouncementRenderer
                     CallbackData.Format(CallbackData.PickGameToEdit, gameId)
                 ),
             ]);
+            // One button that says which way it will flip, drawn fresh like the rest of the
+            // panel. Live games only: once a game is over there is nothing left to register for.
+            rows.Add([
+                game.TeamRegisteredAt is null
+                    ? InlineKeyboardButton.WithCallbackData(
+                        strings.Text("Manage.RegisterTeamButton"),
+                        CallbackData.Format(CallbackData.ForceRegisterTeam, gameId)
+                    )
+                    : InlineKeyboardButton.WithCallbackData(
+                        strings.Text("Manage.UnregisterTeamButton"),
+                        CallbackData.Format(CallbackData.RevertTeamRegistration, gameId)
+                    ),
+            ]);
             rows.Add([
                 InlineKeyboardButton.WithCallbackData(
                     strings.Text("Announcement.FinishButton"),

@@ -16,6 +16,7 @@ using Telegram.Bot;
 using Telegram.Bot.Exceptions;
 using Telegram.Bot.Requests;
 using Telegram.Bot.Types;
+using Telegram.Bot.Types.ReplyMarkups;
 using Game = Quizr.Domain.Entities.Game;
 
 namespace Quizr.App.Tests;
@@ -287,6 +288,273 @@ public class UpdateRouterM9Tests
         );
         entry.ActorPlayerId.Should().Be(captain.Id);
     }
+
+    [Test]
+    public async Task TeamRegisteredButtonInACaptainsDmStampsTheGameAndRewritesTheMessage()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 8040, capacity: 5, ct);
+        await SeedCaptainAsync(db, game.TeamId, telegramUserId: 80401, ct);
+        var (router, bot) = CreateRouter(db);
+
+        // A DM's chat id is the person's own user id, not the team's chat.
+        await router.RouteAsync(
+            CallbackUpdate(80401, 80401, CallbackData.Format(CallbackData.TeamRegistered, game.Id)),
+            ct
+        );
+
+        (await db.Games.AsNoTracking().SingleAsync(g => g.Id == game.Id, ct)).TeamRegisteredAt.Should().NotBeNull();
+        bot.EditedTexts(80401)
+            .Should()
+            .ContainSingle(t => t != null && t.Contains("registered", StringComparison.Ordinal));
+    }
+
+    [Test]
+    public async Task TeamRegisteredButtonRefusesSomeoneWhoIsNotACaptain()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 8041, capacity: 5, ct);
+        await SeedMemberAsync(db, game.TeamId, telegramUserId: 80411, ct);
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(
+            CallbackUpdate(80411, 80411, CallbackData.Format(CallbackData.TeamRegistered, game.Id)),
+            ct
+        );
+
+        (await db.Games.AsNoTracking().SingleAsync(g => g.Id == game.Id, ct)).TeamRegisteredAt.Should().BeNull();
+        bot.AnsweredCallbackAlerts()
+            .Should()
+            .ContainSingle(a => a != null && a.Contains("captain", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Test]
+    public async Task TeamRegisteredButtonTappedTwiceByTwoCaptainsKeepsTheFirstTimestamp()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 8042, capacity: 5, ct);
+        await SeedCaptainAsync(db, game.TeamId, telegramUserId: 80421, ct);
+        await SeedCaptainAsync(db, game.TeamId, telegramUserId: 80422, ct);
+        var (router, _) = CreateRouter(db);
+        var data = CallbackData.Format(CallbackData.TeamRegistered, game.Id);
+
+        await router.RouteAsync(CallbackUpdate(80421, 80421, data), ct);
+        var first = (await db.Games.AsNoTracking().SingleAsync(g => g.Id == game.Id, ct)).TeamRegisteredAt;
+        await router.RouteAsync(CallbackUpdate(80422, 80422, data), ct);
+
+        (await db.Games.AsNoTracking().SingleAsync(g => g.Id == game.Id, ct)).TeamRegisteredAt.Should().Be(first);
+    }
+
+    [Test]
+    public async Task MyRemindersOffersTheRegistrationReminderToACaptainAndNotToAMember()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 8050, ct);
+        await SeedMemberAsync(db, team.Id, telegramUserId: 80501, ct);
+        await SeedCaptainAsync(db, team.Id, telegramUserId: 80502, ct);
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(MessageUpdate(8050, 80501, "/myreminders"), ct);
+        var memberSees = EphemeralCallbacks(bot);
+        await router.RouteAsync(MessageUpdate(8050, 80502, "/myreminders"), ct);
+        var captainSees = EphemeralCallbacks(bot);
+
+        var registrationButton = CallbackData.Format(CallbackData.CycleReminderChannel, 3L);
+        memberSees.Should().NotContain(registrationButton);
+        captainSees.Should().Contain(registrationButton);
+    }
+
+    [Test]
+    public async Task ACaptainCyclesTheRegistrationReminderThroughGroupDmAndOffAgain()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 8051, ct);
+        var captain = await SeedCaptainAsync(db, team.Id, telegramUserId: 8051, ct);
+        var (router, _) = CreateRouter(db);
+        var tap = CallbackData.Format(CallbackData.CycleReminderChannel, 3L);
+
+        (await db.Memberships.AsNoTracking().SingleAsync(m => m.PlayerId == captain.Id, ct))
+            .RegistrationReminder.Should()
+            .Be(ReminderChannel.Off);
+
+        var seen = new List<ReminderChannel>();
+        for (var i = 0; i < 3; i++)
+        {
+            await router.RouteAsync(CallbackUpdate(8051, 8051, tap), ct);
+            seen.Add(
+                (
+                    await db.Memberships.AsNoTracking().SingleAsync(m => m.PlayerId == captain.Id, ct)
+                ).RegistrationReminder
+            );
+        }
+
+        seen.Should().Equal(ReminderChannel.Group, ReminderChannel.Dm, ReminderChannel.Off);
+    }
+
+    // The view is drawn without the button for a member, but a panel outlives the captaincy that
+    // opened it, so a stale tap has to be refused rather than trusted.
+    [Test]
+    public async Task ANonCaptainCannotSwitchTheRegistrationReminderOnWithAStaleButton()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 8052, ct);
+        var member = await SeedMemberAsync(db, team.Id, telegramUserId: 8052, ct);
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(
+            CallbackUpdate(8052, 8052, CallbackData.Format(CallbackData.CycleReminderChannel, 3L)),
+            ct
+        );
+
+        (await db.Memberships.AsNoTracking().SingleAsync(m => m.PlayerId == member.Id, ct))
+            .RegistrationReminder.Should()
+            .Be(ReminderChannel.Off);
+        bot.AnsweredCallbackAlerts().Should().ContainSingle();
+    }
+
+    [Test]
+    public async Task TheManagePanelCanForceRegisterTheTeamAndThenRevertIt()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 8053, capacity: 5, ct);
+        await SeedCaptainAsync(db, game.TeamId, telegramUserId: 80531, ct);
+        var (router, _) = CreateRouter(db);
+
+        await router.RouteAsync(
+            CallbackUpdate(8053, 80531, CallbackData.Format(CallbackData.ForceRegisterTeam, game.Id)),
+            ct
+        );
+        (await db.Games.AsNoTracking().SingleAsync(g => g.Id == game.Id, ct)).TeamRegisteredAt.Should().NotBeNull();
+
+        await router.RouteAsync(
+            CallbackUpdate(8053, 80531, CallbackData.Format(CallbackData.RevertTeamRegistration, game.Id)),
+            ct
+        );
+        (await db.Games.AsNoTracking().SingleAsync(g => g.Id == game.Id, ct)).TeamRegisteredAt.Should().BeNull();
+    }
+
+    [Test]
+    public async Task ForceRegisteringIsRefusedForSomeoneWhoIsNotACaptain()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 8054, capacity: 5, ct);
+        await SeedMemberAsync(db, game.TeamId, telegramUserId: 80541, ct);
+        var (router, bot) = CreateRouter(db);
+
+        await router.RouteAsync(
+            CallbackUpdate(8054, 80541, CallbackData.Format(CallbackData.ForceRegisterTeam, game.Id)),
+            ct
+        );
+
+        (await db.Games.AsNoTracking().SingleAsync(g => g.Id == game.Id, ct)).TeamRegisteredAt.Should().BeNull();
+        bot.AnsweredCallbackAlerts().Should().ContainSingle();
+    }
+
+    [Test]
+    public async Task ACaptainCanSetAndClearAGamesRegistrationThresholdInEditMode()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 8055, capacity: 10, ct);
+        await SeedCaptainAsync(db, game.TeamId, telegramUserId: 80551, ct);
+        var (router, _) = CreateRouter(db);
+        await router.RouteAsync(
+            CallbackUpdate(8055, 80551, CallbackData.Format(CallbackData.PickGameToEdit, game.Id)),
+            ct
+        );
+        var pickThreshold = CallbackData.Format(CallbackData.EditField, EditGameDialogData.RegistrationThreshold);
+
+        await router.RouteAsync(CallbackUpdate(8055, 80551, pickThreshold), ct);
+        await router.RouteAsync(MessageUpdate(8055, 80551, "7"), ct);
+        (await db.Games.AsNoTracking().SingleAsync(g => g.Id == game.Id, ct)).RegistrationThreshold.Should().Be(7);
+
+        // /editgame ends its dialog after each applied edit, so the next one starts from the
+        // game again.
+        await router.RouteAsync(
+            CallbackUpdate(8055, 80551, CallbackData.Format(CallbackData.PickGameToEdit, game.Id)),
+            ct
+        );
+        await router.RouteAsync(CallbackUpdate(8055, 80551, pickThreshold), ct);
+        await router.RouteAsync(MessageUpdate(8055, 80551, "skip"), ct);
+        (await db.Games.AsNoTracking().SingleAsync(g => g.Id == game.Id, ct)).RegistrationThreshold.Should().BeNull();
+    }
+
+    [Test]
+    public async Task ANonsenseThresholdIsRejectedAndTheGameKeepsItsOwn()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var game = await SeedGameAsync(db, chatId: 8056, capacity: 10, ct);
+        game.RegistrationThreshold = 5;
+        await db.SaveChangesAsync(ct);
+        await SeedCaptainAsync(db, game.TeamId, telegramUserId: 80561, ct);
+        var (router, _) = CreateRouter(db);
+        await router.RouteAsync(
+            CallbackUpdate(8056, 80561, CallbackData.Format(CallbackData.PickGameToEdit, game.Id)),
+            ct
+        );
+        await router.RouteAsync(
+            CallbackUpdate(
+                8056,
+                80561,
+                CallbackData.Format(CallbackData.EditField, EditGameDialogData.RegistrationThreshold)
+            ),
+            ct
+        );
+
+        await router.RouteAsync(MessageUpdate(8056, 80561, "0"), ct);
+        await router.RouteAsync(MessageUpdate(8056, 80561, "lots"), ct);
+
+        (await db.Games.AsNoTracking().SingleAsync(g => g.Id == game.Id, ct)).RegistrationThreshold.Should().Be(5);
+    }
+
+    [Test]
+    public async Task ACaptainCanSetAFranchisesRegistrationThresholdAndItsGamesInheritIt()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 8057, ct);
+        await SeedCaptainAsync(db, team.Id, telegramUserId: 8057, ct);
+        var (router, _) = CreateRouter(db);
+        await router.RouteAsync(MessageUpdate(8057, 8057, "/newfranchise"), ct);
+        await router.RouteAsync(MessageUpdate(8057, 8057, "Quiz Masters"), ct);
+        await router.RouteAsync(MessageUpdate(8057, 8057, "The Original Pub"), ct);
+        await router.RouteAsync(MessageUpdate(8057, 8057, "20"), ct);
+        await router.RouteAsync(MessageUpdate(8057, 8057, "skip"), ct);
+        await router.RouteAsync(MessageUpdate(8057, 8057, "Mon-Fri: 19:00, Sat: 16:00, Sun: 16:00"), ct);
+
+        await router.RouteAsync(
+            CallbackUpdate(
+                8057,
+                8057,
+                CallbackData.Format(CallbackData.EditField, EditFranchiseDialogData.RegistrationThreshold)
+            ),
+            ct
+        );
+        await router.RouteAsync(MessageUpdate(8057, 8057, "9"), ct);
+
+        (await db.Franchises.AsNoTracking().SingleAsync(f => f.TeamId == team.Id, ct))
+            .DefaultRegistrationThreshold.Should()
+            .Be(9);
+    }
+
+    private static List<string> EphemeralCallbacks(ITelegramBotClient bot) =>
+        bot.ReceivedCalls()
+            .Select(call => call.GetArguments()[0])
+            .OfType<SendMessageRequest>()
+            .Last(request => request.EphemeralMessageParameters is not null)
+            .ReplyMarkup
+            is InlineKeyboardMarkup keyboard
+            ? keyboard.InlineKeyboard.SelectMany(row => row).Select(button => button.CallbackData!).ToList()
+            : [];
 
     [Test]
     public async Task ManageCaptainsGrantsAndThenRevokesCaptaincyWithAnAuditTrail()

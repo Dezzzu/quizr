@@ -115,6 +115,37 @@ public class FieldParsingTests
     [Arguments("")]
     [Arguments("skip")]
     [Arguments("SKIP")]
+    public void TryParseOptionalThresholdTreatsSkipOrEmptyAsTheDefault(string? input)
+    {
+        FieldParsing.TryParseOptionalThreshold(input, out var value, out var errorKey).Should().BeTrue();
+        value.Should().BeNull();
+        errorKey.Should().BeNull();
+    }
+
+    [Test]
+    public void TryParseOptionalThresholdAcceptsAPositiveInteger()
+    {
+        FieldParsing.TryParseOptionalThreshold(" 6 ", out var value, out var errorKey).Should().BeTrue();
+        value.Should().Be(6);
+        errorKey.Should().BeNull();
+    }
+
+    [Test]
+    [Arguments("0")]
+    [Arguments("-3")]
+    [Arguments("four")]
+    [Arguments("2.5")]
+    public void TryParseOptionalThresholdRejectsAnythingButAPositiveWholeNumber(string input)
+    {
+        FieldParsing.TryParseOptionalThreshold(input, out _, out var errorKey).Should().BeFalse();
+        errorKey.Should().Be("Validation.ThresholdInvalid");
+    }
+
+    [Test]
+    [Arguments(null)]
+    [Arguments("")]
+    [Arguments("skip")]
+    [Arguments("SKIP")]
     public void TryParsePriceTreatsSkipOrEmptyAsNoPrice(string? input)
     {
         FieldParsing.TryParsePrice(input, out var value, out var errorKey).Should().BeTrue();
