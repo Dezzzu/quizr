@@ -267,12 +267,17 @@ only ever taps one button in the group chat stays a first-class member of the te
   evening still goes through, but you alone get a private note listing the other games, in the
   `/myschedule` format, with any game from another team's chat marked as such — the one clash
   this chat's Board can never show
-- **Registration reminder** — when a game's roster reaches four (guests count, since they take
-  seats), every captain who has started the bot gets one private message asking them to register
-  the team at the venue, with a button to say it's done. Captains are the explicit grants plus the
-  chat's admins. Sent once per game, never after kickoff, and not at all once any captain has
-  tapped the button. A captain who has never started the bot can't be messaged and is skipped —
-  the group chat is deliberately not used as a fallback
+- **Registration reminder** — when a game's roster reaches its threshold (four by default;
+  guests count, since they take seats), the captains who opted in are asked to register the team
+  at the venue, with a button to say it's done. It is **opt-in and captains-only**, a fourth
+  slot in `/myreminders` with the same three choices as the others: off, a message in the team
+  chat tagging them, or a DM that names the team. Captains are the explicit grants plus the chat's
+  admins, checked when it is sent. Sent once per game, never after kickoff, and not at all once
+  any captain has tapped the button. Nobody opted in means nothing is sent and nothing is spent,
+  so a captain who opts in later is still asked about a game that is already full. A captain
+  can also mark the team registered, or take the mark back, from the game's Manage panel — the
+  way to fix a mistaken tap. The threshold is a per-franchise default copied onto each game, and
+  editable on the game; it is shown only in edit mode, never on the announcement
 - **Nudge** — anyone signed up can ping the players who haven't arrived yet, in the team
   chat, so the replies land where everyone waiting can see them. Mandatory rather than
   opt-in, with a per-game cooldown
@@ -337,6 +342,7 @@ Recorded so they don't get re-argued.
 | A game lasts three hours, and that one number does both jobs | It decides when the scheduler auto-finishes a game left alone *and* how much of an evening its calendar event books. It was four hours, and a duration for the feed would have been a second number arrived at separately — which is how two constants drift until they contradict each other somewhere a player can see. |
 | A franchise carries a per-weekday schedule | One map from day to start time replaces separate "default time" and "typical days" fields, so the two can't drift apart. Creating a game becomes: pick the franchise, pick a date. |
 | A same-day clash warns, never refuses | Two games one evening may be the plan — a 16:00 and a 19:00, or a seat held in a second team as a fallback. The bot knows which seats you hold across teams and the Board doesn't, so it says so privately and leaves the decision where it belongs. Judged on the calendar date each game's own team shows, not on start times overlapping, because "same evening" is what a person asks themselves. |
+| The registration reminder is opt-in, captains-only and sent once | A captain who didn't ask for it shouldn't be messaged, and the people who do want it differ on where: it reuses the off / group / DM choice the other reminders have. It is once per game because a game that stays full would otherwise nag every tick, and the once-only claim is spent only when someone can actually be asked — spending it on nobody would mean a captain who opts in tomorrow is never told about a game that has been full since today. Marking the team registered by hand, and undoing it, exist because the bot cannot see the registration happen and a mistaken tap needs a way back. |
 | Playing vs reserve is derived, not stored | A signup is who, which game and when; the split falls out of the ordering. Two people tapping for the last seat at the same moment simply get two timestamps. The invariant becomes a property of the data instead of something the code maintains. |
 
 ## Questions that were open, and how they were settled

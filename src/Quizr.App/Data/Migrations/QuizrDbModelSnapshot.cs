@@ -135,6 +135,9 @@ namespace Quizr.App.Data.Migrations
                     b.Property<decimal?>("DefaultPrice")
                         .HasColumnType("numeric");
 
+                    b.Property<int?>("DefaultRegistrationThreshold")
+                        .HasColumnType("integer");
+
                     b.Property<string>("DefaultVenue")
                         .HasColumnType("text");
 
@@ -199,6 +202,9 @@ namespace Quizr.App.Data.Migrations
                     b.Property<DateTimeOffset?>("RegistrationReminderSentAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<int?>("RegistrationThreshold")
+                        .HasColumnType("integer");
+
                     b.Property<DateTimeOffset>("RevisedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -258,6 +264,9 @@ namespace Quizr.App.Data.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("MorningOf")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("RegistrationReminder")
                         .HasColumnType("integer");
 
                     b.Property<bool>("RemindWhenReserve")

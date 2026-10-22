@@ -225,6 +225,36 @@ public class AnnouncementRendererTests
             ]);
     }
 
+    [Test]
+    public void TheManagePanelOffersToMarkTheTeamRegisteredUntilItIs()
+    {
+        var game = GameWithCapacity(5);
+
+        var before = AnnouncementRenderer.RenderManagePanel(game, Now, Strings);
+        game.TeamRegisteredAt = DateTimeOffset.UtcNow;
+        var after = AnnouncementRenderer.RenderManagePanel(game, Now, Strings);
+
+        Verbs(before)
+            .Should()
+            .Contain(CallbackData.ForceRegisterTeam)
+            .And.NotContain(CallbackData.RevertTeamRegistration);
+        Verbs(after)
+            .Should()
+            .Contain(CallbackData.RevertTeamRegistration)
+            .And.NotContain(CallbackData.ForceRegisterTeam);
+    }
+
+    [Test]
+    public void TheManagePanelOffersNoRegistrationOnceTheGameIsOver()
+    {
+        var game = GameWithCapacity(5);
+        game.FinishedAt = DateTimeOffset.UtcNow;
+
+        Verbs(AnnouncementRenderer.RenderManagePanel(game, Now, Strings))
+            .Should()
+            .NotContain([CallbackData.ForceRegisterTeam, CallbackData.RevertTeamRegistration]);
+    }
+
     // The headline and the Board entry name a game the same way, or the pinned list and the
     // post it links to disagree about what the game is called.
     [Test]

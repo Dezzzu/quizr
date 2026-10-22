@@ -51,6 +51,11 @@ public sealed class Game
     // RegistrationReminderService, so the captains are asked at most once per game.
     public DateTimeOffset? RegistrationReminderSentAt { get; set; }
 
+    // How many live signups make the registration reminder due. Null means the default
+    // (RegistrationReminder.DefaultThreshold). Copied from the franchise at creation like every
+    // other default, and editable in /editgame only — it is not shown on the announcement.
+    public int? RegistrationThreshold { get; set; }
+
     // The calendar event's SEQUENCE and DTSTAMP. Maintained by CalendarVersionInterceptor:
     // RevisedAt starts equal to CreatedAt, and a change to any field the feed renders bumps
     // both. Separate from a subscriber's own CalendarVersion because these describe the

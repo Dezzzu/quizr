@@ -19,5 +19,10 @@ public sealed class Membership
     public ReminderChannel BeforeStart { get; set; } = ReminderChannel.Off;
     public bool RemindWhenReserve { get; set; }
 
+    // Opt-in like the three slots above, and only offered to captains: who is asked to register
+    // the team for a game once enough players have signed up. Group tags this person in the
+    // team chat, Dm sends it privately.
+    public ReminderChannel RegistrationReminder { get; set; } = ReminderChannel.Off;
+
     public DateTimeOffset JoinedAt { get; set; }
 }

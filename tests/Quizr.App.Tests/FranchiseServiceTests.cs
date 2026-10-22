@@ -71,6 +71,38 @@ public class FranchiseServiceTests
     }
 
     [Test]
+    public async Task SetRegistrationThresholdAsyncStoresAndClearsTheFranchiseDefault()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 6020, ct);
+        var captain = await TestCaptain.SeedAsync(db, team, telegramUserId: team.ChatId.Value, ct);
+        var service = new FranchiseService(db, captain.Guard, new FakeTimeProvider());
+        var franchise = (
+            await service.CreateAsync(
+                team,
+                captain.Actor,
+                "Original",
+                "Venue",
+                10,
+                null,
+                new Dictionary<DayOfWeek, TimeOnly> { [DayOfWeek.Monday] = new TimeOnly(19, 0) },
+                ct
+            )
+        ).Value;
+
+        await service.SetRegistrationThresholdAsync(franchise, team, captain.Actor, 8, ct);
+        (await db.Franchises.AsNoTracking().SingleAsync(f => f.Id == franchise.Id, ct))
+            .DefaultRegistrationThreshold.Should()
+            .Be(8);
+
+        await service.SetRegistrationThresholdAsync(franchise, team, captain.Actor, null, ct);
+        (await db.Franchises.AsNoTracking().SingleAsync(f => f.Id == franchise.Id, ct))
+            .DefaultRegistrationThreshold.Should()
+            .BeNull();
+    }
+
+    [Test]
     public async Task ArchiveAsyncStampsArchivedAt()
     {
         var ct = TestContext.Current!.Execution.CancellationToken;

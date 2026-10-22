@@ -9,9 +9,30 @@ public class RegistrationReminderTests
     private static readonly DateTimeOffset Now = StartsAt.AddDays(-2);
 
     [Test]
-    public void ThresholdIsFourPlayers()
+    public void TheDefaultThresholdIsFourPlayers()
     {
-        RegistrationReminder.Threshold.Should().Be(4);
+        RegistrationReminder.DefaultThreshold.Should().Be(4);
+        RegistrationReminder.ThresholdFor(Game()).Should().Be(4);
+    }
+
+    [Test]
+    public void AGameCanOverrideTheThreshold()
+    {
+        var game = Game();
+        game.RegistrationThreshold = 6;
+
+        RegistrationReminder.ThresholdFor(game).Should().Be(6);
+        RegistrationReminder.IsDue(game, liveSignups: 5, Now).Should().BeFalse();
+        RegistrationReminder.IsDue(game, liveSignups: 6, Now).Should().BeTrue();
+    }
+
+    [Test]
+    public void AGameCanLowerTheThresholdBelowTheDefault()
+    {
+        var game = Game();
+        game.RegistrationThreshold = 2;
+
+        RegistrationReminder.IsDue(game, liveSignups: 2, Now).Should().BeTrue();
     }
 
     [Test]

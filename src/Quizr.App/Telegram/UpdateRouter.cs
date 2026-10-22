@@ -1158,6 +1158,15 @@ public sealed class UpdateRouter
                 }
                 break;
 
+            case EditFranchiseDialogData.RegistrationThreshold:
+                if (FieldParsing.TryParseOptionalThreshold(input, out var threshold, out errorKey))
+                {
+                    errorKey = FailureKey(
+                        await _franchises.SetRegistrationThresholdAsync(franchise, team, actor, threshold, ct)
+                    );
+                }
+                break;
+
             default:
                 throw new ArgumentOutOfRangeException(nameof(dialog), fieldIndex, "Unknown EditFranchise field index");
         }
@@ -1543,6 +1552,13 @@ public sealed class UpdateRouter
                 }
                 break;
 
+            case EditGameDialogData.RegistrationThreshold:
+                if (FieldParsing.TryParseOptionalThreshold(input, out var threshold, out errorKey))
+                {
+                    errorKey = FailureKey(await _games.SetRegistrationThresholdAsync(game, team, actor, threshold, ct));
+                }
+                break;
+
             default:
                 throw new ArgumentOutOfRangeException(nameof(dialog), fieldIndex, "Unknown EditGame field index");
         }
@@ -1709,6 +1725,8 @@ public sealed class UpdateRouter
             case CallbackData.FinishGame:
             case CallbackData.ReopenGame:
             case CallbackData.TeamRegistered:
+            case CallbackData.ForceRegisterTeam:
+            case CallbackData.RevertTeamRegistration:
                 await HandleGameCallbackAsync(verb, callbackQuery, ct);
                 break;
 
@@ -1864,6 +1882,11 @@ public sealed class UpdateRouter
 
             case CallbackData.TeamRegistered:
                 await HandleTeamRegisteredButtonAsync(game, scope, callbackQuery, ct);
+                break;
+
+            case CallbackData.ForceRegisterTeam:
+            case CallbackData.RevertTeamRegistration:
+                await HandleTeamRegistrationToggleAsync(game, scope, callbackQuery, verb, ct);
                 break;
         }
     }
@@ -2623,6 +2646,7 @@ public sealed class UpdateRouter
             EditFranchiseDialogData.Capacity => "Franchise.AskCapacity",
             EditFranchiseDialogData.Price => "Franchise.AskPrice",
             EditFranchiseDialogData.Schedule => "Franchise.AskSchedule",
+            EditFranchiseDialogData.RegistrationThreshold => "Franchise.AskRegistrationThreshold",
             _ => throw new ArgumentOutOfRangeException(
                 nameof(fieldIndex),
                 fieldIndex,
@@ -2656,6 +2680,7 @@ public sealed class UpdateRouter
             EditGameDialogData.Notes => "EditGame.AskNotes",
             EditGameDialogData.StartTime => "EditGame.AskStartTime",
             EditGameDialogData.Tags => "EditGame.AskTags",
+            EditGameDialogData.RegistrationThreshold => "EditGame.AskRegistrationThreshold",
             _ => throw new ArgumentOutOfRangeException(nameof(fieldIndex), fieldIndex, "Unknown EditGame field index"),
         };
 
@@ -2666,7 +2691,8 @@ public sealed class UpdateRouter
             is EditFranchiseDialogData.Venue
                 or EditFranchiseDialogData.Capacity
                 or EditFranchiseDialogData.Price
-                or EditFranchiseDialogData.Schedule;
+                or EditFranchiseDialogData.Schedule
+                or EditFranchiseDialogData.RegistrationThreshold;
 
     // Title, venue and capacity aren't skippable here — Confirm requires all three set
     // (invariant: every Game needs a concrete capacity to derive playing/reserve from), so an
@@ -2678,9 +2704,14 @@ public sealed class UpdateRouter
                 or NewGameDialogData.OverrideTags;
 
     // Title, venue, capacity, and start time all keep a live game valid — none are skippable.
-    // Price, notes, and tags are.
+    // Price, notes, and tags are, and so is the registration threshold, where skipping means
+    // "back to the default".
     private static bool IsEditGameFieldSkippable(int fieldIndex) =>
-        fieldIndex is EditGameDialogData.Price or EditGameDialogData.Notes or EditGameDialogData.Tags;
+        fieldIndex
+            is EditGameDialogData.Price
+                or EditGameDialogData.Notes
+                or EditGameDialogData.Tags
+                or EditGameDialogData.RegistrationThreshold;
 
     private async Task HandleConfirmNewGameAsync(
         DialogState? dialog,
@@ -2867,7 +2898,10 @@ public sealed class UpdateRouter
         await _sender.SendEphemeralAsync(
             scope.ChatId,
             scope.Actor.TelegramUserId,
-            scope.Strings.Text("EditGame.PickField", new { Title = WebUtility.HtmlEncode(game.Title) }),
+            scope.Strings.Text(
+                "EditGame.PickField",
+                new { Title = WebUtility.HtmlEncode(game.Title), Threshold = RegistrationReminder.ThresholdFor(game) }
+            ),
             RenderEditGameFieldPicker(scope.Strings),
             callbackQuery.Id,
             ct
@@ -2911,6 +2945,10 @@ public sealed class UpdateRouter
                 InlineKeyboardButton.WithCallbackData(
                     strings.Text("EditGame.EditTagsButton"),
                     CallbackData.Format(CallbackData.EditField, EditGameDialogData.Tags)
+                ),
+                InlineKeyboardButton.WithCallbackData(
+                    strings.Text("EditGame.EditRegistrationThresholdButton"),
+                    CallbackData.Format(CallbackData.EditField, EditGameDialogData.RegistrationThreshold)
                 ),
             ],
             DoneButton.Row(strings),
@@ -3401,9 +3439,10 @@ public sealed class UpdateRouter
         await _bot.AnswerCallbackQuery(callbackQuery.Id, scope.Strings.Text("Reopen.Reopened"), cancellationToken: ct);
     }
 
-    // Tapped in a captain's DM, not in the team chat, so the message to rewrite is the one the
-    // callback carries rather than anything under scope.ChatId, and the wording is the
-    // captain's own language rather than the team's.
+    // Tapped under the reminder, which lives either in a captain's DM or in the team chat
+    // depending on the channel they chose — so the message to rewrite is the one the callback
+    // carries rather than anything under scope.ChatId, and the wording is the captain's own
+    // language in a DM and the team's in the group.
     private async Task HandleTeamRegisteredButtonAsync(
         Game game,
         CallbackScope scope,
@@ -3411,7 +3450,10 @@ public sealed class UpdateRouter
         CancellationToken ct
     )
     {
-        var strings = _strings.For(scope.Player.Locale ?? scope.Team.Locale);
+        var strings =
+            callbackQuery.Message!.Chat.Type == ChatType.Private
+                ? _strings.For(scope.Player.Locale ?? scope.Team.Locale)
+                : scope.Strings;
 
         var result = await _games.MarkTeamRegisteredAsync(game, scope.Team, scope.Actor, ct);
         if (!result.IsSuccess)
@@ -3428,6 +3470,40 @@ public sealed class UpdateRouter
             ct
         );
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
+    }
+
+    // The Manage panel's own way to set or clear the registration, for the cases the reminder
+    // can't cover: a team registered before anyone was asked, or a tap on the reminder's button
+    // that was a mistake. The panel is redrawn in place so the button flips to its opposite.
+    private async Task HandleTeamRegistrationToggleAsync(
+        Game game,
+        CallbackScope scope,
+        CallbackQuery callbackQuery,
+        char verb,
+        CancellationToken ct
+    )
+    {
+        var register = verb == CallbackData.ForceRegisterTeam;
+        var result = register
+            ? await _games.MarkTeamRegisteredAsync(game, scope.Team, scope.Actor, ct)
+            : await _games.ClearTeamRegisteredAsync(game, scope.Team, scope.Actor, ct);
+        if (!result.IsSuccess)
+        {
+            await AnswerAlertAsync(callbackQuery, scope.Strings.Text(ErrorKey(result.Error)), ct);
+            return;
+        }
+
+        await _sender.TryEditImmediatelyAsync(
+            scope.Message,
+            scope.Strings.Text("Manage.Header", new { Title = WebUtility.HtmlEncode(game.Title) }),
+            AnnouncementRenderer.RenderManagePanel(game, _clock.GetUtcNow(), scope.Strings),
+            ct
+        );
+        await _bot.AnswerCallbackQuery(
+            callbackQuery.Id,
+            scope.Strings.Text(register ? "Manage.TeamRegistered" : "Manage.RegistrationReverted"),
+            cancellationToken: ct
+        );
     }
 
     // --- Act on behalf of a player ("Manage players", design decision #2 of M9) ---
@@ -3746,7 +3822,8 @@ public sealed class UpdateRouter
     {
         var membership = await _teams.LoadOwnMembershipAsync(team, actor.PlayerId, ct);
         var strings = _strings.For(team.Locale);
-        var (text, keyboard) = BuildReminderSettingsView(membership, strings);
+        var isCaptain = (await _games.EnsureCanManageAsync(team, actor, ct)).IsSuccess;
+        var (text, keyboard) = BuildReminderSettingsView(membership, isCaptain, strings);
 
         // Somebody's own reminder preferences concern nobody else in the chat. The command
         // they typed is still theirs and still public — ephemeral only covers the bot's half.
@@ -4010,10 +4087,21 @@ public sealed class UpdateRouter
 
         var membership = await _teams.LoadOwnMembershipAsync(scope.Team, scope.Player.Id, ct);
         var strings = scope.Strings;
+        var isCaptain = (await _games.EnsureCanManageAsync(scope.Team, scope.Actor, ct)).IsSuccess;
 
         if (verb == CallbackData.CycleReminderChannel)
         {
             _ = CallbackData.TryParse(callbackQuery.Data!, out _, out long slotIndex);
+
+            // The registration slot is a captain's alone, and the view is drawn without it for
+            // anyone else — but a panel outlives the captaincy that opened it, so a tap on a
+            // stale one is refused here rather than trusted.
+            if (slotIndex == RegistrationSlot && !isCaptain)
+            {
+                await AnswerAlertAsync(callbackQuery, strings.Text("NewGame.NotCaptain"), ct);
+                return;
+            }
+
             var next = (ReminderChannel)(((int)ChannelFor(membership, (int)slotIndex) + 1) % 3);
             SetChannel(membership, (int)slotIndex, next);
         }
@@ -4024,17 +4112,22 @@ public sealed class UpdateRouter
 
         await _db.SaveChangesAsync(ct);
 
-        var (text, keyboard) = BuildReminderSettingsView(membership, strings);
+        var (text, keyboard) = BuildReminderSettingsView(membership, isCaptain, strings);
         await _sender.TryEditImmediatelyAsync(scope.Message, text, keyboard, ct);
         await _bot.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: ct);
     }
 
+    // The slot index the registration reminder cycles under, after the three the scheduler's
+    // reminders use. Captains only (see HandleReminderSettingsCallbackAsync).
+    private const int RegistrationSlot = 3;
+
     private static (string Text, InlineKeyboardMarkup Keyboard) BuildReminderSettingsView(
         Membership membership,
+        bool isCaptain,
         IStringsFor strings
     )
     {
-        var keyboard = new InlineKeyboardMarkup([
+        var rows = new List<IEnumerable<InlineKeyboardButton>>([
             [
                 InlineKeyboardButton.WithCallbackData(
                     strings.Text(
@@ -4068,10 +4161,24 @@ public sealed class UpdateRouter
                     CallbackData.Format(CallbackData.ToggleReserveReminder, 0L)
                 ),
             ],
-            DoneButton.Row(strings),
         ]);
 
-        return (strings.Text("Reminders.Header"), keyboard);
+        if (isCaptain)
+        {
+            rows.Add([
+                InlineKeyboardButton.WithCallbackData(
+                    strings.Text(
+                        "Reminders.RegistrationButton",
+                        new { Channel = ChannelLabel(membership.RegistrationReminder, strings) }
+                    ),
+                    CallbackData.Format(CallbackData.CycleReminderChannel, (long)RegistrationSlot)
+                ),
+            ]);
+        }
+
+        rows.Add(DoneButton.Row(strings));
+
+        return (strings.Text("Reminders.Header"), new InlineKeyboardMarkup(rows));
     }
 
     private static string ChannelLabel(ReminderChannel channel, IStringsFor strings) =>
@@ -4089,6 +4196,7 @@ public sealed class UpdateRouter
             0 => membership.EveningBefore,
             1 => membership.MorningOf,
             2 => membership.BeforeStart,
+            RegistrationSlot => membership.RegistrationReminder,
             _ => throw new ArgumentOutOfRangeException(nameof(slotIndex), slotIndex, "Unknown reminder slot index"),
         };
 
@@ -4104,6 +4212,9 @@ public sealed class UpdateRouter
                 break;
             case 2:
                 membership.BeforeStart = value;
+                break;
+            case RegistrationSlot:
+                membership.RegistrationReminder = value;
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(slotIndex), slotIndex, "Unknown reminder slot index");

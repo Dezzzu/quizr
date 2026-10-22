@@ -18,6 +18,9 @@ public sealed class Franchise
     public int? DefaultCapacity { get; set; }
     public decimal? DefaultPrice { get; set; }
 
+    // Copied onto each game at creation; null means RegistrationReminder.DefaultThreshold.
+    public int? DefaultRegistrationThreshold { get; set; }
+
     // An absent day is one the franchise doesn't run.
     public required Dictionary<DayOfWeek, TimeOnly> Schedule { get; set; }
 

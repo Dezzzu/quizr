@@ -631,6 +631,126 @@ public class GameServiceTests
         onDeclined.Error.Should().BeOfType<BusinessError.RegistrationClosed>();
     }
 
+    [Test]
+    public async Task ClearTeamRegisteredAsyncTakesTheMarkBackAndLeavesTheReminderSpent()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 6183, ct);
+        var captain = await TestCaptain.SeedAsync(db, team, telegramUserId: 6183, ct);
+        var gameService = new GameService(db, captain.Guard, new FakeTimeProvider());
+        var game = await CreateGameAsync(gameService, team, captain, capacity: 10, ct);
+        game.RegistrationReminderSentAt = DateTimeOffset.UtcNow;
+        await gameService.MarkTeamRegisteredAsync(game, team, captain.Actor, ct);
+
+        var result = await gameService.ClearTeamRegisteredAsync(game, team, captain.Actor, ct);
+
+        result.IsSuccess.Should().BeTrue();
+        var stored = await db.Games.AsNoTracking().SingleAsync(g => g.Id == game.Id, ct);
+        stored.TeamRegisteredAt.Should().BeNull();
+        stored.RegistrationReminderSentAt.Should().NotBeNull();
+    }
+
+    [Test]
+    public async Task ClearTeamRegisteredAsyncRefusesANonCaptainAndAGameThatIsOver()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 6184, ct);
+        var captain = await TestCaptain.SeedAsync(db, team, telegramUserId: 6184, ct);
+        var gameService = new GameService(db, captain.Guard, new FakeTimeProvider());
+        var game = await CreateGameAsync(gameService, team, captain, capacity: 10, ct);
+        await gameService.MarkTeamRegisteredAsync(game, team, captain.Actor, ct);
+        var outsider = await SeedMemberAsync(db, team.Id, telegramUserId: 61841, ct);
+
+        var refused = await gameService.ClearTeamRegisteredAsync(
+            game,
+            team,
+            new Actor(outsider.Id, new TelegramUserId(61841)),
+            ct
+        );
+        await gameService.FinishAsync(game, team, captain.Actor, ct);
+        var finished = await gameService.ClearTeamRegisteredAsync(game, team, captain.Actor, ct);
+
+        refused.Error.Should().BeOfType<BusinessError.NotCaptain>();
+        finished.Error.Should().BeOfType<BusinessError.GameAlreadyFinished>();
+        game.TeamRegisteredAt.Should().NotBeNull();
+    }
+
+    [Test]
+    public async Task SetRegistrationThresholdAsyncOverridesAndRestoresTheDefault()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 6185, ct);
+        var captain = await TestCaptain.SeedAsync(db, team, telegramUserId: 6185, ct);
+        var gameService = new GameService(db, captain.Guard, new FakeTimeProvider());
+        var game = await CreateGameAsync(gameService, team, captain, capacity: 10, ct);
+
+        await gameService.SetRegistrationThresholdAsync(game, team, captain.Actor, 6, ct);
+        (await db.Games.AsNoTracking().SingleAsync(g => g.Id == game.Id, ct)).RegistrationThreshold.Should().Be(6);
+
+        await gameService.SetRegistrationThresholdAsync(game, team, captain.Actor, null, ct);
+        (await db.Games.AsNoTracking().SingleAsync(g => g.Id == game.Id, ct)).RegistrationThreshold.Should().BeNull();
+    }
+
+    [Test]
+    public async Task SetRegistrationThresholdAsyncRefusesANonCaptain()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var team = await SeedTeamAsync(db, chatId: 6186, ct);
+        var captain = await TestCaptain.SeedAsync(db, team, telegramUserId: 6186, ct);
+        var gameService = new GameService(db, captain.Guard, new FakeTimeProvider());
+        var game = await CreateGameAsync(gameService, team, captain, capacity: 10, ct);
+        var outsider = await SeedMemberAsync(db, team.Id, telegramUserId: 61861, ct);
+
+        var result = await gameService.SetRegistrationThresholdAsync(
+            game,
+            team,
+            new Actor(outsider.Id, new TelegramUserId(61861)),
+            9,
+            ct
+        );
+
+        result.Error.Should().BeOfType<BusinessError.NotCaptain>();
+        game.RegistrationThreshold.Should().BeNull();
+    }
+
+    // A franchise is a template, not a live reference: the game gets its own copy, so editing
+    // the franchise later never rewrites a game already posted.
+    [Test]
+    public async Task AGameCreatedFromAFranchiseCopiesItsRegistrationThreshold()
+    {
+        var ct = TestContext.Current!.Execution.CancellationToken;
+        await using var db = _fixture.CreateContext();
+        var (team, franchise, captain) = await SeedFranchiseAsync(db, chatId: 6187, ct);
+        franchise.DefaultRegistrationThreshold = 7;
+        await db.SaveChangesAsync(ct);
+        var gameService = new GameService(db, captain.Guard, new FakeTimeProvider());
+
+        var game = (
+            await gameService.CreateFromFranchiseAsync(
+                team,
+                captain.Actor,
+                franchise,
+                $"{franchise.Name} #1",
+                new DateOnly(2026, 9, 7),
+                new TimeOnly(19, 0),
+                "The Pub",
+                20,
+                null,
+                null,
+                [],
+                ct
+            )
+        ).Value;
+        franchise.DefaultRegistrationThreshold = 3;
+        await db.SaveChangesAsync(ct);
+
+        (await db.Games.AsNoTracking().SingleAsync(g => g.Id == game.Id, ct)).RegistrationThreshold.Should().Be(7);
+    }
+
     // Editing a live game is captain-only, and the check belongs to the operation rather than
     // to whichever screen reached it (STYLE.md) — a stale keyboard, or phase 2's HTTP endpoint,
     // must hit the same refusal the update router does.
